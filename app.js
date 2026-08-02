@@ -95,46 +95,22 @@ L.control
 const corridorSouth = L.latLng(43.36114129, -73.83520117);
 const corridorNorth = L.latLng(43.36108584, -73.83562233);
 
+// The corridor's exact edges are not mapped here. This transparent hit area
+// only makes the known gap between the two owned parcels interactive.
 L.polyline([corridorSouth, corridorNorth], {
-  color: "#382c08",
-  weight: 7,
-  opacity: 0.88,
-  dashArray: "4 7",
-  interactive: false,
-}).addTo(map);
-
-const corridorMarker = L.marker(
-  L.latLng(
-    (corridorSouth.lat + corridorNorth.lat) / 2,
-    (corridorSouth.lng + corridorNorth.lng) / 2,
-  ),
-  {
-    interactive: false,
-    icon: L.divIcon({
-      className: "corridor-icon",
-      html: "Utility corridor<br>Not our land",
-      iconSize: [84, 26],
-      iconAnchor: [42, 13],
-    }),
-  },
-).addTo(map);
-
-function updateCorridorLabel() {
-  const element = corridorMarker.getElement();
-  if (!element) return;
-  const point = map.latLngToContainerPoint(corridorMarker.getLatLng());
-  const size = map.getSize();
-  const comfortablyVisible =
-    map.getZoom() >= 18 &&
-    point.x > 80 &&
-    point.x < size.x - 70 &&
-    point.y > 70 &&
-    point.y < size.y - 55;
-  element.style.display = comfortablyVisible ? "" : "none";
-}
-
-map.on("moveend zoomend resize", updateCorridorLabel);
-corridorMarker.on("add", () => window.requestAnimationFrame(updateCorridorLabel));
+  color: "#000000",
+  weight: 30,
+  opacity: 0,
+  interactive: true,
+})
+  .bindTooltip("National Grid powerline cut — not our land, but access is allowed.", {
+    sticky: true,
+    direction: "top",
+  })
+  .bindPopup(
+    "<strong>National Grid powerline cut</strong><br>Not our land, but access is allowed.",
+  )
+  .addTo(map);
 
 const locationStatus = document.getElementById("location-status");
 const locateButton = document.getElementById("locate-button");

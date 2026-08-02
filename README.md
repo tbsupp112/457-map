@@ -9,6 +9,7 @@ A phone-friendly orientation map showing the approximate 457 Property boundaries
 - `index.html` — page structure
 - `styles.css` — appearance and mobile layout
 - `app.js` — map behavior and live location
+- `BACKLOG.md` — living feature and improvement list
 - `data/boundary.geojson` — validated parcel polygons
 - `data/corners.geojson` — optional labeled corner markers
 - `vendor/leaflet/` — pinned local copy of the Leaflet map library

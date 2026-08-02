@@ -4,7 +4,6 @@
   --panel-text: #ffffff;
   --owned: #5ee6bd;
   --owned-dark: #102f29;
-  --warning: #ffd166;
   --location: #2f8cff;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
@@ -142,21 +141,6 @@ button {
 
 .leaflet-tooltip.parcel-label::before {
   display: none;
-}
-
-.corridor-icon {
-  width: 84px !important;
-  margin-left: -42px !important;
-  color: #1e1807;
-  background: var(--warning);
-  border: 2px solid #382c08;
-  border-radius: 5px;
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.46);
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1.15;
-  text-align: center;
-  text-transform: uppercase;
 }
 
 .corner-marker {

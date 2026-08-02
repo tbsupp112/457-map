@@ -1,0 +1,201 @@
+:root {
+  color-scheme: light;
+  --panel: rgba(20, 35, 29, 0.94);
+  --panel-text: #ffffff;
+  --owned: #5ee6bd;
+  --owned-dark: #102f29;
+  --warning: #ffd166;
+  --location: #2f8cff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#map {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  overflow: hidden;
+  background: #18211d;
+}
+
+button {
+  font: inherit;
+}
+
+.disclaimer {
+  position: fixed;
+  z-index: 1000;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 50%;
+  width: min(calc(100% - 112px), 520px);
+  padding: 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 10px;
+  color: var(--panel-text);
+  background: var(--panel);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.28);
+  text-align: center;
+  pointer-events: none;
+}
+
+.disclaimer strong,
+.disclaimer span {
+  display: block;
+}
+
+.disclaimer strong {
+  font-size: 14px;
+  letter-spacing: 0.01em;
+}
+
+.disclaimer span {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.location-panel {
+  position: fixed;
+  z-index: 1000;
+  right: calc(12px + env(safe-area-inset-right));
+  bottom: calc(24px + env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100% - 24px);
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 11px;
+  color: var(--panel-text);
+  background: var(--panel);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.location-panel p {
+  overflow: hidden;
+  max-width: 190px;
+  margin: 0 0 0 4px;
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#locate-button {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 0;
+  border-radius: 8px;
+  color: #10231d;
+  background: var(--owned);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#locate-button:focus-visible {
+  outline: 3px solid #ffffff;
+  outline-offset: 2px;
+}
+
+.leaflet-control-zoom,
+.leaflet-control-layers {
+  border: 0 !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32) !important;
+}
+
+.leaflet-top.leaflet-left {
+  top: calc(8px + env(safe-area-inset-top));
+  left: calc(2px + env(safe-area-inset-left));
+}
+
+.leaflet-top.leaflet-right {
+  top: calc(78px + env(safe-area-inset-top));
+  right: calc(2px + env(safe-area-inset-right));
+}
+
+.leaflet-control-attribution {
+  max-width: 65vw;
+  font-size: 9px !important;
+  line-height: 1.2;
+}
+
+.parcel-label {
+  padding: 3px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 6px;
+  color: #ffffff;
+  background: rgba(16, 47, 41, 0.9);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+  font-weight: 700;
+  text-align: center;
+}
+
+.leaflet-tooltip.parcel-label::before {
+  display: none;
+}
+
+.corridor-icon {
+  width: 84px !important;
+  margin-left: -42px !important;
+  color: #1e1807;
+  background: var(--warning);
+  border: 2px solid #382c08;
+  border-radius: 5px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.46);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.corner-marker {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #10231d;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
+}
+
+.location-dot {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  background: var(--location);
+  box-shadow: 0 0 0 2px rgba(26, 80, 145, 0.78), 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 520px) {
+  .disclaimer {
+    left: auto;
+    right: calc(8px + env(safe-area-inset-right));
+    width: calc(100% - 104px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    transform: none;
+  }
+
+  .disclaimer span {
+    display: none;
+  }
+
+  .location-panel {
+    left: calc(12px + env(safe-area-inset-left));
+    right: calc(12px + env(safe-area-inset-right));
+    justify-content: space-between;
+  }
+
+  .location-panel p {
+    max-width: none;
+  }
+}

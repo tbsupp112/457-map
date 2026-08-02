@@ -1,0 +1,115 @@
+{
+ "type": "FeatureCollection",
+ "properties": {
+  "title": "457 Property - approximate boundaries",
+  "source": "Warren County zoning document corner coordinates, transcribed by owner Aug 2026",
+  "datum": "WGS84 (assumed; NAD83 difference ~1m, immaterial here)",
+  "disclaimer": "Approximate boundary for orientation only. No formal survey has been performed. Do not rely on for legal, timber, or neighbor-boundary purposes."
+ },
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Main Parcel",
+    "acres_computed": 18.17,
+    "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
+    "note": "Primary ~18.2ac parcel east of the utility corridor."
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.83622666,
+       43.35910496
+      ],
+      [
+       -73.83613834,
+       43.35908147
+      ],
+      [
+       -73.83627008,
+       43.3588178
+      ],
+      [
+       -73.83616101,
+       43.35836566
+      ],
+      [
+       -73.83588927,
+       43.35783214
+      ],
+      [
+       -73.83325533,
+       43.35807918
+      ],
+      [
+       -73.83349609,
+       43.36132768
+      ],
+      [
+       -73.83365968,
+       43.36129601
+      ],
+      [
+       -73.83398061,
+       43.3612939
+      ],
+      [
+       -73.83486626,
+       43.36119384
+      ],
+      [
+       -73.83520117,
+       43.36114129
+      ],
+      [
+       -73.83622666,
+       43.35910496
+      ]
+     ]
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "name": "Sliver",
+    "acres_computed": 0.79,
+    "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
+    "note": "Detached ~0.8ac parcel west of the cleared utility corridor. Awkward access."
+   },
+   "geometry": {
+    "type": "Polygon",
+    "coordinates": [
+     [
+      [
+       -73.83617901,
+       43.36104297
+      ],
+      [
+       -73.8363539,
+       43.35984806
+      ],
+      [
+       -73.83618607,
+       43.3601875
+      ],
+      [
+       -73.83609774,
+       43.36016401
+      ],
+      [
+       -73.83562233,
+       43.36108584
+      ],
+      [
+       -73.83617901,
+       43.36104297
+      ]
+     ]
+    ]
+   }
+  }
+ ]
+}

@@ -1,13 +1,15 @@
 # 457 Property Visitor Map
 
-A phone-friendly orientation map showing the approximate 457 Property boundaries and a visitor's live location.
+A phone-friendly landing page and orientation map showing the approximate 457 Property boundaries and a visitor's live location.
 
 > **Approximate boundary — not a survey.** This map is for orientation only and must not be used for legal, timber, or neighbor-boundary decisions.
 
 ## Project layout
 
-- `index.html` — page structure
-- `styles.css` — appearance and mobile layout
+- `index.html` — responsive landing page
+- `home.css` — landing-page appearance
+- `map.html` — interactive map page
+- `styles.css` — map appearance and mobile layout
 - `app.js` — map behavior and live location
 - `BACKLOG.md` — living feature and improvement list
 - `data/boundary.geojson` — validated parcel polygons
@@ -19,7 +21,7 @@ The boundary data remains separate from the page so future trails and landmarks 
 
 ## Preview locally
 
-The map must be served by a web server; opening `index.html` directly will prevent the browser from loading the GeoJSON files. GitHub Pages is the intended preview and publishing method.
+The site must be served by a web server; opening `map.html` directly will prevent the browser from loading the GeoJSON files. GitHub Pages is the intended preview and publishing method.
 
 From this folder, run:
 

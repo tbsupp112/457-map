@@ -31,12 +31,14 @@ const topoMap = L.tileLayer(
   },
 );
 
+const outsideMaskRenderer = L.svg({ padding: 0.5 });
 const outsideMaskLayer = L.geoJSON(null, {
+  renderer: outsideMaskRenderer,
   interactive: false,
   style: {
     stroke: false,
-    fillColor: "#18242b",
-    fillOpacity: 0.24,
+    fillColor: "url(#outside-hatch)",
+    fillOpacity: 1,
     fillRule: "evenodd",
   },
 }).addTo(map);
@@ -52,7 +54,9 @@ const corridorLayer = L.geoJSON(null, {
   },
   onEachFeature(feature, layer) {
     const message = "National Grid powerline cut — not our land, but access is allowed.";
-    layer.bindTooltip(message, { sticky: true, direction: "top" });
+    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+      layer.bindTooltip(message, { sticky: true, direction: "top" });
+    }
     layer.bindPopup(
       `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
         "Not our land, but access is allowed.<br>" +
@@ -137,6 +141,7 @@ Promise.all([
     boundaryLayer.addData(boundaryData);
     cornersLayer.addData(cornerData);
     outsideMaskLayer.addData(buildOutsideMask(boundaryData));
+    installOutsideHatchPattern();
     outsideMaskLayer.bringToBack();
     boundaryHalo.bringToFront();
     boundaryLayer.bringToFront();
@@ -294,6 +299,37 @@ function buildOutsideMask(boundaryData) {
       coordinates: [outerRing, ...parcelHoles],
     },
   };
+}
+
+function installOutsideHatchPattern() {
+  const svg = outsideMaskRenderer._container;
+  if (!svg || svg.querySelector("#outside-hatch")) return;
+
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const defs = document.createElementNS(svgNamespace, "defs");
+  const pattern = document.createElementNS(svgNamespace, "pattern");
+  pattern.setAttribute("id", "outside-hatch");
+  pattern.setAttribute("width", "18");
+  pattern.setAttribute("height", "18");
+  pattern.setAttribute("patternUnits", "userSpaceOnUse");
+
+  const background = document.createElementNS(svgNamespace, "rect");
+  background.setAttribute("width", "18");
+  background.setAttribute("height", "18");
+  background.setAttribute("fill", "#6f451f");
+  background.setAttribute("fill-opacity", "0.13");
+
+  const hatch = document.createElementNS(svgNamespace, "path");
+  hatch.setAttribute("d", "M-4 4 L4 -4 M0 18 L18 0 M14 22 L22 14");
+  hatch.setAttribute("fill", "none");
+  hatch.setAttribute("stroke", "#9b5d25");
+  hatch.setAttribute("stroke-opacity", "0.48");
+  hatch.setAttribute("stroke-width", "1.5");
+  hatch.setAttribute("stroke-dasharray", "5 4");
+
+  pattern.append(background, hatch);
+  defs.append(pattern);
+  svg.prepend(defs);
 }
 
 function escapeHtml(value) {

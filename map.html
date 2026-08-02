@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#14231d">
+  <title>457 Property Map</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="map" aria-label="Interactive map of the approximate 457 Property boundaries"></main>
+  <a class="home-link" href="index.html" aria-label="Return to the home page">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"></path></svg>
+    <span>Home</span>
+  </a>
+  <aside class="disclaimer" role="note">
+    <strong>Approximate boundary — not a survey</strong>
+    <span>For orientation only. Do not rely on this map for legal or boundary work.</span>
+  </aside>
+  <div class="location-panel" aria-live="polite">
+    <p id="location-status">Tap Find me to show your location.</p>
+    <button id="locate-button" type="button">Find me</button>
+  </div>
+  <noscript>This map requires JavaScript.</noscript>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="app.js?v=20260802-5"></script>
+</body>
+</html>

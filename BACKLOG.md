@@ -1,18 +1,18 @@
 # 457 Property Visitor Map — Backlog
 
-Organized by intended timing rather than numeric priority. Within each section, items are roughly ordered by likely implementation sequence. Move an item to **Completed** only after the implementation has been verified.
+Organized by intended timing rather than numeric priority. Within each section, items are roughly ordered by likely implementation sequence. Move an item to **Completed** only after the implementation has been verified live.
 
 ## Now
 
-- **Expand and shade the powerline-corridor gap.** Make the full approximate area between the Main Parcel and Sliver interactive, with a light gray fill and a visually distinct border. Hover on desktop or tap on mobile should explain: “National Grid powerline cut — not our land, but access is allowed.” Do not imply that the corridor edges have been surveyed.
-- **Reverse the parcel emphasis.** Keep the owned parcels visually clear and lightly dim a limited surrounding area instead of tinting the parcel interiors. The corridor needs a separate gray treatment so it remains distinguishable from both owned and other unowned land.
+- **Confirm the corrected powerline corridor live.** The southern connector now runs directly from `SL_SCorner` to `MP_WCorner`, with the remaining edges following parcel vertices. The corridor has a light-gray treatment and explains on desktop hover or mobile tap: “National Grid powerline cut — not our land, but access is allowed.” Confirm the shape and that mobile shows only one explanation popup.
+- **Confirm the outside-area hatching live.** Owned parcels remain clear while a limited surrounding area has a subtle dark-orange tint and diagonal dashed hatching. Confirm that it is distinct but not aggressive on both aerial and topo views.
 - **Update parcel popup descriptions.** Sliver: “0.8 acres, across powerline corridor — no road access.” Main Parcel: “Primary 18.2 acre parcel off Gailey Hill Road. Boundary is approximate, but fairly accurate. Borders currently not consistently posted.”
+- **Confirm the landing page and map navigation live.** The root URL now opens a mostly open, responsive home page with a Main Parcel-shaped Property Map link. The map has a floating Home link on phone and desktop. Keep here until both directions are confirmed on the published site.
 
 ## Soon
 
 - **Refine parcel labels and acreage display.** Reduce how much imagery the permanent labels obscure. Likely make visibility respond to zoom while keeping parcel details available by tapping/clicking.
-- **Create a responsive landing/home page.** Make the map the main feature while leaving room for owner-provided information and links to future pages. This would become the QR-code destination. Content and design direction still need to be defined.
-- **Add responsive navigation.** On mobile, use a minimal bottom bar starting with Home and Info. Adapt the same navigation appropriately for desktop rather than maintaining a separate site.
+- **Expand responsive navigation when more destinations exist.** The current map has a floating Home link. Consider a minimal mobile bottom bar once Info or other destinations are added; adapt navigation appropriately for desktop rather than maintaining a separate site.
 - **Add verified outbuildings and key landmarks.** Keep these in a separate data file so they can be updated without changing the map code. Owner can provide name, type, coordinates, notes, and any accuracy/source context.
 - **Add recorded trails when reliable data is available.** Accept a walked GPS track (GPX preferred), convert it to GeoJSON, and establish the repeatable add-a-trail process before adding many trails.
 

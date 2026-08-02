@@ -13,7 +13,8 @@
     "name": "Main Parcel",
     "acres_computed": 18.17,
     "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
-    "note": "Primary ~18.2ac parcel east of the utility corridor."
+    "note": "Primary ~18.2ac parcel east of the utility corridor.",
+    "popup_description": "Primary 18.2 acre parcel off Gailey Hill Road. Boundary is approximate, but fairly accurate. Borders currently not consistently posted."
    },
    "geometry": {
     "type": "Polygon",
@@ -77,7 +78,8 @@
     "name": "Sliver",
     "acres_computed": 0.79,
     "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
-    "note": "Detached ~0.8ac parcel west of the cleared utility corridor. Awkward access."
+    "note": "Detached ~0.8ac parcel west of the cleared utility corridor. Awkward access.",
+    "popup_description": "0.8 acres, across powerline corridor — no road access."
    },
    "geometry": {
     "type": "Polygon",

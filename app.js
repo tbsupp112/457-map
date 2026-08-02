@@ -31,6 +31,36 @@ const topoMap = L.tileLayer(
   },
 );
 
+const outsideMaskLayer = L.geoJSON(null, {
+  interactive: false,
+  style: {
+    stroke: false,
+    fillColor: "#18242b",
+    fillOpacity: 0.24,
+    fillRule: "evenodd",
+  },
+}).addTo(map);
+
+const corridorLayer = L.geoJSON(null, {
+  style: {
+    color: "#d5d9dc",
+    weight: 3,
+    opacity: 0.95,
+    dashArray: "6 6",
+    fillColor: "#e2e5e7",
+    fillOpacity: 0.28,
+  },
+  onEachFeature(feature, layer) {
+    const message = "National Grid powerline cut — not our land, but access is allowed.";
+    layer.bindTooltip(message, { sticky: true, direction: "top" });
+    layer.bindPopup(
+      `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
+        "Not our land, but access is allowed.<br>" +
+        "<small>Shaded extent is approximate; corridor edges are not surveyed here.</small>",
+    );
+  },
+}).addTo(map);
+
 const boundaryHalo = L.geoJSON(null, {
   interactive: false,
   style: {
@@ -48,11 +78,12 @@ const boundaryLayer = L.geoJSON(null, {
     weight: 4,
     opacity: 1,
     fillColor: "#5ee6bd",
-    fillOpacity: 0.2,
+    fillOpacity: 0.03,
     lineJoin: "round",
   },
   onEachFeature(feature, layer) {
     const acres = Number(feature.properties.acres_computed).toFixed(2);
+    const description = feature.properties.popup_description || feature.properties.note;
     layer.bindTooltip(`${feature.properties.name}<br>${acres} acres`, {
       permanent: true,
       direction: "center",
@@ -60,9 +91,7 @@ const boundaryLayer = L.geoJSON(null, {
     });
     layer.bindPopup(
       `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
-        `${acres} computed acres<br>` +
-        `<small>${escapeHtml(feature.properties.note)}</small><hr>` +
-        `<small>Approximate boundary — not a survey.</small>`,
+        `${escapeHtml(description)}`,
     );
   },
 }).addTo(map);
@@ -92,26 +121,6 @@ L.control
   )
   .addTo(map);
 
-const corridorSouth = L.latLng(43.36114129, -73.83520117);
-const corridorNorth = L.latLng(43.36108584, -73.83562233);
-
-// The corridor's exact edges are not mapped here. This transparent hit area
-// only makes the known gap between the two owned parcels interactive.
-L.polyline([corridorSouth, corridorNorth], {
-  color: "#000000",
-  weight: 30,
-  opacity: 0,
-  interactive: true,
-})
-  .bindTooltip("National Grid powerline cut — not our land, but access is allowed.", {
-    sticky: true,
-    direction: "top",
-  })
-  .bindPopup(
-    "<strong>National Grid powerline cut</strong><br>Not our land, but access is allowed.",
-  )
-  .addTo(map);
-
 const locationStatus = document.getElementById("location-status");
 const locateButton = document.getElementById("locate-button");
 const locationLayer = L.layerGroup().addTo(map);
@@ -127,6 +136,10 @@ Promise.all([
     boundaryHalo.addData(boundaryData);
     boundaryLayer.addData(boundaryData);
     cornersLayer.addData(cornerData);
+    outsideMaskLayer.addData(buildOutsideMask(boundaryData));
+    outsideMaskLayer.bringToBack();
+    boundaryHalo.bringToFront();
+    boundaryLayer.bringToFront();
     map.fitBounds(boundaryLayer.getBounds(), {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
       paddingBottomRight: PROPERTY_BOUNDS_PADDING,
@@ -138,6 +151,15 @@ Promise.all([
     locationStatus.textContent = "Map data could not be loaded.";
     map.setView([43.3596, -73.8348], 17);
   });
+
+loadGeoJson("data/corridor.geojson")
+  .then((corridorData) => {
+    corridorLayer.addData(corridorData);
+    corridorLayer.bringToFront();
+    boundaryHalo.bringToFront();
+    boundaryLayer.bringToFront();
+  })
+  .catch((error) => console.error(error));
 
 locateButton.addEventListener("click", () => {
   if (latestPosition) {
@@ -249,6 +271,29 @@ async function loadGeoJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Could not load ${url}: ${response.status}`);
   return response.json();
+}
+
+function buildOutsideMask(boundaryData) {
+  const bounds = L.geoJSON(boundaryData).getBounds().pad(2);
+  const outerRing = [
+    [bounds.getWest(), bounds.getSouth()],
+    [bounds.getEast(), bounds.getSouth()],
+    [bounds.getEast(), bounds.getNorth()],
+    [bounds.getWest(), bounds.getNorth()],
+    [bounds.getWest(), bounds.getSouth()],
+  ];
+  const parcelHoles = boundaryData.features.map(
+    (feature) => feature.geometry.coordinates[0],
+  );
+
+  return {
+    type: "Feature",
+    properties: { purpose: "Dim unowned surroundings" },
+    geometry: {
+      type: "Polygon",
+      coordinates: [outerRing, ...parcelHoles],
+    },
+  };
 }
 
 function escapeHtml(value) {

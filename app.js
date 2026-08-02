@@ -20,12 +20,14 @@ const nysAerial = L.tileLayer(
   },
 ).addTo(map);
 
-const usgsTopo = L.tileLayer(
-  "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+const topoMap = L.tileLayer(
+  "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
   {
-    maxZoom: 16,
-    maxNativeZoom: 16,
-    attribution: "Map © U.S. Geological Survey",
+    maxZoom: DEFAULT_MAX_ZOOM,
+    maxNativeZoom: 17,
+    subdomains: "abc",
+    attribution:
+      "Map data © OpenStreetMap contributors, SRTM | Map style © OpenTopoMap (CC-BY-SA)",
   },
 );
 
@@ -81,7 +83,7 @@ L.control
   .layers(
     {
       "NYS aerial (2022)": nysAerial,
-      "USGS topo": usgsTopo,
+      "Topo map": topoMap,
     },
     {
       "Corner markers": cornersLayer,
@@ -128,7 +130,7 @@ function updateCorridorLabel() {
     point.x < size.x - 70 &&
     point.y > 70 &&
     point.y < size.y - 55;
-  element.hidden = !comfortablyVisible;
+  element.style.display = comfortablyVisible ? "" : "none";
 }
 
 map.on("moveend zoomend resize", updateCorridorLabel);
@@ -161,37 +163,51 @@ Promise.all([
     map.setView([43.3596, -73.8348], 17);
   });
 
-// Location should still work if a data file or layer service has a problem.
-startLocationWatch();
-
 locateButton.addEventListener("click", () => {
   if (latestPosition) {
     map.setView(latestPosition.latlng, Math.max(map.getZoom(), 18));
     return;
   }
-  startLocationWatch(true);
+  requestInitialLocation();
 });
 
-function startLocationWatch(forceRestart = false) {
+function requestInitialLocation() {
   if (!navigator.geolocation) {
     locationStatus.textContent = "Location is not supported on this device.";
     locateButton.disabled = true;
     return;
   }
 
-  if (watchId !== null && !forceRestart) return;
-  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
-
   locationStatus.textContent = "Requesting your location…";
-  locateButton.textContent = "Find me";
+  locateButton.textContent = "Locating…";
+  locateButton.disabled = true;
+
+  // Start with a quick, possibly cached fix. This is more reliable than
+  // demanding high-accuracy GPS before the browser has returned any location.
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      updateLocation(position);
+      startLocationWatch();
+    },
+    handleLocationError,
+    {
+      enableHighAccuracy: false,
+      maximumAge: 60000,
+      timeout: 20000,
+    },
+  );
+}
+
+function startLocationWatch() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
 
   watchId = navigator.geolocation.watchPosition(
     updateLocation,
-    handleLocationError,
+    handleWatchError,
     {
       enableHighAccuracy: true,
-      maximumAge: 5000,
-      timeout: 15000,
+      maximumAge: 10000,
+      timeout: 45000,
     },
   );
 }
@@ -223,8 +239,14 @@ function updateLocation(position) {
   const accuracyFeet = Math.round(accuracy * 3.28084);
   locationStatus.textContent = `Location accuracy: about ±${accuracyFeet} ft`;
   locateButton.textContent = "Center on me";
+  locateButton.disabled = false;
 
-  if (!hasCenteredOnUser && boundaryLayer.getBounds().pad(0.35).contains(latlng)) {
+  const propertyBounds = boundaryLayer.getBounds();
+  if (
+    !hasCenteredOnUser &&
+    propertyBounds.isValid() &&
+    propertyBounds.pad(0.35).contains(latlng)
+  ) {
     map.setView(latlng, Math.max(map.getZoom(), 18));
     hasCenteredOnUser = true;
   }
@@ -238,6 +260,13 @@ function handleLocationError(error) {
   };
   locationStatus.textContent = messages[error.code] || "Could not determine your location.";
   locateButton.textContent = "Try again";
+  locateButton.disabled = false;
+}
+
+function handleWatchError(error) {
+  // Keep showing the most recent valid position if a later GPS update times out.
+  if (latestPosition && error.code !== 1) return;
+  handleLocationError(error);
 }
 
 async function loadGeoJson(url) {

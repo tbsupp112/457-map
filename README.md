@@ -29,4 +29,4 @@ Then open `http://localhost:8000`. Live location will work on the published HTTP
 
 ## Imagery
 
-The default basemap is New York State's cached 2022 orthoimagery, approximately 12-inch resolution. USGS Topo is included as an optional reference basemap. Both require attribution, which the map displays automatically.
+The default basemap is New York State's cached 2022 orthoimagery, approximately 12-inch resolution. OpenTopoMap is included as an optional reference basemap. Both require attribution, which the map displays automatically.

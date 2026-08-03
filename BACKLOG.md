@@ -5,9 +5,9 @@ Organized by intended timing rather than numeric priority. Within each section, 
 ## Now
 
 - **Confirm the corrected powerline corridor live.** The southern connector now runs directly from `SL_SCorner` to `MP_WCorner`, with the remaining edges following parcel vertices. The corridor has a light-gray treatment and explains on desktop hover or mobile tap: “National Grid powerline cut — not our land, but access is allowed.” Confirm the shape and that mobile shows only one explanation popup.
-- **Confirm the outside-area hatching live.** Owned parcels remain clear while a limited surrounding area has a subtle dark-orange tint and diagonal dashed hatching. Confirm that it is distinct but not aggressive on both aerial and topo views.
+- **Confirm the revised outside-area hatching live.** Owned parcels and the powerline corridor remain clear while a limited surrounding area is lightly brightened with darker orange diagonal dashes. Confirm that the outside area is distinct without looking off-limits on both aerial and topo views.
 - **Update parcel popup descriptions.** Sliver: “0.8 acres, across powerline corridor — no road access.” Main Parcel: “Primary 18.2 acre parcel off Gailey Hill Road. Boundary is approximate, but fairly accurate. Borders currently not consistently posted.”
-- **Confirm the landing page and map navigation live.** The root URL now opens a mostly open, responsive home page with a Main Parcel-shaped Property Map link. The map has a floating Home link on phone and desktop. Keep here until both directions are confirmed on the published site.
+- **Confirm the cleaned-up landing page and map controls live.** Desktop home content is centered and the unnecessary footer warning is removed. On the map, Home, Info, Layers, and Locate use a compact icon layout; the disclaimer appears only through Info and closes by X, outside tap, or Escape. Keep here until phone and desktop are confirmed on the published site.
 
 ## Soon
 
@@ -23,6 +23,7 @@ Organized by intended timing rather than numeric priority. Within each section, 
 - **Extend the corridor/walking-path context farther along the powerline.** Add only after the owner supplies a GPS track or enough coordinates to avoid guessing the path or corridor extent.
 - **Visitor-added observation points.** Let a visitor drop a point and add a note for an animal sighting, fallen tree, or similar observation. Local-only storage is easy but remains on that device; sending it to the owner requires a deliberate sharing or backend approach. A “drop point + note + Share” workflow may be the simplest privacy-conscious version.
 - **Permanent QR/signage.** Generate a static QR that directly encodes the final GitHub Pages URL—no redirect or expiring QR service. Print the URL beneath it as a fallback.
+- **Optional QR-visit logging.** A QR-specific URL can record that the link was opened, but a normal web page cannot silently collect a visitor's precise location. If pursued, log only a timestamp and QR/sign identifier by default; request location through a clear, voluntary permission step. This needs a small backend or analytics service plus a privacy/retention decision.
 - **Protected GitHub workflow.** Protect the live branch and, if useful, connect Codex only to this repository so future changes remain reviewable and recoverable.
 
 ## Completed

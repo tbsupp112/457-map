@@ -127,22 +127,30 @@ L.control
 
 const locationStatus = document.getElementById("location-status");
 const locateButton = document.getElementById("locate-button");
+const locationPanel = document.querySelector(".location-panel");
+const infoButton = document.getElementById("info-button");
+const infoOverlay = document.getElementById("info-overlay");
+const infoClose = document.getElementById("info-close");
 const locationLayer = L.layerGroup().addTo(map);
 let watchId = null;
 let latestPosition = null;
 let hasCenteredOnUser = false;
+let locationStatusTimer = null;
 
 Promise.all([
   loadGeoJson("data/boundary.geojson"),
   loadGeoJson("data/corners.geojson"),
+  loadGeoJson("data/corridor.geojson"),
 ])
-  .then(([boundaryData, cornerData]) => {
+  .then(([boundaryData, cornerData, corridorData]) => {
     boundaryHalo.addData(boundaryData);
     boundaryLayer.addData(boundaryData);
     cornersLayer.addData(cornerData);
-    outsideMaskLayer.addData(buildOutsideMask(boundaryData));
+    corridorLayer.addData(corridorData);
+    outsideMaskLayer.addData(buildOutsideMask(boundaryData, corridorData));
     installOutsideHatchPattern();
     outsideMaskLayer.bringToBack();
+    corridorLayer.bringToFront();
     boundaryHalo.bringToFront();
     boundaryLayer.bringToFront();
     map.fitBounds(boundaryLayer.getBounds(), {
@@ -153,18 +161,18 @@ Promise.all([
   })
   .catch((error) => {
     console.error(error);
-    locationStatus.textContent = "Map data could not be loaded.";
+    showLocationStatus("Map data could not be loaded.");
     map.setView([43.3596, -73.8348], 17);
   });
 
-loadGeoJson("data/corridor.geojson")
-  .then((corridorData) => {
-    corridorLayer.addData(corridorData);
-    corridorLayer.bringToFront();
-    boundaryHalo.bringToFront();
-    boundaryLayer.bringToFront();
-  })
-  .catch((error) => console.error(error));
+infoButton.addEventListener("click", openInfo);
+infoClose.addEventListener("click", closeInfo);
+infoOverlay.addEventListener("click", (event) => {
+  if (event.target === infoOverlay) closeInfo();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !infoOverlay.hidden) closeInfo();
+});
 
 locateButton.addEventListener("click", () => {
   if (latestPosition) {
@@ -176,13 +184,14 @@ locateButton.addEventListener("click", () => {
 
 function requestInitialLocation() {
   if (!navigator.geolocation) {
-    locationStatus.textContent = "Location is not supported on this device.";
+    showLocationStatus("Location is not supported on this device.");
     locateButton.disabled = true;
     return;
   }
 
-  locationStatus.textContent = "Requesting your location…";
-  locateButton.textContent = "Locating…";
+  showLocationStatus("Requesting your location…");
+  locateButton.setAttribute("aria-label", "Locating");
+  locateButton.title = "Locating";
   locateButton.disabled = true;
 
   // Start with a quick, possibly cached fix. This is more reliable than
@@ -240,8 +249,9 @@ function updateLocation(position) {
   }).addTo(locationLayer);
 
   const accuracyFeet = Math.round(accuracy * 3.28084);
-  locationStatus.textContent = `Location accuracy: about ±${accuracyFeet} ft`;
-  locateButton.textContent = "Center on me";
+  showLocationStatus(`Location accuracy: about ±${accuracyFeet} ft`, 5000);
+  locateButton.setAttribute("aria-label", "Center map on my location");
+  locateButton.title = "Center on my location";
   locateButton.disabled = false;
 
   const propertyBounds = boundaryLayer.getBounds();
@@ -261,8 +271,9 @@ function handleLocationError(error) {
     2: "Your location is currently unavailable.",
     3: "Location request timed out. Try again.",
   };
-  locationStatus.textContent = messages[error.code] || "Could not determine your location.";
-  locateButton.textContent = "Try again";
+  showLocationStatus(messages[error.code] || "Could not determine your location.");
+  locateButton.setAttribute("aria-label", "Try location again");
+  locateButton.title = "Try location again";
   locateButton.disabled = false;
 }
 
@@ -278,7 +289,7 @@ async function loadGeoJson(url) {
   return response.json();
 }
 
-function buildOutsideMask(boundaryData) {
+function buildOutsideMask(boundaryData, corridorData) {
   const bounds = L.geoJSON(boundaryData).getBounds().pad(2);
   const outerRing = [
     [bounds.getWest(), bounds.getSouth()],
@@ -290,13 +301,16 @@ function buildOutsideMask(boundaryData) {
   const parcelHoles = boundaryData.features.map(
     (feature) => feature.geometry.coordinates[0],
   );
+  const corridorHoles = corridorData.features.map(
+    (feature) => feature.geometry.coordinates[0],
+  );
 
   return {
     type: "Feature",
     properties: { purpose: "Dim unowned surroundings" },
     geometry: {
       type: "Polygon",
-      coordinates: [outerRing, ...parcelHoles],
+      coordinates: [outerRing, ...parcelHoles, ...corridorHoles],
     },
   };
 }
@@ -316,20 +330,43 @@ function installOutsideHatchPattern() {
   const background = document.createElementNS(svgNamespace, "rect");
   background.setAttribute("width", "18");
   background.setAttribute("height", "18");
-  background.setAttribute("fill", "#6f451f");
-  background.setAttribute("fill-opacity", "0.13");
+  background.setAttribute("fill", "#fff4dc");
+  background.setAttribute("fill-opacity", "0.34");
 
   const hatch = document.createElementNS(svgNamespace, "path");
   hatch.setAttribute("d", "M-4 4 L4 -4 M0 18 L18 0 M14 22 L22 14");
   hatch.setAttribute("fill", "none");
-  hatch.setAttribute("stroke", "#9b5d25");
-  hatch.setAttribute("stroke-opacity", "0.48");
-  hatch.setAttribute("stroke-width", "1.5");
+  hatch.setAttribute("stroke", "#934c13");
+  hatch.setAttribute("stroke-opacity", "0.76");
+  hatch.setAttribute("stroke-width", "1.65");
   hatch.setAttribute("stroke-dasharray", "5 4");
 
   pattern.append(background, hatch);
   defs.append(pattern);
   svg.prepend(defs);
+}
+
+function openInfo() {
+  infoOverlay.hidden = false;
+  infoButton.setAttribute("aria-expanded", "true");
+  infoClose.focus();
+}
+
+function closeInfo() {
+  infoOverlay.hidden = true;
+  infoButton.setAttribute("aria-expanded", "false");
+  infoButton.focus();
+}
+
+function showLocationStatus(message, hideAfter = 0) {
+  locationStatus.textContent = message;
+  locationPanel.dataset.showStatus = "true";
+  window.clearTimeout(locationStatusTimer);
+  if (hideAfter) {
+    locationStatusTimer = window.setTimeout(() => {
+      locationPanel.dataset.showStatus = "false";
+    }, hideAfter);
+  }
 }
 
 function escapeHtml(value) {

@@ -11,20 +11,30 @@
 </head>
 <body>
   <main id="map" aria-label="Interactive map of the approximate 457 Property boundaries"></main>
-  <a class="home-link" href="index.html" aria-label="Return to the home page">
+  <a class="map-control home-link" href="index.html" aria-label="Return to the home page" title="Home">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"></path></svg>
-    <span>Home</span>
   </a>
-  <aside class="disclaimer" role="note">
-    <strong>Approximate boundary — not a survey</strong>
-    <span>For orientation only. Do not rely on this map for legal or boundary work.</span>
-  </aside>
+
+  <button class="map-control info-button" id="info-button" type="button" aria-label="Map information" aria-expanded="false" title="Map information">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.5v6M12 7.5h.01"></path></svg>
+  </button>
+
+  <div class="info-overlay" id="info-overlay" hidden>
+    <section class="info-dialog" role="dialog" aria-modal="true" aria-labelledby="info-title">
+      <button class="info-close" id="info-close" type="button" aria-label="Close map information">×</button>
+      <h2 id="info-title">Approximate boundary — not a survey</h2>
+      <p>For orientation only. Do not rely on this map for legal or boundary work.</p>
+    </section>
+  </div>
+
   <div class="location-panel" aria-live="polite">
-    <p id="location-status">Tap Find me to show your location.</p>
-    <button id="locate-button" type="button">Find me</button>
+    <p id="location-status">Tap the location arrow to show your location.</p>
+    <button class="map-control" id="locate-button" type="button" aria-label="Show my location" title="Show my location">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19.5 4.5-7.1 15-2.1-6.8-6.8-2.1 16-6.1Z"></path></svg>
+    </button>
   </div>
   <noscript>This map requires JavaScript.</noscript>
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="app.js?v=20260802-5"></script>
+  <script src="app.js?v=20260803-1"></script>
 </body>
 </html>

@@ -9,7 +9,7 @@ A phone-friendly landing page and orientation map showing the approximate 457 Pr
 - `index.html` — responsive landing page
 - `home.css` — landing-page appearance
 - `map.html` — interactive map page
-- `styles.css` — map appearance and mobile layout
+- `styles.css` — map appearance, responsive icon controls, and Info overlay
 - `app.js` — map behavior and live location
 - `BACKLOG.md` — living feature and improvement list
 - `data/boundary.geojson` — validated parcel polygons

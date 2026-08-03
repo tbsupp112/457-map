@@ -12,7 +12,7 @@ body {
   min-height: 100dvh;
   margin: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto 1fr;
   background: radial-gradient(circle at 78% 18%, rgba(104, 156, 131, 0.14), transparent 32rem), linear-gradient(145deg, #f8f6ef 0%, #eee9de 100%);
 }
 
@@ -68,9 +68,22 @@ body {
 .map-card span { max-width: 290px; font-size: 0.92rem; line-height: 1.5; }
 .map-card:hover, .map-card:focus-visible { color: #102b22; transform: translateY(-4px); }
 .map-card:focus-visible { border-radius: 8px; outline: 3px solid #b36c2d; outline-offset: 8px; }
-footer {
-  padding: 0 clamp(22px, 7vw, 92px) calc(22px + env(safe-area-inset-bottom));
-  color: #6a746f;
-  font-size: 0.75rem;
-}
 @media (max-width: 600px) { .home-main { justify-content: center; } }
+
+@media (min-width: 601px) {
+  body {
+    align-content: center;
+    justify-items: center;
+    row-gap: 42px;
+  }
+
+  .home-header {
+    padding: 0;
+    text-align: center;
+  }
+
+  .home-main {
+    padding: 0;
+    justify-content: center;
+  }
+}

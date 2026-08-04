@@ -273,6 +273,28 @@ button { font: inherit; }
   box-shadow: 0 0 0 2px rgba(26, 80, 145, 0.78), 0 2px 5px rgba(0, 0, 0, 0.45);
 }
 
+.location-dot--off {
+  background: #dc2743;
+  box-shadow: 0 0 0 2px rgba(126, 14, 32, 0.82), 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+
+.leaflet-tooltip.off-property-tooltip {
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.88);
+  border-radius: 7px;
+  color: #ffffff;
+  background: rgba(126, 14, 32, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.34);
+  font-size: 0.8rem;
+  font-weight: 750;
+  pointer-events: none;
+}
+
+.leaflet-tooltip.off-property-tooltip::before {
+  border-top-color: rgba(126, 14, 32, 0.94);
+  pointer-events: none;
+}
+
 @media (min-width: 721px) {
   .leaflet-control-zoom a {
     width: 34px !important;

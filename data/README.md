@@ -18,7 +18,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 - `trails/walking-trails.geojson` — walking-trail centerlines.
 - Repeated passes were consolidated into median positions by distance along each trail, then lightly smoothed and simplified.
 - The Pavilion-side intersection is placed 5 m northeast of the Pavilion point so the symbols do not overlap. The trail's other endpoint is snapped 1.5 m to Mountain Drive.
-- At Garden Cut Through, three local zone-edge vertices are pulled approximately 3.5 m inward so the trail ends at the zone rather than overlapping it.
+- At Garden Cut Through, three local zone-edge vertices are pulled approximately 7.5 m inward in total so the trail ends at the zone rather than overlapping it.
 
 ## Landmarks
 

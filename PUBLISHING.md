@@ -12,6 +12,8 @@ This project intentionally uses a user-controlled publishing process. Codex edit
 6. Merge the pull request. GitHub Pages publishes from `main`.
 7. Confirm the change on both phone and desktop before marking it completed in `BACKLOG.md`.
 
+In GitHub's file-delete view, seeing `This file was deleted` is only the proposed diff. Select **Commit changes** (or **Propose changes**), save it to the current update branch, and merge that branch's pull request before expecting the deletion to appear on `main`. Always check the branch selector when verifying whether a file still exists.
+
 Do not upload directly to `main` for normal changes. Keep one logical change set per pull request so a problem can be reversed cleanly.
 
 ## Codex update handoff format

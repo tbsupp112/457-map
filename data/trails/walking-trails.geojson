@@ -51,15 +51,15 @@
         "source_files": [
           "Garden_cut_through.gpx"
         ],
-            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. Field endpoint moved with a 3.5 m local inward adjustment to the Front Field Zone edge so the trail ends cleanly at, rather than overlapping, the zone.",
-            "length_m": 23.8
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. Field endpoint moved with a 7.5 m total local inward adjustment to the Front Field Zone edge so the trail ends cleanly at, rather than overlapping, the zone.",
+            "length_m": 27.0
       },
       "geometry": {
         "type": "LineString",
         "coordinates": [
           [
-            -73.835082,
-            43.3589804
+            -73.8350419,
+            43.3589593
           ],
           [
             -73.8351049,

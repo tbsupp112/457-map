@@ -37,14 +37,14 @@
           "front-field-zone"
         ],
         "status": "confirmed in person; mapped approximately",
-        "local_inward_adjustment_m": 3.5,
+        "local_inward_adjustment_m": 7.5,
         "note": "Trail endpoint and the locally inset zone boundary share this exact coordinate for clean topology."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -73.835082,
-          43.3589804
+          -73.8350419,
+          43.3589593
         ]
       }
     },

@@ -270,7 +270,7 @@ def main() -> None:
     field_center = mean_point(field_ring)
     for offset in (-1, 0, 1):
         index = (garden_intersection_index + offset) % len(field_ring)
-        field_ring[index] = move_toward(field_ring[index], field_center, 3.5)
+        field_ring[index] = move_toward(field_ring[index], field_center, 7.5)
     garden_intersection = field_ring[garden_intersection_index]
     garden[garden_endpoint] = garden_intersection
 
@@ -341,7 +341,7 @@ def main() -> None:
             "status": "rough / provisional",
             "recorded_on": "2026-08-04",
             "source_files": ["Front_field_zone.gpx"],
-            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. Three edge vertices at Garden Cut Through moved 3.5 m inward so the trail ends cleanly at the zone boundary.",
+            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. Three edge vertices at Garden Cut Through moved 7.5 m inward so the trail ends cleanly at the zone boundary.",
             "note": "Rough test zone; not a surveyed or exact boundary."
         })
     ])
@@ -362,7 +362,7 @@ def main() -> None:
             "type": "confirmed intersection",
             "features": ["garden-cut-through", "front-field-zone"],
             "status": "confirmed in person; mapped approximately",
-            "local_inward_adjustment_m": 3.5,
+            "local_inward_adjustment_m": 7.5,
             "note": "Trail endpoint and the locally inset zone boundary share this exact coordinate for clean topology."
         }),
         feature("Point", to_lonlat(road_trail_intersection), {
@@ -401,7 +401,7 @@ def main() -> None:
         "pavilion_intersection_offset_m": 5.0,
         "road_trail_snap_adjustment_m": round(road_trail_snap_distance, 1),
         "garden_field_snap_adjustment_m": round(garden_snap_distance, 1),
-        "garden_zone_inward_adjustment_m": 3.5,
+        "garden_zone_inward_adjustment_m": 7.5,
         "field_vertices": len(field_ring),
     }
     print(json.dumps(summary, indent=2))

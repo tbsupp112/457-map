@@ -15,7 +15,7 @@
         "source_files": [
           "Front_field_zone.gpx"
         ],
-            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. Three local edge vertices at Garden Cut Through were moved approximately 3.5 m inward so the trail ends cleanly at the zone boundary.",
+            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. Three local edge vertices at Garden Cut Through were moved approximately 7.5 m inward in total so the trail ends cleanly at the zone boundary.",
         "note": "Rough test zone; not a surveyed or exact boundary."
       },
       "geometry": {
@@ -87,16 +87,16 @@
               43.358878
             ],
             [
-              -73.8350726,
-              43.3589682
+              -73.8350301,
+              43.3589499
             ],
             [
-              -73.835082,
-              43.3589804
+              -73.8350419,
+              43.3589593
             ],
             [
-              -73.8351093,
-              43.3590211
+              -73.8350751,
+              43.3589951
             ],
             [
               -73.835075,

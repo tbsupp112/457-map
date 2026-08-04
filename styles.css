@@ -212,6 +212,30 @@ button { font: inherit; }
   content: "";
 }
 
+.layer-reset-section {
+  margin: 7px -4px -1px;
+  padding: 7px 4px 0;
+  border-top: 1px solid #d7d7d7;
+}
+
+.layer-reset-button {
+  width: 100%;
+  padding: 6px 9px;
+  border: 1px solid #b9c1bd;
+  border-radius: 5px;
+  color: #173a2f;
+  background: #f5f7f6;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.layer-reset-button:hover,
+.layer-reset-button:focus-visible {
+  border-color: #648177;
+  background: #ffffff;
+}
+
 .leaflet-control-attribution {
   max-width: 65vw;
   font-size: 9px !important;

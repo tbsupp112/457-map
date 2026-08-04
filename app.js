@@ -2,9 +2,20 @@
 
 const PROPERTY_BOUNDS_PADDING = [28, 28];
 const DEFAULT_MAX_ZOOM = 21;
+const RAPID_DOUBLE_TAP_MS = 250;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
+const DEFAULT_OVERLAY_VISIBILITY = Object.freeze({
+  corners: false,
+  roads: true,
+  trails: true,
+  landmarks: true,
+  zones: true,
+  intersections: false,
+});
 const savedMapPreferences = readMapPreferences();
 let preferencesReady = false;
+let pendingFeaturePopupTimer = null;
+let suppressFeaturePopupsUntil = 0;
 
 const map = L.map("map", {
   zoomControl: true,
@@ -193,12 +204,22 @@ const boundaryLayer = L.geoJSON(null, {
   },
 }).addTo(map);
 
-const parcelInteractionLayer = L.geoJSON(null, {
-  style(feature) {
-    return feature.properties.name === "Main Parcel"
-      ? { color: "#000000", weight: 16, opacity: 0.001, fill: false }
-      : { stroke: false, fillColor: "#000000", fillOpacity: 0.001 };
+const mainBoundaryInteractionLayer = L.geoJSON(null, {
+  style: { color: "#000000", weight: 12, opacity: 0.001 },
+  onEachFeature(feature, layer) {
+    const description = feature.properties.popup_description || feature.properties.note;
+    layer.bindPopup(
+      `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
+        `${escapeHtml(description)}`,
+    );
   },
+}).addTo(map);
+
+const sliverInteractionLayer = L.geoJSON(null, {
+  filter(feature) {
+    return feature.properties.name === "Sliver";
+  },
+  style: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
   onEachFeature(feature, layer) {
     const description = feature.properties.popup_description || feature.properties.note;
     layer.bindPopup(
@@ -221,7 +242,7 @@ const cornersLayer = L.geoJSON(null, {
 });
 addOverlayIfEnabled(cornersLayer, "corners", false);
 
-L.control
+const layerControl = L.control
   .layers(
     {
       "NYS aerial (2022)": nysAerial,
@@ -238,6 +259,8 @@ L.control
     { collapsed: true, position: "topright" },
   )
   .addTo(map);
+
+installLayerResetButton(layerControl);
 
 map.on("baselayerchange overlayadd overlayremove moveend", saveMapPreferences);
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
@@ -264,7 +287,8 @@ Promise.all([
   .then(([boundaryData, cornerData, corridorData]) => {
     boundaryHalo.addData(boundaryData);
     boundaryLayer.addData(boundaryData);
-    parcelInteractionLayer.addData(boundaryData);
+    mainBoundaryInteractionLayer.addData(buildMainBoundaryLine(boundaryData));
+    sliverInteractionLayer.addData(boundaryData);
     cornersLayer.addData(cornerData);
     corridorLayer.addData(corridorData);
     outsideMaskLayer.addData(buildOutsideMask(boundaryData, corridorData));
@@ -273,7 +297,8 @@ Promise.all([
     corridorLayer.bringToFront();
     boundaryHalo.bringToFront();
     boundaryLayer.bringToFront();
-    parcelInteractionLayer.bringToFront();
+    mainBoundaryInteractionLayer.bringToFront();
+    sliverInteractionLayer.bringToFront();
     if (hasSavedMapView(savedMapPreferences)) {
       map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
     } else {
@@ -439,6 +464,27 @@ async function loadGeoJson(url) {
   return response.json();
 }
 
+function buildMainBoundaryLine(boundaryData) {
+  const mainParcel = boundaryData.features.find(
+    (feature) => feature.properties.name === "Main Parcel",
+  );
+  if (!mainParcel) return { type: "FeatureCollection", features: [] };
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: mainParcel.properties,
+        geometry: {
+          type: "LineString",
+          coordinates: mainParcel.geometry.coordinates[0],
+        },
+      },
+    ],
+  };
+}
+
 function buildOutsideMask(boundaryData, corridorData) {
   const bounds = L.geoJSON(boundaryData).getBounds().pad(2);
   const outerRing = [
@@ -527,10 +573,23 @@ function hideLocationStatus() {
 function bindMapFeature(layer, feature, detail) {
   const name = escapeHtml(feature.properties.name);
   const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
-  if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+  const popupHtml = `<strong>${name}</strong><br>${safeDetail}`;
+  const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  if (hasFinePointer) {
     layer.bindTooltip(name, { sticky: true, direction: "top" });
+    layer.bindPopup(popupHtml);
+    return;
   }
-  layer.bindPopup(`<strong>${name}</strong><br>${safeDetail}`);
+
+  layer.on("click", (event) => {
+    window.clearTimeout(pendingFeaturePopupTimer);
+    if (performance.now() < suppressFeaturePopupsUntil) return;
+
+    pendingFeaturePopupTimer = window.setTimeout(() => {
+      if (performance.now() < suppressFeaturePopupsUntil) return;
+      L.popup().setLatLng(event.latlng).setContent(popupHtml).openOn(map);
+    }, RAPID_DOUBLE_TAP_MS + 20);
+  });
 }
 
 function readMapPreferences() {
@@ -558,6 +617,53 @@ function addOverlayIfEnabled(layer, key, enabledByDefault) {
   if (typeof savedValue === "boolean" ? savedValue : enabledByDefault) {
     layer.addTo(map);
   }
+}
+
+function installLayerResetButton(control) {
+  const list = control.getContainer().querySelector(".leaflet-control-layers-list");
+  const resetSection = document.createElement("div");
+  resetSection.className = "layer-reset-section";
+  const resetButton = document.createElement("button");
+  resetButton.className = "layer-reset-button";
+  resetButton.type = "button";
+  resetButton.textContent = "Reset to default";
+  resetButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    resetMapToDefaults();
+  });
+  resetSection.append(resetButton);
+  list.append(resetSection);
+  L.DomEvent.disableClickPropagation(resetSection);
+}
+
+function resetMapToDefaults() {
+  map.closePopup();
+  if (map.hasLayer(topoMap)) map.removeLayer(topoMap);
+  if (!map.hasLayer(nysAerial)) map.addLayer(nysAerial);
+
+  const overlays = {
+    corners: cornersLayer,
+    roads: roadsGroup,
+    trails: trailsLayer,
+    landmarks: landmarksLayer,
+    zones: zonesLayer,
+    intersections: intersectionsLayer,
+  };
+  Object.entries(overlays).forEach(([key, layer]) => {
+    const shouldShow = DEFAULT_OVERLAY_VISIBILITY[key];
+    if (shouldShow && !map.hasLayer(layer)) map.addLayer(layer);
+    if (!shouldShow && map.hasLayer(layer)) map.removeLayer(layer);
+  });
+
+  if (boundaryLayer.getBounds().isValid()) {
+    map.fitBounds(boundaryLayer.getBounds(), {
+      paddingTopLeft: PROPERTY_BOUNDS_PADDING,
+      paddingBottomRight: PROPERTY_BOUNDS_PADDING,
+      maxZoom: 18,
+    });
+  }
+  saveMapPreferences();
 }
 
 function saveMapPreferences() {
@@ -604,8 +710,8 @@ function installMobileDoubleTapZoom() {
       const tap = { time: performance.now(), x: touch.clientX, y: touch.clientY };
       const isDoubleTap =
         previousTap &&
-        tap.time - previousTap.time <= 325 &&
-        Math.hypot(tap.x - previousTap.x, tap.y - previousTap.y) <= 30;
+        tap.time - previousTap.time <= RAPID_DOUBLE_TAP_MS &&
+        Math.hypot(tap.x - previousTap.x, tap.y - previousTap.y) <= 24;
 
       if (!isDoubleTap) {
         previousTap = tap;
@@ -615,11 +721,15 @@ function installMobileDoubleTapZoom() {
       event.preventDefault();
       event.stopPropagation();
       previousTap = null;
+      window.clearTimeout(pendingFeaturePopupTimer);
+      pendingFeaturePopupTimer = null;
+      suppressFeaturePopupsUntil = performance.now() + RAPID_DOUBLE_TAP_MS;
+      map.closePopup();
       const bounds = container.getBoundingClientRect();
       const point = L.point(tap.x - bounds.left, tap.y - bounds.top);
       map.setZoomAround(point, Math.min(map.getZoom() + 1, map.getMaxZoom()));
     },
-    { passive: false },
+    { passive: false, capture: true },
   );
 }
 

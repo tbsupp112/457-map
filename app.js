@@ -248,8 +248,7 @@ function updateLocation(position) {
     }),
   }).addTo(locationLayer);
 
-  const accuracyFeet = Math.round(accuracy * 3.28084);
-  showLocationStatus(`Location accuracy: about ±${accuracyFeet} ft`, 5000);
+  hideLocationStatus();
   locateButton.setAttribute("aria-label", "Center map on my location");
   locateButton.title = "Center on my location";
   locateButton.disabled = false;
@@ -367,6 +366,11 @@ function showLocationStatus(message, hideAfter = 0) {
       locationPanel.dataset.showStatus = "false";
     }, hideAfter);
   }
+}
+
+function hideLocationStatus() {
+  window.clearTimeout(locationStatusTimer);
+  locationPanel.dataset.showStatus = "false";
 }
 
 function escapeHtml(value) {

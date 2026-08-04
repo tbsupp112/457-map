@@ -17,13 +17,14 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 - `trails/walking-trails.geojson` — walking-trail centerlines.
 - Repeated passes were consolidated into median positions by distance along each trail, then lightly smoothed and simplified.
-- Pavilion Side Trail is snapped 3.4 m to the processed Pavilion point.
-- Garden Cut Through is snapped 4.6 m to the processed Front Field Zone edge.
+- The Pavilion-side intersection is placed 5 m northeast of the Pavilion point so the symbols do not overlap. The trail's other endpoint is snapped 1.5 m to Mountain Drive.
+- At Garden Cut Through, three local zone-edge vertices are pulled approximately 3.5 m inward so the trail ends at the zone rather than overlapping it.
 
 ## Landmarks
 
-- `landmarks/landmarks.geojson` — central point locations for Home and Pavilion.
+- `landmarks/buildings.geojson` — central point locations for Home and Pavilion.
 - Each occupied two-meter spatial cell from the walked building extent counts once. This prevents time spent standing in one location from biasing the result.
+- Future natural landmarks and miscellaneous landmarks should use separate GeoJSON files in this folder. Empty placeholder files are intentionally avoided.
 
 ## Zones
 
@@ -34,6 +35,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 - `intersections/intersections.geojson` — confirmed real-world connections between mapped features.
 - This layer is hidden by default. Shared coordinates enforce clean topology and can later support intersection filtering or sign planning.
+- It includes three confirmed joins plus two open connection points whose adjoining features have not yet been mapped.
 
 ## Reprocessing
 

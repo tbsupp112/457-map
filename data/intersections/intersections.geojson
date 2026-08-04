@@ -1,0 +1,52 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Confirmed feature intersections"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pavilion-pavilion-side-trail",
+        "name": "Pavilion / Pavilion Side Trail",
+        "type": "confirmed intersection",
+        "features": [
+          "pavilion",
+          "pavilion-side-trail"
+        ],
+        "status": "confirmed in person; mapped approximately",
+        "snap_adjustment_m": 3.4,
+        "note": "Trail endpoint and landmark point share this exact coordinate for clean topology."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8353641,
+          43.3592142
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "garden-cut-through-front-field-zone",
+        "name": "Garden Cut Through / Front Field Zone",
+        "type": "confirmed intersection",
+        "features": [
+          "garden-cut-through",
+          "front-field-zone"
+        ],
+        "status": "confirmed in person; mapped approximately",
+        "snap_adjustment_m": 4.6,
+        "note": "Trail endpoint and zone boundary share this exact coordinate for clean topology."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8351171,
+          43.3589988
+        ]
+      }
+    }
+  ]
+}

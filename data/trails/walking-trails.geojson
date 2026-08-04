@@ -1,0 +1,80 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Walking trails"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pavilion-side-trail",
+        "name": "Pavilion Side Trail",
+        "type": "walking trail",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Pavilion_side_trail.gpx"
+        ],
+        "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; pavilion endpoint snapped to the processed Pavilion point.",
+        "length_m": 34.9
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8353641,
+            43.3592142
+          ],
+          [
+            -73.8353505,
+            43.3593315
+          ],
+          [
+            -73.8354239,
+            43.3594199
+          ],
+          [
+            -73.8354665,
+            43.359508
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "garden-cut-through",
+        "name": "Garden Cut Through",
+        "type": "walking trail",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Garden_cut_through.gpx"
+        ],
+        "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; field endpoint snapped to the processed Front Field Zone boundary.",
+        "length_m": 21.7
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8351171,
+            43.3589988
+          ],
+          [
+            -73.8351049,
+            43.3590796
+          ],
+          [
+            -73.8351636,
+            43.359115
+          ],
+          [
+            -73.8352395,
+            43.359134
+          ]
+        ]
+      }
+    }
+  ]
+}

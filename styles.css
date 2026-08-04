@@ -173,21 +173,42 @@ button { font: inherit; }
 .leaflet-control-layers-toggle {
   width: var(--control-size) !important;
   height: var(--control-size) !important;
+  background-image: url("vendor/leaflet/images/layers.png") !important;
   background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 26px 26px !important;
 }
 
 .leaflet-control-layers-expanded {
   position: relative;
-  transform: translateX(calc(-1 * (var(--control-size) + 8px)));
-  transform-origin: top right;
+  width: var(--control-size);
+  height: var(--control-size);
+  padding: 0;
+  color: #173a2f;
+}
+
+.leaflet-control-layers-expanded .leaflet-control-layers-toggle {
+  display: block;
+}
+
+.leaflet-control-layers-expanded .leaflet-control-layers-list {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 8px);
+  min-width: max-content;
+  padding: 6px 10px 6px 6px;
+  border-radius: 5px;
+  color: #333333;
+  background: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
 }
 
 .leaflet-control-layers-expanded::after {
   position: absolute;
   top: 0;
-  right: calc(-1 * (var(--control-size) + 8px));
-  width: calc(var(--control-size) + 8px);
-  height: 100%;
+  right: 100%;
+  width: 8px;
+  height: var(--control-size);
   content: "";
 }
 

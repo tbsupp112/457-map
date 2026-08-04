@@ -192,6 +192,27 @@ def closest_point_on_ring(point, ring):
     return best_point, best_distance, best_segment
 
 
+def closest_point_on_line(point, line):
+    best_point, best_distance, best_segment = None, math.inf, None
+    for index, (start, end) in enumerate(zip(line, line[1:])):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        denominator = dx * dx + dy * dy
+        t = 0 if denominator == 0 else max(0, min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / denominator))
+        candidate = start[0] + t * dx, start[1] + t * dy
+        candidate_distance = distance(point, candidate)
+        if candidate_distance < best_distance:
+            best_point, best_distance, best_segment = candidate, candidate_distance, index
+    return best_point, best_distance, best_segment
+
+
+def move_toward(start, target, amount):
+    total = distance(start, target)
+    if total == 0:
+        return start
+    ratio = min(1.0, amount / total)
+    return start[0] + (target[0] - start[0]) * ratio, start[1] + (target[1] - start[1]) * ratio
+
+
 def line_length(points):
     return sum(distance(a, b) for a, b in zip(points, points[1:]))
 
@@ -224,8 +245,17 @@ def main() -> None:
     pavilion_trail = distance_binned_centerline([pavilion_trail_raw], spacing=3.0, smooth_passes=1)
 
     pavilion_endpoint = min((0, len(pavilion_trail) - 1), key=lambda index: distance(pavilion_trail[index], pavilion))
-    pavilion_snap_distance = distance(pavilion_trail[pavilion_endpoint], pavilion)
-    pavilion_trail[pavilion_endpoint] = pavilion
+    pavilion_neighbor = 1 if pavilion_endpoint == 0 else len(pavilion_trail) - 2
+    pavilion_intersection = move_toward(pavilion, pavilion_trail[pavilion_neighbor], 5.0)
+    pavilion_trail[pavilion_endpoint] = pavilion_intersection
+
+    pavilion_road_endpoint = len(pavilion_trail) - 1 if pavilion_endpoint == 0 else 0
+    road_trail_intersection, road_trail_snap_distance, road_segment = closest_point_on_line(
+        pavilion_trail[pavilion_road_endpoint], mountain_drive
+    )
+    pavilion_trail[pavilion_road_endpoint] = road_trail_intersection
+    if distance(road_trail_intersection, mountain_drive[road_segment]) > 0.05 and distance(road_trail_intersection, mountain_drive[road_segment + 1]) > 0.05:
+        mountain_drive.insert(road_segment + 1, road_trail_intersection)
 
     garden_endpoint = min((0, len(garden) - 1), key=lambda index: closest_point_on_ring(garden[index], field_ring)[1])
     garden_intersection, garden_snap_distance, field_segment = closest_point_on_ring(garden[garden_endpoint], field_ring)
@@ -233,6 +263,16 @@ def main() -> None:
     segment_end = (field_segment + 1) % len(field_ring)
     if distance(garden_intersection, field_ring[field_segment]) > 0.05 and distance(garden_intersection, field_ring[segment_end]) > 0.05:
         field_ring.insert(field_segment + 1, garden_intersection)
+        garden_intersection_index = field_segment + 1
+    else:
+        garden_intersection_index = min(range(len(field_ring)), key=lambda index: distance(field_ring[index], garden_intersection))
+
+    field_center = mean_point(field_ring)
+    for offset in (-1, 0, 1):
+        index = (garden_intersection_index + offset) % len(field_ring)
+        field_ring[index] = move_toward(field_ring[index], field_center, 3.5)
+    garden_intersection = field_ring[garden_intersection_index]
+    garden[garden_endpoint] = garden_intersection
 
     write_collection("roads/dirt-roads.geojson", "Dirt roads", [
         feature("LineString", [to_lonlat(p) for p in mountain_drive], {
@@ -243,7 +283,7 @@ def main() -> None:
             "provisional": True,
             "recorded_on": "2026-08-04",
             "source_files": ["New_rd_down.gpx", "New_Road_up.gpx"],
-            "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained.",
+            "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction.",
             "length_m": round(line_length(mountain_drive), 1),
             "note": "New/continued dirt road following an older route. Replace when better GPS coverage is available."
         })
@@ -257,7 +297,7 @@ def main() -> None:
             "status": "provisional",
             "recorded_on": "2026-08-04",
             "source_files": ["Pavilion_side_trail.gpx"],
-            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; pavilion endpoint snapped to the processed Pavilion point.",
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. South endpoint placed 5 m from the Pavilion point along the trail; north endpoint snapped to Mountain Drive.",
             "length_m": round(line_length(pavilion_trail), 1)
         }),
         feature("LineString", [to_lonlat(p) for p in garden], {
@@ -267,12 +307,12 @@ def main() -> None:
             "status": "provisional",
             "recorded_on": "2026-08-04",
             "source_files": ["Garden_cut_through.gpx"],
-            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; field endpoint snapped to the processed Front Field Zone boundary.",
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. Field endpoint moved with the local inward zone-edge adjustment so the trail ends cleanly at the boundary.",
             "length_m": round(line_length(garden), 1)
         })
     ])
 
-    write_collection("landmarks/landmarks.geojson", "Landmarks", [
+    write_collection("landmarks/buildings.geojson", "Building landmarks", [
         feature("Point", to_lonlat(home), {
             "id": "home",
             "name": "Home",
@@ -301,20 +341,20 @@ def main() -> None:
             "status": "rough / provisional",
             "recorded_on": "2026-08-04",
             "source_files": ["Front_field_zone.gpx"],
-            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed.",
+            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. Three edge vertices at Garden Cut Through moved 3.5 m inward so the trail ends cleanly at the zone boundary.",
             "note": "Rough test zone; not a surveyed or exact boundary."
         })
     ])
 
     write_collection("intersections/intersections.geojson", "Confirmed feature intersections", [
-        feature("Point", to_lonlat(pavilion), {
+        feature("Point", to_lonlat(pavilion_intersection), {
             "id": "pavilion-pavilion-side-trail",
             "name": "Pavilion / Pavilion Side Trail",
             "type": "confirmed intersection",
             "features": ["pavilion", "pavilion-side-trail"],
             "status": "confirmed in person; mapped approximately",
-            "snap_adjustment_m": round(pavilion_snap_distance, 1),
-            "note": "Trail endpoint and landmark point share this exact coordinate for clean topology."
+            "map_offset_from_building_m": 5.0,
+            "note": "Placed 5 m northeast of the Pavilion point along the trail so the building and intersection symbols remain distinct."
         }),
         feature("Point", to_lonlat(garden_intersection), {
             "id": "garden-cut-through-front-field-zone",
@@ -322,8 +362,33 @@ def main() -> None:
             "type": "confirmed intersection",
             "features": ["garden-cut-through", "front-field-zone"],
             "status": "confirmed in person; mapped approximately",
-            "snap_adjustment_m": round(garden_snap_distance, 1),
-            "note": "Trail endpoint and zone boundary share this exact coordinate for clean topology."
+            "local_inward_adjustment_m": 3.5,
+            "note": "Trail endpoint and the locally inset zone boundary share this exact coordinate for clean topology."
+        }),
+        feature("Point", to_lonlat(road_trail_intersection), {
+            "id": "mountain-drive-pavilion-side-trail",
+            "name": "Mountain Drive / Pavilion Side Trail",
+            "type": "confirmed intersection",
+            "features": ["mountain-drive", "pavilion-side-trail"],
+            "status": "confirmed in person; mapped approximately",
+            "snap_adjustment_m": round(road_trail_snap_distance, 1),
+            "note": "The trail endpoint and an inserted Mountain Drive vertex share this exact coordinate."
+        }),
+        feature("Point", to_lonlat(mountain_drive[0]), {
+            "id": "mountain-drive-southwest-end",
+            "name": "Mountain Drive Southwest Connection",
+            "type": "open connection point",
+            "features": ["mountain-drive"],
+            "status": "adjoining feature not yet mapped",
+            "note": "Known connection point at the southwest end of Mountain Drive; the intersecting feature will be added later."
+        }),
+        feature("Point", to_lonlat(garden[len(garden) - 1 if garden_endpoint == 0 else 0]), {
+            "id": "garden-cut-through-open-end",
+            "name": "Garden Cut Through Open Connection",
+            "type": "open connection point",
+            "features": ["garden-cut-through"],
+            "status": "adjoining feature not yet mapped",
+            "note": "Known connection point at the non-field end of Garden Cut Through; the intersecting feature will be added later."
         })
     ])
 
@@ -333,8 +398,10 @@ def main() -> None:
         "mountain_drive_length_m": round(line_length(mountain_drive), 1),
         "pavilion_trail_length_m": round(line_length(pavilion_trail), 1),
         "garden_cut_through_length_m": round(line_length(garden), 1),
-        "pavilion_snap_adjustment_m": round(pavilion_snap_distance, 1),
+        "pavilion_intersection_offset_m": 5.0,
+        "road_trail_snap_adjustment_m": round(road_trail_snap_distance, 1),
         "garden_field_snap_adjustment_m": round(garden_snap_distance, 1),
+        "garden_zone_inward_adjustment_m": 3.5,
         "field_vertices": len(field_ring),
     }
     print(json.dumps(summary, indent=2))

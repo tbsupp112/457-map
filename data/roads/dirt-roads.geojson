@@ -17,7 +17,7 @@
           "New_rd_down.gpx",
           "New_Road_up.gpx"
         ],
-        "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained.",
+            "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road.",
         "length_m": 199.3,
         "note": "New/continued dirt road following an older route. Replace when better GPS coverage is available."
       },
@@ -43,6 +43,10 @@
           [
             -73.8354957,
             43.3594944
+          ],
+          [
+            -73.8354833,
+            43.3595137
           ],
           [
             -73.8354316,

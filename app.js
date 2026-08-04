@@ -1,11 +1,15 @@
 "use strict";
 
 const PROPERTY_BOUNDS_PADDING = [28, 28];
-const DEFAULT_MAX_ZOOM = 19;
+const DEFAULT_MAX_ZOOM = 21;
+const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
+const savedMapPreferences = readMapPreferences();
+let preferencesReady = false;
 
 const map = L.map("map", {
   zoomControl: true,
   maxZoom: DEFAULT_MAX_ZOOM,
+  doubleClickZoom: true,
   preferCanvas: true,
 });
 
@@ -15,10 +19,11 @@ map.setView([43.3596, -73.8348], 17);
 const nysAerial = L.tileLayer(
   "https://orthos.its.ny.gov/arcgis/rest/services/wms/2022/MapServer/tile/{z}/{y}/{x}",
   {
-    maxZoom: 19,
+    maxZoom: DEFAULT_MAX_ZOOM,
+    maxNativeZoom: 19,
     attribution: "Imagery © NYS ITS Geospatial Services (2022)",
   },
-).addTo(map);
+);
 
 const topoMap = L.tileLayer(
   "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
@@ -30,6 +35,8 @@ const topoMap = L.tileLayer(
       "Map data © OpenStreetMap contributors, SRTM | Map style © OpenTopoMap (CC-BY-SA)",
   },
 );
+
+(savedMapPreferences.baseMap === "topo" ? topoMap : nysAerial).addTo(map);
 
 const outsideMaskRenderer = L.svg({ padding: 0.5 });
 const outsideMaskLayer = L.geoJSON(null, {
@@ -88,25 +95,15 @@ const roadsLayer = L.geoJSON(null, {
     bindMapFeature(layer, feature, `${feature.properties.status}. ${feature.properties.note}`);
   },
 });
-const roadsGroup = L.layerGroup([roadHalo, roadsLayer]).addTo(map);
-
-const trailHalo = L.geoJSON(null, {
-  interactive: false,
-  style: {
-    color: "#253f36",
-    weight: 6,
-    opacity: 0.72,
-    lineCap: "round",
-    lineJoin: "round",
-  },
-});
+const roadsGroup = L.layerGroup([roadHalo, roadsLayer]);
+addOverlayIfEnabled(roadsGroup, "roads", true);
 
 const trailsLayer = L.geoJSON(null, {
   style: {
-    color: "#f2cf64",
+    color: "#63b8e8",
     weight: 3,
     opacity: 1,
-    dashArray: "8 5",
+    dashArray: "7 6",
     lineCap: "round",
     lineJoin: "round",
   },
@@ -114,7 +111,7 @@ const trailsLayer = L.geoJSON(null, {
     bindMapFeature(layer, feature, "Provisional walking-trail centerline from repeated phone-GPS passes.");
   },
 });
-const trailsGroup = L.layerGroup([trailHalo, trailsLayer]).addTo(map);
+addOverlayIfEnabled(trailsLayer, "trails", true);
 
 const zonesLayer = L.geoJSON(null, {
   style: {
@@ -128,22 +125,26 @@ const zonesLayer = L.geoJSON(null, {
   onEachFeature(feature, layer) {
     bindMapFeature(layer, feature, feature.properties.note);
   },
-}).addTo(map);
+});
+addOverlayIfEnabled(zonesLayer, "zones", true);
+
+const buildingIcon = L.icon({
+  iconUrl: "assets/icons/building-pin.webp",
+  iconSize: [20, 27],
+  iconAnchor: [10, 27],
+  popupAnchor: [0, -24],
+  tooltipAnchor: [0, -22],
+});
 
 const landmarksLayer = L.geoJSON(null, {
   pointToLayer(feature, latlng) {
-    return L.circleMarker(latlng, {
-      radius: 7,
-      color: "#ffffff",
-      weight: 2,
-      fillColor: "#1f6552",
-      fillOpacity: 1,
-    });
+    return L.marker(latlng, { icon: buildingIcon });
   },
   onEachFeature(feature, layer) {
     bindMapFeature(layer, feature, `${feature.properties.type}; provisional center from walked extent.`);
   },
-}).addTo(map);
+});
+addOverlayIfEnabled(landmarksLayer, "landmarks", true);
 
 const intersectionsLayer = L.geoJSON(null, {
   pointToLayer(feature, latlng) {
@@ -159,6 +160,7 @@ const intersectionsLayer = L.geoJSON(null, {
     bindMapFeature(layer, feature, feature.properties.note);
   },
 });
+addOverlayIfEnabled(intersectionsLayer, "intersections", false);
 
 const boundaryHalo = L.geoJSON(null, {
   interactive: false,
@@ -172,6 +174,7 @@ const boundaryHalo = L.geoJSON(null, {
 }).addTo(map);
 
 const boundaryLayer = L.geoJSON(null, {
+  interactive: false,
   style: {
     color: "#5ee6bd",
     weight: 4,
@@ -182,12 +185,22 @@ const boundaryLayer = L.geoJSON(null, {
   },
   onEachFeature(feature, layer) {
     const acres = Number(feature.properties.acres_computed).toFixed(2);
-    const description = feature.properties.popup_description || feature.properties.note;
     layer.bindTooltip(`${feature.properties.name}<br>${acres} acres`, {
       permanent: true,
       direction: "center",
       className: "parcel-label",
     });
+  },
+}).addTo(map);
+
+const parcelInteractionLayer = L.geoJSON(null, {
+  style(feature) {
+    return feature.properties.name === "Main Parcel"
+      ? { color: "#000000", weight: 16, opacity: 0.001, fill: false }
+      : { stroke: false, fillColor: "#000000", fillOpacity: 0.001 };
+  },
+  onEachFeature(feature, layer) {
+    const description = feature.properties.popup_description || feature.properties.note;
     layer.bindPopup(
       `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
         `${escapeHtml(description)}`,
@@ -206,6 +219,7 @@ const cornersLayer = L.geoJSON(null, {
     }).bindTooltip(feature.properties.label);
   },
 });
+addOverlayIfEnabled(cornersLayer, "corners", false);
 
 L.control
   .layers(
@@ -216,7 +230,7 @@ L.control
     {
       "Corner markers": cornersLayer,
       "Dirt roads": roadsGroup,
-      "Walking trails": trailsGroup,
+      "Walking trails": trailsLayer,
       "Landmarks": landmarksLayer,
       "Zones": zonesLayer,
       "Intersections": intersectionsLayer,
@@ -224,6 +238,11 @@ L.control
     { collapsed: true, position: "topright" },
   )
   .addTo(map);
+
+map.on("baselayerchange overlayadd overlayremove moveend", saveMapPreferences);
+document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
+window.addEventListener("pagehide", saveMapPreferences);
+installMobileDoubleTapZoom();
 
 const locationStatus = document.getElementById("location-status");
 const locateButton = document.getElementById("locate-button");
@@ -245,6 +264,7 @@ Promise.all([
   .then(([boundaryData, cornerData, corridorData]) => {
     boundaryHalo.addData(boundaryData);
     boundaryLayer.addData(boundaryData);
+    parcelInteractionLayer.addData(boundaryData);
     cornersLayer.addData(cornerData);
     corridorLayer.addData(corridorData);
     outsideMaskLayer.addData(buildOutsideMask(boundaryData, corridorData));
@@ -253,16 +273,24 @@ Promise.all([
     corridorLayer.bringToFront();
     boundaryHalo.bringToFront();
     boundaryLayer.bringToFront();
-    map.fitBounds(boundaryLayer.getBounds(), {
-      paddingTopLeft: PROPERTY_BOUNDS_PADDING,
-      paddingBottomRight: PROPERTY_BOUNDS_PADDING,
-      maxZoom: 18,
-    });
+    parcelInteractionLayer.bringToFront();
+    if (hasSavedMapView(savedMapPreferences)) {
+      map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
+    } else {
+      map.fitBounds(boundaryLayer.getBounds(), {
+        paddingTopLeft: PROPERTY_BOUNDS_PADDING,
+        paddingBottomRight: PROPERTY_BOUNDS_PADDING,
+        maxZoom: 18,
+      });
+    }
+    preferencesReady = true;
+    saveMapPreferences();
   })
   .catch((error) => {
     console.error(error);
     showLocationStatus("Map data could not be loaded.");
     map.setView([43.3596, -73.8348], 17);
+    preferencesReady = true;
   });
 
 loadGeoJson("data/roads/dirt-roads.geojson")
@@ -273,13 +301,10 @@ loadGeoJson("data/roads/dirt-roads.geojson")
   .catch((error) => console.error(error));
 
 loadGeoJson("data/trails/walking-trails.geojson")
-  .then((data) => {
-    trailHalo.addData(data);
-    trailsLayer.addData(data);
-  })
+  .then((data) => trailsLayer.addData(data))
   .catch((error) => console.error(error));
 
-loadGeoJson("data/landmarks/landmarks.geojson")
+loadGeoJson("data/landmarks/buildings.geojson")
   .then((data) => landmarksLayer.addData(data))
   .catch((error) => console.error(error));
 
@@ -506,6 +531,96 @@ function bindMapFeature(layer, feature, detail) {
     layer.bindTooltip(name, { sticky: true, direction: "top" });
   }
   layer.bindPopup(`<strong>${name}</strong><br>${safeDetail}`);
+}
+
+function readMapPreferences() {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(MAP_PREFERENCES_KEY));
+    return value && typeof value === "object" ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function hasSavedMapView(preferences) {
+  return (
+    Array.isArray(preferences.center) &&
+    preferences.center.length === 2 &&
+    preferences.center.every(Number.isFinite) &&
+    Number.isFinite(preferences.zoom) &&
+    preferences.zoom >= 0 &&
+    preferences.zoom <= DEFAULT_MAX_ZOOM
+  );
+}
+
+function addOverlayIfEnabled(layer, key, enabledByDefault) {
+  const savedValue = savedMapPreferences.overlays?.[key];
+  if (typeof savedValue === "boolean" ? savedValue : enabledByDefault) {
+    layer.addTo(map);
+  }
+}
+
+function saveMapPreferences() {
+  if (!preferencesReady) return;
+
+  const center = map.getCenter();
+  const preferences = {
+    baseMap: map.hasLayer(topoMap) ? "topo" : "aerial",
+    overlays: {
+      corners: map.hasLayer(cornersLayer),
+      roads: map.hasLayer(roadsGroup),
+      trails: map.hasLayer(trailsLayer),
+      landmarks: map.hasLayer(landmarksLayer),
+      zones: map.hasLayer(zonesLayer),
+      intersections: map.hasLayer(intersectionsLayer),
+    },
+    center: [Number(center.lat.toFixed(7)), Number(center.lng.toFixed(7))],
+    zoom: map.getZoom(),
+  };
+
+  try {
+    window.localStorage.setItem(MAP_PREFERENCES_KEY, JSON.stringify(preferences));
+  } catch {
+    // The map remains usable when storage is blocked or unavailable.
+  }
+}
+
+function installMobileDoubleTapZoom() {
+  const container = map.getContainer();
+  let previousTap = null;
+
+  container.addEventListener(
+    "touchend",
+    (event) => {
+      if (
+        event.changedTouches.length !== 1 ||
+        event.target.closest(".leaflet-control, .leaflet-popup")
+      ) {
+        previousTap = null;
+        return;
+      }
+
+      const touch = event.changedTouches[0];
+      const tap = { time: performance.now(), x: touch.clientX, y: touch.clientY };
+      const isDoubleTap =
+        previousTap &&
+        tap.time - previousTap.time <= 325 &&
+        Math.hypot(tap.x - previousTap.x, tap.y - previousTap.y) <= 30;
+
+      if (!isDoubleTap) {
+        previousTap = tap;
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      previousTap = null;
+      const bounds = container.getBoundingClientRect();
+      const point = L.point(tap.x - bounds.left, tap.y - bounds.top);
+      map.setZoomAround(point, Math.min(map.getZoom() + 1, map.getMaxZoom()));
+    },
+    { passive: false },
+  );
 }
 
 function escapeHtml(value) {

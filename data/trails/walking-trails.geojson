@@ -15,15 +15,15 @@
         "source_files": [
           "Pavilion_side_trail.gpx"
         ],
-        "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; pavilion endpoint snapped to the processed Pavilion point.",
-        "length_m": 34.9
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. South endpoint placed 5 m northeast of the Pavilion point to separate the building and intersection symbols; north endpoint snapped 1.5 m to Mountain Drive.",
+            "length_m": 31.0
       },
       "geometry": {
         "type": "LineString",
         "coordinates": [
           [
-            -73.8353641,
-            43.3592142
+            -73.8353589,
+            43.359259
           ],
           [
             -73.8353505,
@@ -34,8 +34,8 @@
             43.3594199
           ],
           [
-            -73.8354665,
-            43.359508
+            -73.8354833,
+            43.3595137
           ]
         ]
       }
@@ -51,15 +51,15 @@
         "source_files": [
           "Garden_cut_through.gpx"
         ],
-        "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands; field endpoint snapped to the processed Front Field Zone boundary.",
-        "length_m": 21.7
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. Field endpoint moved with a 3.5 m local inward adjustment to the Front Field Zone edge so the trail ends cleanly at, rather than overlapping, the zone.",
+            "length_m": 23.8
       },
       "geometry": {
         "type": "LineString",
         "coordinates": [
           [
-            -73.8351171,
-            43.3589988
+            -73.835082,
+            43.3589804
           ],
           [
             -73.8351049,

@@ -1,0 +1,50 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Landmarks"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "home",
+        "name": "Home",
+        "type": "building",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Home_point.gpx"
+        ],
+        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing stationary dwell samples from dominating."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8353908,
+          43.3586019
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pavilion",
+        "name": "Pavilion",
+        "type": "building",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Pavilion_point.gpx"
+        ],
+        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing repeated samples from dominating."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8353641,
+          43.3592142
+        ]
+      }
+    }
+  ]
+}

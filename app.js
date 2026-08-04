@@ -65,6 +65,101 @@ const corridorLayer = L.geoJSON(null, {
   },
 }).addTo(map);
 
+const roadHalo = L.geoJSON(null, {
+  interactive: false,
+  style: {
+    color: "#473522",
+    weight: 8,
+    opacity: 0.78,
+    lineCap: "round",
+    lineJoin: "round",
+  },
+});
+
+const roadsLayer = L.geoJSON(null, {
+  style: {
+    color: "#d89a4a",
+    weight: 5,
+    opacity: 0.98,
+    lineCap: "round",
+    lineJoin: "round",
+  },
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, `${feature.properties.status}. ${feature.properties.note}`);
+  },
+});
+const roadsGroup = L.layerGroup([roadHalo, roadsLayer]).addTo(map);
+
+const trailHalo = L.geoJSON(null, {
+  interactive: false,
+  style: {
+    color: "#253f36",
+    weight: 6,
+    opacity: 0.72,
+    lineCap: "round",
+    lineJoin: "round",
+  },
+});
+
+const trailsLayer = L.geoJSON(null, {
+  style: {
+    color: "#f2cf64",
+    weight: 3,
+    opacity: 1,
+    dashArray: "8 5",
+    lineCap: "round",
+    lineJoin: "round",
+  },
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, "Provisional walking-trail centerline from repeated phone-GPS passes.");
+  },
+});
+const trailsGroup = L.layerGroup([trailHalo, trailsLayer]).addTo(map);
+
+const zonesLayer = L.geoJSON(null, {
+  style: {
+    color: "#f0c85f",
+    weight: 3,
+    opacity: 0.95,
+    dashArray: "2 7",
+    fillColor: "#f5dda0",
+    fillOpacity: 0.14,
+  },
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, feature.properties.note);
+  },
+}).addTo(map);
+
+const landmarksLayer = L.geoJSON(null, {
+  pointToLayer(feature, latlng) {
+    return L.circleMarker(latlng, {
+      radius: 7,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#1f6552",
+      fillOpacity: 1,
+    });
+  },
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, `${feature.properties.type}; provisional center from walked extent.`);
+  },
+}).addTo(map);
+
+const intersectionsLayer = L.geoJSON(null, {
+  pointToLayer(feature, latlng) {
+    return L.circleMarker(latlng, {
+      radius: 5,
+      color: "#ffffff",
+      weight: 2,
+      fillColor: "#8e4c9e",
+      fillOpacity: 1,
+    });
+  },
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, feature.properties.note);
+  },
+});
+
 const boundaryHalo = L.geoJSON(null, {
   interactive: false,
   style: {
@@ -120,6 +215,11 @@ L.control
     },
     {
       "Corner markers": cornersLayer,
+      "Dirt roads": roadsGroup,
+      "Walking trails": trailsGroup,
+      "Landmarks": landmarksLayer,
+      "Zones": zonesLayer,
+      "Intersections": intersectionsLayer,
     },
     { collapsed: true, position: "topright" },
   )
@@ -138,9 +238,9 @@ let hasCenteredOnUser = false;
 let locationStatusTimer = null;
 
 Promise.all([
-  loadGeoJson("data/boundary.geojson"),
-  loadGeoJson("data/corners.geojson"),
-  loadGeoJson("data/corridor.geojson"),
+  loadGeoJson("data/property/boundaries.geojson"),
+  loadGeoJson("data/property/corners.geojson"),
+  loadGeoJson("data/property/powerline-corridor.geojson"),
 ])
   .then(([boundaryData, cornerData, corridorData]) => {
     boundaryHalo.addData(boundaryData);
@@ -164,6 +264,32 @@ Promise.all([
     showLocationStatus("Map data could not be loaded.");
     map.setView([43.3596, -73.8348], 17);
   });
+
+loadGeoJson("data/roads/dirt-roads.geojson")
+  .then((data) => {
+    roadHalo.addData(data);
+    roadsLayer.addData(data);
+  })
+  .catch((error) => console.error(error));
+
+loadGeoJson("data/trails/walking-trails.geojson")
+  .then((data) => {
+    trailHalo.addData(data);
+    trailsLayer.addData(data);
+  })
+  .catch((error) => console.error(error));
+
+loadGeoJson("data/landmarks/landmarks.geojson")
+  .then((data) => landmarksLayer.addData(data))
+  .catch((error) => console.error(error));
+
+loadGeoJson("data/zones/zones.geojson")
+  .then((data) => zonesLayer.addData(data))
+  .catch((error) => console.error(error));
+
+loadGeoJson("data/intersections/intersections.geojson")
+  .then((data) => intersectionsLayer.addData(data))
+  .catch((error) => console.error(error));
 
 infoButton.addEventListener("click", openInfo);
 infoClose.addEventListener("click", closeInfo);
@@ -371,6 +497,15 @@ function showLocationStatus(message, hideAfter = 0) {
 function hideLocationStatus() {
   window.clearTimeout(locationStatusTimer);
   locationPanel.dataset.showStatus = "false";
+}
+
+function bindMapFeature(layer, feature, detail) {
+  const name = escapeHtml(feature.properties.name);
+  const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
+  if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
+    layer.bindTooltip(name, { sticky: true, direction: "top" });
+  }
+  layer.bindPopup(`<strong>${name}</strong><br>${safeDetail}`);
 }
 
 function escapeHtml(value) {

@@ -3,6 +3,16 @@
 const PROPERTY_BOUNDS_PADDING = [28, 28];
 const DEFAULT_MAX_ZOOM = 21;
 const RAPID_DOUBLE_TAP_MS = 250;
+const OFF_PROPERTY_MIN_DISTANCE_METERS = 3;
+const OFF_PROPERTY_ENTER_FIXES = 3;
+const OFF_PROPERTY_ENTER_DELAY_MS = 8000;
+const OFF_PROPERTY_LEAVE_FIXES = 2;
+const OFF_PROPERTY_ALERT_MS = 3500;
+const PROPERTY_REFERENCE_LAT = 43.3596;
+const PROPERTY_REFERENCE_LON = -73.8350;
+const METERS_PER_LATITUDE_DEGREE = 111132;
+const METERS_PER_LONGITUDE_DEGREE =
+  111320 * Math.cos((PROPERTY_REFERENCE_LAT * Math.PI) / 180);
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const DEFAULT_OVERLAY_VISIBILITY = Object.freeze({
   corners: false,
@@ -16,6 +26,15 @@ const savedMapPreferences = readMapPreferences();
 let preferencesReady = false;
 let pendingFeaturePopupTimer = null;
 let suppressFeaturePopupsUntil = 0;
+
+const offPropertyTracker = {
+  polygonRings: null,
+  isConfirmedOff: false,
+  enteringFixCount: 0,
+  enteringStartedAt: 0,
+  leavingFixCount: 0,
+  hasAnnouncedOffProperty: false,
+};
 
 const map = L.map("map", {
   zoomControl: true,
@@ -278,6 +297,9 @@ let watchId = null;
 let latestPosition = null;
 let hasCenteredOnUser = false;
 let locationStatusTimer = null;
+let locationAccuracyCircle = null;
+let locationMarker = null;
+let offPropertyTooltipTimer = null;
 
 Promise.all([
   loadGeoJson("data/property/boundaries.geojson"),
@@ -285,6 +307,10 @@ Promise.all([
   loadGeoJson("data/property/powerline-corridor.geojson"),
 ])
   .then(([boundaryData, cornerData, corridorData]) => {
+    offPropertyTracker.polygonRings = extractOuterPolygonRings(
+      boundaryData,
+      corridorData,
+    );
     boundaryHalo.addData(boundaryData);
     boundaryLayer.addData(boundaryData);
     mainBoundaryInteractionLayer.addData(buildMainBoundaryLine(boundaryData));
@@ -405,24 +431,43 @@ function updateLocation(position) {
   const accuracy = Math.max(position.coords.accuracy, 1);
   latestPosition = { latlng, accuracy };
 
-  locationLayer.clearLayers();
-  L.circle(latlng, {
-    radius: accuracy,
-    color: "#ffffff",
-    weight: 2,
-    opacity: 0.9,
-    fillColor: "#2f8cff",
-    fillOpacity: 0.2,
-    interactive: false,
-  }).addTo(locationLayer);
-  L.marker(latlng, {
-    interactive: false,
-    icon: L.divIcon({
-      className: "location-dot",
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-    }),
-  }).addTo(locationLayer);
+  const classification = classifyPropertyLocation(latlng, accuracy);
+  const enteredConfirmedOff = updateOffPropertyState(classification);
+  const dotClassName = offPropertyTracker.isConfirmedOff
+    ? "location-dot location-dot--off"
+    : "location-dot";
+
+  if (!locationAccuracyCircle) {
+    locationAccuracyCircle = L.circle(latlng, {
+      radius: accuracy,
+      color: "#ffffff",
+      weight: 2,
+      opacity: 0.9,
+      fillColor: "#2f8cff",
+      fillOpacity: 0.2,
+      interactive: false,
+    }).addTo(locationLayer);
+  } else {
+    locationAccuracyCircle.setLatLng(latlng).setRadius(accuracy);
+  }
+
+  const locationIcon = L.divIcon({
+    className: dotClassName,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+  });
+  if (!locationMarker) {
+    locationMarker = L.marker(latlng, {
+      interactive: false,
+      icon: locationIcon,
+    }).addTo(locationLayer);
+  } else {
+    locationMarker.setLatLng(latlng).setIcon(locationIcon);
+  }
+
+  if (enteredConfirmedOff && !offPropertyTracker.hasAnnouncedOffProperty) {
+    announceOffProperty();
+  }
 
   hideLocationStatus();
   locateButton.setAttribute("aria-label", "Center map on my location");
@@ -438,6 +483,136 @@ function updateLocation(position) {
     map.setView(latlng, Math.max(map.getZoom(), 18));
     hasCenteredOnUser = true;
   }
+}
+
+function extractOuterPolygonRings(...featureCollections) {
+  const rings = [];
+  featureCollections.forEach((collection) => {
+    collection.features.forEach((feature) => {
+      if (feature.geometry.type === "Polygon") {
+        rings.push(feature.geometry.coordinates[0]);
+      } else if (feature.geometry.type === "MultiPolygon") {
+        feature.geometry.coordinates.forEach((polygon) => rings.push(polygon[0]));
+      }
+    });
+  });
+  return rings;
+}
+
+function classifyPropertyLocation(latlng, accuracy) {
+  const rings = offPropertyTracker.polygonRings;
+  if (!rings || rings.length === 0) return "UNKNOWN";
+
+  const point = projectToPropertyMeters([latlng.lng, latlng.lat]);
+  const projectedRings = rings.map((ring) => ring.map(projectToPropertyMeters));
+  if (projectedRings.some((ring) => isPointInsideRing(point, ring))) {
+    return "INSIDE";
+  }
+
+  const nearestBoundaryDistance = Math.min(
+    ...projectedRings.map((ring) => distanceToRing(point, ring)),
+  );
+  return nearestBoundaryDistance > Math.max(OFF_PROPERTY_MIN_DISTANCE_METERS, accuracy)
+    ? "OFF"
+    : "UNKNOWN";
+}
+
+function updateOffPropertyState(classification) {
+  const now = performance.now();
+
+  if (classification === "OFF") {
+    offPropertyTracker.leavingFixCount = 0;
+    if (offPropertyTracker.isConfirmedOff) return false;
+
+    if (offPropertyTracker.enteringFixCount === 0) {
+      offPropertyTracker.enteringStartedAt = now;
+    }
+    offPropertyTracker.enteringFixCount += 1;
+    if (
+      offPropertyTracker.enteringFixCount >= OFF_PROPERTY_ENTER_FIXES &&
+      now - offPropertyTracker.enteringStartedAt >= OFF_PROPERTY_ENTER_DELAY_MS
+    ) {
+      offPropertyTracker.isConfirmedOff = true;
+      offPropertyTracker.enteringFixCount = 0;
+      return true;
+    }
+    return false;
+  }
+
+  offPropertyTracker.enteringFixCount = 0;
+  offPropertyTracker.enteringStartedAt = 0;
+  if (!offPropertyTracker.isConfirmedOff) return false;
+
+  offPropertyTracker.leavingFixCount += 1;
+  if (offPropertyTracker.leavingFixCount >= OFF_PROPERTY_LEAVE_FIXES) {
+    offPropertyTracker.isConfirmedOff = false;
+    offPropertyTracker.leavingFixCount = 0;
+  }
+  return false;
+}
+
+function announceOffProperty() {
+  offPropertyTracker.hasAnnouncedOffProperty = true;
+  locationMarker
+    .bindTooltip("You may be off 457 property", {
+      permanent: true,
+      direction: "top",
+      offset: [0, -10],
+      opacity: 1,
+      className: "off-property-tooltip",
+    })
+    .openTooltip();
+
+  window.clearTimeout(offPropertyTooltipTimer);
+  offPropertyTooltipTimer = window.setTimeout(() => {
+    locationMarker.closeTooltip().unbindTooltip();
+    offPropertyTooltipTimer = null;
+  }, OFF_PROPERTY_ALERT_MS);
+
+  if (typeof navigator.vibrate === "function") navigator.vibrate(15);
+}
+
+function projectToPropertyMeters([longitude, latitude]) {
+  return [
+    (longitude - PROPERTY_REFERENCE_LON) * METERS_PER_LONGITUDE_DEGREE,
+    (latitude - PROPERTY_REFERENCE_LAT) * METERS_PER_LATITUDE_DEGREE,
+  ];
+}
+
+function isPointInsideRing([x, y], ring) {
+  let isInside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    const crossesRay = yi > y !== yj > y;
+    if (crossesRay && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) {
+      isInside = !isInside;
+    }
+  }
+  return isInside;
+}
+
+function distanceToRing(point, ring) {
+  let nearestDistance = Infinity;
+  for (let i = 1; i < ring.length; i += 1) {
+    nearestDistance = Math.min(
+      nearestDistance,
+      distanceToSegment(point, ring[i - 1], ring[i]),
+    );
+  }
+  return nearestDistance;
+}
+
+function distanceToSegment([px, py], [ax, ay], [bx, by]) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  if (dx === 0 && dy === 0) return Math.hypot(px - ax, py - ay);
+
+  const position = Math.max(
+    0,
+    Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)),
+  );
+  return Math.hypot(px - (ax + position * dx), py - (ay + position * dy));
 }
 
 function handleLocationError(error) {

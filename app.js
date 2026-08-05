@@ -8,6 +8,12 @@ const OFF_PROPERTY_ENTER_FIXES = 3;
 const OFF_PROPERTY_ENTER_DELAY_MS = 8000;
 const OFF_PROPERTY_LEAVE_FIXES = 2;
 const OFF_PROPERTY_ALERT_MS = 3500;
+const ARRIVAL_DISTANCE_METERS = 7.62;
+const MAGNETIC_DECLINATION_DEG = -13.5;
+const GUIDANCE_HEADING_TIMEOUT_MS = 3000;
+const GUIDANCE_SMOOTHING_TIME_MS = 250;
+const GUIDANCE_VISUAL_INTERVAL_MS = 100;
+const LAYER_CONTROL_COLLAPSE_DELAY_MS = 280;
 const PROPERTY_REFERENCE_LAT = 43.3596;
 const PROPERTY_REFERENCE_LON = -73.8350;
 const METERS_PER_LATITUDE_DEGREE = 111132;
@@ -34,6 +40,26 @@ const offPropertyTracker = {
   enteringStartedAt: 0,
   leavingFixCount: 0,
   hasAnnouncedOffProperty: false,
+};
+
+const guidanceTracker = {
+  targets: new Map(),
+  target: null,
+  isActive: false,
+  isWaitingForLocation: false,
+  orientationPermission: "unknown",
+  hideGuideButton: false,
+  orientationEvents: [],
+  androidAbsoluteSeen: false,
+  smoothedSin: null,
+  smoothedCos: null,
+  lastHeadingAt: 0,
+  lastVisualUpdateAt: 0,
+  targetBearing: null,
+  headingTimeout: null,
+  tintStartTimer: null,
+  tintHideTimer: null,
+  pillHideTimer: null,
 };
 
 const map = L.map("map", {
@@ -171,7 +197,13 @@ const landmarksLayer = L.geoJSON(null, {
     return L.marker(latlng, { icon: buildingIcon });
   },
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, `${feature.properties.type}; provisional center from walked extent.`);
+    registerGuidanceTarget(feature);
+    bindMapFeature(
+      layer,
+      feature,
+      `${feature.properties.type}; provisional center from walked extent.`,
+      { landmark: true },
+    );
   },
 });
 addOverlayIfEnabled(landmarksLayer, "landmarks", true);
@@ -212,14 +244,6 @@ const boundaryLayer = L.geoJSON(null, {
     fillColor: "#5ee6bd",
     fillOpacity: 0.03,
     lineJoin: "round",
-  },
-  onEachFeature(feature, layer) {
-    const acres = Number(feature.properties.acres_computed).toFixed(2);
-    layer.bindTooltip(`${feature.properties.name}<br>${acres} acres`, {
-      permanent: true,
-      direction: "center",
-      className: "parcel-label",
-    });
   },
 }).addTo(map);
 
@@ -280,6 +304,7 @@ const layerControl = L.control
   .addTo(map);
 
 installLayerResetButton(layerControl);
+installLayerControlHoverDelay(layerControl);
 
 map.on("baselayerchange overlayadd overlayremove moveend", saveMapPreferences);
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
@@ -292,6 +317,10 @@ const locationPanel = document.querySelector(".location-panel");
 const infoButton = document.getElementById("info-button");
 const infoOverlay = document.getElementById("info-overlay");
 const infoClose = document.getElementById("info-close");
+const guidanceTint = document.getElementById("guidance-tint");
+const guidancePill = document.getElementById("guidance-pill");
+const guidanceDismiss = document.getElementById("guidance-dismiss");
+const guidancePillText = document.getElementById("guidance-pill-text");
 const locationLayer = L.layerGroup().addTo(map);
 let watchId = null;
 let latestPosition = null;
@@ -300,6 +329,9 @@ let locationStatusTimer = null;
 let locationAccuracyCircle = null;
 let locationMarker = null;
 let offPropertyTooltipTimer = null;
+
+map.getContainer().addEventListener("click", handleGuideButtonClick, true);
+guidanceDismiss.addEventListener("click", stopGuidance);
 
 Promise.all([
   loadGeoJson("data/property/boundaries.geojson"),
@@ -469,6 +501,8 @@ function updateLocation(position) {
     announceOffProperty();
   }
 
+  updateGuidanceFromPosition(latlng);
+
   hideLocationStatus();
   locateButton.setAttribute("aria-label", "Center map on my location");
   locateButton.title = "Center on my location";
@@ -628,6 +662,7 @@ function handleLocationError(error) {
 }
 
 function handleWatchError(error) {
+  pauseGuidanceForLocation();
   // Keep showing the most recent valid position if a later GPS update times out.
   if (latestPosition && error.code !== 1) return;
   handleLocationError(error);
@@ -745,14 +780,45 @@ function hideLocationStatus() {
   locationPanel.dataset.showStatus = "false";
 }
 
-function bindMapFeature(layer, feature, detail) {
+function registerGuidanceTarget(feature) {
+  if (feature.geometry.type !== "Point" || !feature.properties.id) return;
+  const [longitude, latitude] = feature.geometry.coordinates;
+  guidanceTracker.targets.set(feature.properties.id, {
+    id: feature.properties.id,
+    name: feature.properties.name,
+    latlng: L.latLng(latitude, longitude),
+  });
+}
+
+function buildMapFeaturePopup(feature, detail, options = {}) {
   const name = escapeHtml(feature.properties.name);
   const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
-  const popupHtml = `<strong>${name}</strong><br>${safeDetail}`;
+  let popupHtml = `<strong>${name}</strong><br>${safeDetail}`;
+  if (!options.landmark || !latestPosition) return popupHtml;
+
+  const target = guidanceTracker.targets.get(feature.properties.id);
+  if (!target) return popupHtml;
+
+  const distanceMeters = distanceBetweenLatLngs(latestPosition.latlng, target.latlng);
+  const bearing = calculateTrueBearing(latestPosition.latlng, target.latlng);
+  popupHtml +=
+    `<span class="landmark-distance">${escapeHtml(formatLandmarkDistance(distanceMeters, bearing))}</span>`;
+  if (canOfferCompassGuidance()) {
+    popupHtml +=
+      `<button class="guide-me-button" type="button" data-landmark-id="${escapeHtml(target.id)}">` +
+      "Guide me</button>";
+  }
+  return popupHtml;
+}
+
+function bindMapFeature(layer, feature, detail, options = {}) {
   const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   if (hasFinePointer) {
-    layer.bindTooltip(name, { sticky: true, direction: "top" });
-    layer.bindPopup(popupHtml);
+    layer.bindTooltip(escapeHtml(feature.properties.name), {
+      sticky: true,
+      direction: "top",
+    });
+    layer.bindPopup(() => buildMapFeaturePopup(feature, detail, options));
     return;
   }
 
@@ -762,9 +828,355 @@ function bindMapFeature(layer, feature, detail) {
 
     pendingFeaturePopupTimer = window.setTimeout(() => {
       if (performance.now() < suppressFeaturePopupsUntil) return;
-      L.popup().setLatLng(event.latlng).setContent(popupHtml).openOn(map);
+      L.popup()
+        .setLatLng(event.latlng)
+        .setContent(buildMapFeaturePopup(feature, detail, options))
+        .openOn(map);
     }, RAPID_DOUBLE_TAP_MS + 20);
   });
+}
+
+function formatLandmarkDistance(distanceMeters, bearing) {
+  const distanceFeet = distanceMeters * 3.28084;
+  if (distanceFeet < 15) return "you're here";
+  const increment = distanceFeet < 300 ? 10 : 25;
+  const roundedFeet = Math.round(distanceFeet / increment) * increment;
+  return `about ${roundedFeet} ft \u00b7 ${bearingToCompassPoint(bearing)}`;
+}
+
+function bearingToCompassPoint(bearing) {
+  const directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
+  return directions[Math.round(normalizeAngle(bearing) / 45) % directions.length];
+}
+
+function distanceBetweenLatLngs(from, to) {
+  const radians = Math.PI / 180;
+  const lat1 = from.lat * radians;
+  const lat2 = to.lat * radians;
+  const deltaLat = (to.lat - from.lat) * radians;
+  const deltaLon = (to.lng - from.lng) * radians;
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(lat1) * Math.cos(lat2) * Math.sin(deltaLon / 2) ** 2;
+  return 6371000 * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function calculateTrueBearing(from, to) {
+  const radians = Math.PI / 180;
+  const lat1 = from.lat * radians;
+  const lat2 = to.lat * radians;
+  const deltaLon = (to.lng - from.lng) * radians;
+  const y = Math.sin(deltaLon) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(deltaLon);
+  return normalizeAngle((Math.atan2(y, x) * 180) / Math.PI);
+}
+
+function normalizeAngle(angle) {
+  return ((angle % 360) + 360) % 360;
+}
+
+function normalizeBearingError(angle) {
+  return ((angle + 540) % 360) - 180;
+}
+
+function canOfferCompassGuidance() {
+  const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+  const hasOrientationSupport =
+    "DeviceOrientationEvent" in window ||
+    "ondeviceorientation" in window ||
+    "ondeviceorientationabsolute" in window;
+  return hasCoarsePointer && hasOrientationSupport && !guidanceTracker.hideGuideButton;
+}
+
+function handleGuideButtonClick(event) {
+  const button = event.target.closest?.(".guide-me-button");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  startGuidance(button.dataset.landmarkId);
+}
+
+async function startGuidance(targetId) {
+  const target = guidanceTracker.targets.get(targetId);
+  if (!target || !latestPosition) return;
+
+  clearGuidanceTimers();
+  guidanceTracker.target = target;
+  if (guidanceTracker.isActive) {
+    updateGuidanceFromPosition(latestPosition.latlng);
+    map.closePopup();
+    return;
+  }
+
+  if (distanceBetweenLatLngs(latestPosition.latlng, target.latlng) <= ARRIVAL_DISTANCE_METERS) {
+    showGuidanceArrival();
+    map.closePopup();
+    return;
+  }
+
+  const permissionRequest = window.DeviceOrientationEvent?.requestPermission;
+  if (
+    typeof permissionRequest === "function" &&
+    guidanceTracker.orientationPermission !== "granted"
+  ) {
+    try {
+      const permission = await permissionRequest.call(window.DeviceOrientationEvent);
+      if (permission !== "granted") {
+        declineCompassGuidance();
+        return;
+      }
+      guidanceTracker.orientationPermission = "granted";
+    } catch {
+      declineCompassGuidance();
+      return;
+    }
+  }
+
+  guidanceTracker.isActive = true;
+  guidanceTracker.isWaitingForLocation = false;
+  guidanceTracker.androidAbsoluteSeen = false;
+  guidanceTracker.smoothedSin = null;
+  guidanceTracker.smoothedCos = null;
+  guidanceTracker.lastHeadingAt = 0;
+  guidanceTracker.lastVisualUpdateAt = 0;
+  setGuidancePill(`Guiding to ${target.name}`);
+  attachOrientationListeners(typeof permissionRequest === "function");
+  updateGuidanceFromPosition(latestPosition.latlng);
+  guidanceTracker.headingTimeout = window.setTimeout(() => {
+    guidanceTracker.hideGuideButton = true;
+    stopGuidance();
+  }, GUIDANCE_HEADING_TIMEOUT_MS);
+  map.closePopup();
+}
+
+function declineCompassGuidance() {
+  guidanceTracker.orientationPermission = "denied";
+  guidanceTracker.hideGuideButton = true;
+  const popup = map._popup;
+  if (!popup) return;
+  popup.setContent('<span class="compass-note">Compass access was declined</span>');
+  window.setTimeout(() => {
+    if (map._popup === popup) map.closePopup();
+  }, 2500);
+}
+
+function attachOrientationListeners(isIosPermissionPath) {
+  detachOrientationListeners();
+  const eventNames = isIosPermissionPath
+    ? ["deviceorientation"]
+    : ["deviceorientationabsolute", "deviceorientation"];
+  eventNames.forEach((eventName) => {
+    window.addEventListener(eventName, handleOrientationEvent, true);
+  });
+  guidanceTracker.orientationEvents = eventNames;
+}
+
+function detachOrientationListeners() {
+  guidanceTracker.orientationEvents.forEach((eventName) => {
+    window.removeEventListener(eventName, handleOrientationEvent, true);
+  });
+  guidanceTracker.orientationEvents = [];
+}
+
+function handleOrientationEvent(event) {
+  let heading = null;
+  let isAndroidHeading = false;
+
+  if (Number.isFinite(event.webkitCompassHeading)) {
+    heading = event.webkitCompassHeading;
+  } else if (event.type === "deviceorientationabsolute" && Number.isFinite(event.alpha)) {
+    guidanceTracker.androidAbsoluteSeen = true;
+    heading = 360 - event.alpha;
+    isAndroidHeading = true;
+  } else if (
+    event.type === "deviceorientation" &&
+    event.absolute === true &&
+    !guidanceTracker.androidAbsoluteSeen &&
+    Number.isFinite(event.alpha)
+  ) {
+    heading = 360 - event.alpha;
+    isAndroidHeading = true;
+  }
+
+  if (!Number.isFinite(heading)) return;
+  const screenRotation = Number(screen.orientation?.angle ?? window.orientation) || 0;
+  // Android absolute alpha is magnetic near Lake Luzerne. Field-verify this
+  // correction while standing along a known bearing such as Mountain Drive.
+  if (isAndroidHeading) heading += MAGNETIC_DECLINATION_DEG;
+  heading = normalizeAngle(heading + screenRotation);
+
+  window.clearTimeout(guidanceTracker.headingTimeout);
+  guidanceTracker.headingTimeout = null;
+  smoothGuidanceHeading(heading);
+}
+
+function smoothGuidanceHeading(heading) {
+  const now = performance.now();
+  const radians = (heading * Math.PI) / 180;
+  if (guidanceTracker.smoothedSin === null) {
+    guidanceTracker.smoothedSin = Math.sin(radians);
+    guidanceTracker.smoothedCos = Math.cos(radians);
+  } else {
+    const elapsed = Math.max(0, now - guidanceTracker.lastHeadingAt);
+    const weight = 1 - Math.exp(-elapsed / GUIDANCE_SMOOTHING_TIME_MS);
+    guidanceTracker.smoothedSin +=
+      weight * (Math.sin(radians) - guidanceTracker.smoothedSin);
+    guidanceTracker.smoothedCos +=
+      weight * (Math.cos(radians) - guidanceTracker.smoothedCos);
+  }
+  guidanceTracker.lastHeadingAt = now;
+
+  if (
+    guidanceTracker.targetBearing === null ||
+    now - guidanceTracker.lastVisualUpdateAt < GUIDANCE_VISUAL_INTERVAL_MS
+  ) {
+    return;
+  }
+  guidanceTracker.lastVisualUpdateAt = now;
+  const filteredHeading = normalizeAngle(
+    (Math.atan2(guidanceTracker.smoothedSin, guidanceTracker.smoothedCos) * 180) /
+      Math.PI,
+  );
+  renderGuidanceTint(normalizeBearingError(guidanceTracker.targetBearing - filteredHeading));
+}
+
+function updateGuidanceFromPosition(latlng) {
+  if (!guidanceTracker.isActive || !guidanceTracker.target) return;
+  const distance = distanceBetweenLatLngs(latlng, guidanceTracker.target.latlng);
+  if (distance <= ARRIVAL_DISTANCE_METERS) {
+    showGuidanceArrival();
+    return;
+  }
+
+  guidanceTracker.isWaitingForLocation = false;
+  guidanceTracker.targetBearing = calculateTrueBearing(latlng, guidanceTracker.target.latlng);
+  setGuidancePill(`Guiding to ${guidanceTracker.target.name}`);
+  if (guidanceTracker.smoothedSin !== null) {
+    const filteredHeading = normalizeAngle(
+      (Math.atan2(guidanceTracker.smoothedSin, guidanceTracker.smoothedCos) * 180) /
+        Math.PI,
+    );
+    renderGuidanceTint(
+      normalizeBearingError(guidanceTracker.targetBearing - filteredHeading),
+    );
+  }
+}
+
+function pauseGuidanceForLocation() {
+  if (!guidanceTracker.isActive) return;
+  guidanceTracker.isWaitingForLocation = true;
+  guidanceTracker.targetBearing = null;
+  guidanceTint.classList.remove("guidance-tint--active", "guidance-tint--locked");
+  setGuidancePill("Waiting for location\u2026");
+}
+
+function renderGuidanceTint(error) {
+  const ramp = readGuidanceRamp();
+  const magnitude = Math.min(Math.abs(error), 110);
+  const style = interpolateGuidanceRamp(magnitude, ramp);
+  const offset = Math.max(-1, Math.min(1, error / 90)) * 46;
+  guidanceTint.style.setProperty("--guidance-offset", `${offset}vw`);
+  guidanceTint.style.setProperty("--guidance-saturation", `${style.saturation}%`);
+  guidanceTint.style.setProperty("--guidance-lightness", `${style.lightness}%`);
+  guidanceTint.style.setProperty("--guidance-opacity", style.opacity);
+  guidanceTint.style.setProperty("--guidance-width", `${style.width}vw`);
+  guidanceTint.style.setProperty("--guidance-blur", `${style.blur}px`);
+  guidanceTint.classList.toggle("guidance-tint--locked", magnitude <= 8);
+
+  if (!guidanceTint.classList.contains("guidance-tint--active")) {
+    guidanceTint.classList.add("guidance-tint--starting");
+    window.requestAnimationFrame(() => guidanceTint.classList.add("guidance-tint--active"));
+    window.clearTimeout(guidanceTracker.tintStartTimer);
+    guidanceTracker.tintStartTimer = window.setTimeout(() => {
+      guidanceTint.classList.remove("guidance-tint--starting");
+      guidanceTracker.tintStartTimer = null;
+    }, 440);
+  }
+}
+
+function readGuidanceRamp() {
+  const styles = getComputedStyle(document.documentElement);
+  const value = (name) => Number.parseFloat(styles.getPropertyValue(name));
+  return [
+    { error: 0, saturation: value("--guidance-saturation-0"), lightness: value("--guidance-lightness-0"), opacity: value("--guidance-opacity-0"), width: value("--guidance-width-0"), blur: value("--guidance-blur-0") },
+    { error: 30, saturation: value("--guidance-saturation-30"), lightness: value("--guidance-lightness-30"), opacity: value("--guidance-opacity-30"), width: value("--guidance-width-30"), blur: value("--guidance-blur-30") },
+    { error: 60, saturation: value("--guidance-saturation-60"), lightness: value("--guidance-lightness-60"), opacity: value("--guidance-opacity-60"), width: value("--guidance-width-60"), blur: value("--guidance-blur-60") },
+    { error: 110, saturation: value("--guidance-saturation-110"), lightness: value("--guidance-lightness-110"), opacity: value("--guidance-opacity-110"), width: value("--guidance-width-110"), blur: value("--guidance-blur-110") },
+  ];
+}
+
+function interpolateGuidanceRamp(error, ramp) {
+  let lower = ramp[0];
+  let upper = ramp[ramp.length - 1];
+  for (let index = 1; index < ramp.length; index += 1) {
+    if (error <= ramp[index].error) {
+      lower = ramp[index - 1];
+      upper = ramp[index];
+      break;
+    }
+  }
+  const amount = (error - lower.error) / Math.max(upper.error - lower.error, 1);
+  const mix = (key) => lower[key] + amount * (upper[key] - lower[key]);
+  return {
+    saturation: mix("saturation"),
+    lightness: mix("lightness"),
+    opacity: mix("opacity"),
+    width: mix("width"),
+    blur: mix("blur"),
+  };
+}
+
+function setGuidancePill(message) {
+  guidancePillText.textContent = message;
+  guidancePill.hidden = false;
+}
+
+function showGuidanceArrival() {
+  detachOrientationListeners();
+  window.clearTimeout(guidanceTracker.headingTimeout);
+  guidanceTracker.headingTimeout = null;
+  guidanceTracker.isActive = false;
+  renderGuidanceTint(0);
+  setGuidancePill("Arrived");
+  window.clearTimeout(guidanceTracker.tintHideTimer);
+  window.clearTimeout(guidanceTracker.pillHideTimer);
+  guidanceTracker.tintHideTimer = window.setTimeout(() => {
+    guidanceTint.classList.remove("guidance-tint--active", "guidance-tint--locked");
+  }, 1000);
+  guidanceTracker.pillHideTimer = window.setTimeout(() => {
+    guidancePill.hidden = true;
+    guidanceTracker.target = null;
+  }, 2000);
+}
+
+function stopGuidance() {
+  detachOrientationListeners();
+  clearGuidanceTimers();
+  guidanceTracker.isActive = false;
+  guidanceTracker.isWaitingForLocation = false;
+  guidanceTracker.targetBearing = null;
+  guidanceTracker.smoothedSin = null;
+  guidanceTracker.smoothedCos = null;
+  guidanceTint.classList.remove(
+    "guidance-tint--active",
+    "guidance-tint--starting",
+    "guidance-tint--locked",
+  );
+  guidanceTracker.pillHideTimer = window.setTimeout(() => {
+    guidancePill.hidden = true;
+    guidanceTracker.target = null;
+  }, 260);
+}
+
+function clearGuidanceTimers() {
+  ["headingTimeout", "tintStartTimer", "tintHideTimer", "pillHideTimer"].forEach(
+    (key) => {
+      window.clearTimeout(guidanceTracker[key]);
+      guidanceTracker[key] = null;
+    },
+  );
 }
 
 function readMapPreferences() {
@@ -810,6 +1222,26 @@ function installLayerResetButton(control) {
   resetSection.append(resetButton);
   list.append(resetSection);
   L.DomEvent.disableClickPropagation(resetSection);
+}
+
+function installLayerControlHoverDelay(control) {
+  const container = control.getContainer();
+  let collapseTimer = null;
+
+  // Leaflet normally collapses immediately on mouseleave. Retain its normal
+  // expand behavior while forgiving a brief slip outside the panel.
+  L.DomEvent.off(container, "mouseleave", control.collapse, control);
+  container.addEventListener("mouseenter", () => {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = null;
+  });
+  container.addEventListener("mouseleave", () => {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = window.setTimeout(() => {
+      if (!container.matches(":hover")) control.collapse();
+      collapseTimer = null;
+    }, LAYER_CONTROL_COLLAPSE_DELAY_MS);
+  });
 }
 
 function resetMapToDefaults() {

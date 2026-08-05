@@ -3,14 +3,20 @@
 const PROPERTY_BOUNDS_PADDING = [28, 28];
 const DEFAULT_MAX_ZOOM = 21;
 const RAPID_DOUBLE_TAP_MS = 250;
-const OFF_PROPERTY_MIN_DISTANCE_METERS = 3;
-const OFF_PROPERTY_ENTER_FIXES = 3;
-const OFF_PROPERTY_ENTER_DELAY_MS = 8000;
+const OFF_PROPERTY_MIN_DISTANCE_METERS = 4.5;
+const OFF_PROPERTY_ENTER_FIXES = 2;
+const OFF_PROPERTY_ENTER_DELAY_MS = 4000;
 const OFF_PROPERTY_LEAVE_FIXES = 2;
 const OFF_PROPERTY_ALERT_MS = 3500;
+const OFF_PROPERTY_NEAR_ENTER_FIXES = 2;
+const OFF_PROPERTY_NEAR_LEAVE_FIXES = 2;
+const OFF_PROPERTY_UNION_PROBE_METERS = 1;
+const OFF_PROPERTY_VIBRATION_MS = 35;
 const ARRIVAL_DISTANCE_METERS = 7.62;
 const MAGNETIC_DECLINATION_DEG = -13.5;
 const GUIDANCE_HEADING_TIMEOUT_MS = 3000;
+const GUIDANCE_UNAVAILABLE_HOLD_MS = 4000;
+const GUIDANCE_IOS_HINT_DELAY_MS = 1800;
 const GUIDANCE_SMOOTHING_TIME_MS = 250;
 const GUIDANCE_VISUAL_INTERVAL_MS = 100;
 const LAYER_CONTROL_COLLAPSE_DELAY_MS = 280;
@@ -34,11 +40,14 @@ let pendingFeaturePopupTimer = null;
 let suppressFeaturePopupsUntil = 0;
 
 const offPropertyTracker = {
-  polygonRings: null,
+  geometry: null,
   isConfirmedOff: false,
+  isNear: false,
   enteringFixCount: 0,
   enteringStartedAt: 0,
   leavingFixCount: 0,
+  nearEnteringFixCount: 0,
+  nearLeavingFixCount: 0,
   hasAnnouncedOffProperty: false,
 };
 
@@ -48,8 +57,13 @@ const guidanceTracker = {
   isActive: false,
   isWaitingForLocation: false,
   orientationPermission: "unknown",
+  lastPermissionResult: "not-requested",
   hideGuideButton: false,
   orientationEvents: [],
+  isIosPermissionPath: false,
+  orientationEventFired: false,
+  sawWebkitCompassHeading: false,
+  sawFiniteAlpha: false,
   androidAbsoluteSeen: false,
   smoothedSin: null,
   smoothedCos: null,
@@ -60,6 +74,9 @@ const guidanceTracker = {
   tintStartTimer: null,
   tintHideTimer: null,
   pillHideTimer: null,
+  unavailableHintTimer: null,
+  unavailableEndTimer: null,
+  hasShownIosOrientationHint: false,
 };
 
 const map = L.map("map", {
@@ -339,7 +356,7 @@ Promise.all([
   loadGeoJson("data/property/powerline-corridor.geojson"),
 ])
   .then(([boundaryData, cornerData, corridorData]) => {
-    offPropertyTracker.polygonRings = extractOuterPolygonRings(
+    offPropertyTracker.geometry = buildOffPropertyGeometry(
       boundaryData,
       corridorData,
     );
@@ -467,7 +484,9 @@ function updateLocation(position) {
   const enteredConfirmedOff = updateOffPropertyState(classification);
   const dotClassName = offPropertyTracker.isConfirmedOff
     ? "location-dot location-dot--off"
-    : "location-dot";
+    : offPropertyTracker.isNear
+      ? "location-dot location-dot--near"
+      : "location-dot";
 
   if (!locationAccuracyCircle) {
     locationAccuracyCircle = L.circle(latlng, {
@@ -533,36 +552,89 @@ function extractOuterPolygonRings(...featureCollections) {
   return rings;
 }
 
+function buildOffPropertyGeometry(...featureCollections) {
+  const projectedRings = extractOuterPolygonRings(...featureCollections).map((ring) =>
+    ring.map(projectToPropertyMeters),
+  );
+  const allSegments = projectedRings.flatMap((ring) => buildRingSegments(ring));
+  const outerBoundarySegments = allSegments.filter(
+    (segment) => !isInteriorUnionSegment(segment, projectedRings),
+  );
+  return { projectedRings, outerBoundarySegments };
+}
+
+function buildRingSegments(ring) {
+  const segments = [];
+  for (let index = 1; index < ring.length; index += 1) {
+    segments.push({ start: ring[index - 1], end: ring[index] });
+  }
+  if (
+    ring.length > 2 &&
+    (ring[0][0] !== ring[ring.length - 1][0] || ring[0][1] !== ring[ring.length - 1][1])
+  ) {
+    segments.push({ start: ring[ring.length - 1], end: ring[0] });
+  }
+  return segments;
+}
+
+function isInteriorUnionSegment({ start, end }, rings) {
+  const midpoint = [(start[0] + end[0]) / 2, (start[1] + end[1]) / 2];
+  const deltaX = end[0] - start[0];
+  const deltaY = end[1] - start[1];
+  const length = Math.hypot(deltaX, deltaY);
+  if (length === 0) return true;
+
+  const offsetX = (-deltaY / length) * OFF_PROPERTY_UNION_PROBE_METERS;
+  const offsetY = (deltaX / length) * OFF_PROPERTY_UNION_PROBE_METERS;
+  return (
+    isPointInsideAnyRing([midpoint[0] + offsetX, midpoint[1] + offsetY], rings) &&
+    isPointInsideAnyRing([midpoint[0] - offsetX, midpoint[1] - offsetY], rings)
+  );
+}
+
 function classifyPropertyLocation(latlng, accuracy) {
-  const rings = offPropertyTracker.polygonRings;
-  if (!rings || rings.length === 0) return "UNKNOWN";
+  const geometry = offPropertyTracker.geometry;
+  if (!geometry || geometry.outerBoundarySegments.length === 0) return "UNKNOWN";
 
   const point = projectToPropertyMeters([latlng.lng, latlng.lat]);
-  const projectedRings = rings.map((ring) => ring.map(projectToPropertyMeters));
-  if (projectedRings.some((ring) => isPointInsideRing(point, ring))) {
-    return "INSIDE";
-  }
-
+  const isInside = isPointInsideAnyRing(point, geometry.projectedRings);
   const nearestBoundaryDistance = Math.min(
-    ...projectedRings.map((ring) => distanceToRing(point, ring)),
+    ...geometry.outerBoundarySegments.map(({ start, end }) =>
+      distanceToSegment(point, start, end),
+    ),
   );
-  return nearestBoundaryDistance > Math.max(OFF_PROPERTY_MIN_DISTANCE_METERS, accuracy)
-    ? "OFF"
-    : "UNKNOWN";
+  const signedDistance = isInside ? nearestBoundaryDistance : -nearestBoundaryDistance;
+  const effectiveMargin = Math.max(OFF_PROPERTY_MIN_DISTANCE_METERS, accuracy);
+  if (signedDistance > effectiveMargin) return "INSIDE";
+  if (signedDistance < -effectiveMargin) return "OFF";
+  return "NEAR";
 }
 
 function updateOffPropertyState(classification) {
   const now = performance.now();
 
+  if (classification === "UNKNOWN") return false;
+
   if (classification === "OFF") {
     offPropertyTracker.leavingFixCount = 0;
-    if (offPropertyTracker.isConfirmedOff) return false;
-
     if (offPropertyTracker.enteringFixCount === 0) {
       offPropertyTracker.enteringStartedAt = now;
     }
     offPropertyTracker.enteringFixCount += 1;
+
+    // Keep the visitor-facing state ordered even if a GPS fix jumps directly
+    // from clearly inside to clearly outside between updates.
+    const becameNearBridge =
+      !offPropertyTracker.isNear &&
+      offPropertyTracker.enteringFixCount >= OFF_PROPERTY_NEAR_ENTER_FIXES;
+    if (becameNearBridge) {
+      offPropertyTracker.isNear = true;
+      offPropertyTracker.nearLeavingFixCount = 0;
+    }
+
+    if (offPropertyTracker.isConfirmedOff || becameNearBridge) return false;
     if (
+      offPropertyTracker.isNear &&
       offPropertyTracker.enteringFixCount >= OFF_PROPERTY_ENTER_FIXES &&
       now - offPropertyTracker.enteringStartedAt >= OFF_PROPERTY_ENTER_DELAY_MS
     ) {
@@ -575,12 +647,40 @@ function updateOffPropertyState(classification) {
 
   offPropertyTracker.enteringFixCount = 0;
   offPropertyTracker.enteringStartedAt = 0;
-  if (!offPropertyTracker.isConfirmedOff) return false;
 
-  offPropertyTracker.leavingFixCount += 1;
-  if (offPropertyTracker.leavingFixCount >= OFF_PROPERTY_LEAVE_FIXES) {
-    offPropertyTracker.isConfirmedOff = false;
-    offPropertyTracker.leavingFixCount = 0;
+  if (classification === "NEAR") {
+    offPropertyTracker.nearLeavingFixCount = 0;
+    offPropertyTracker.nearEnteringFixCount += 1;
+    if (offPropertyTracker.isConfirmedOff) {
+      offPropertyTracker.leavingFixCount += 1;
+      if (offPropertyTracker.leavingFixCount >= OFF_PROPERTY_LEAVE_FIXES) {
+        offPropertyTracker.isConfirmedOff = false;
+        offPropertyTracker.isNear = true;
+        offPropertyTracker.leavingFixCount = 0;
+      }
+      return false;
+    }
+    if (offPropertyTracker.nearEnteringFixCount >= OFF_PROPERTY_NEAR_ENTER_FIXES) {
+      offPropertyTracker.isNear = true;
+    }
+    return false;
+  }
+
+  offPropertyTracker.nearEnteringFixCount = 0;
+  offPropertyTracker.nearLeavingFixCount += 1;
+  if (offPropertyTracker.isConfirmedOff) {
+    offPropertyTracker.leavingFixCount += 1;
+    if (offPropertyTracker.leavingFixCount >= OFF_PROPERTY_LEAVE_FIXES) {
+      offPropertyTracker.isConfirmedOff = false;
+      offPropertyTracker.isNear = true;
+      offPropertyTracker.nearLeavingFixCount = 0;
+      offPropertyTracker.leavingFixCount = 0;
+    }
+    return false;
+  }
+  if (offPropertyTracker.nearLeavingFixCount >= OFF_PROPERTY_NEAR_LEAVE_FIXES) {
+    offPropertyTracker.isNear = false;
+    offPropertyTracker.nearLeavingFixCount = 0;
   }
   return false;
 }
@@ -603,7 +703,11 @@ function announceOffProperty() {
     offPropertyTooltipTimer = null;
   }, OFF_PROPERTY_ALERT_MS);
 
-  if (typeof navigator.vibrate === "function") navigator.vibrate(15);
+  // iOS browsers do not implement the Vibration API, so this only fires on
+  // supported devices such as Android Chrome.
+  if (typeof navigator.vibrate === "function") {
+    navigator.vibrate(OFF_PROPERTY_VIBRATION_MS);
+  }
 }
 
 function projectToPropertyMeters([longitude, latitude]) {
@@ -626,15 +730,8 @@ function isPointInsideRing([x, y], ring) {
   return isInside;
 }
 
-function distanceToRing(point, ring) {
-  let nearestDistance = Infinity;
-  for (let i = 1; i < ring.length; i += 1) {
-    nearestDistance = Math.min(
-      nearestDistance,
-      distanceToSegment(point, ring[i - 1], ring[i]),
-    );
-  }
-  return nearestDistance;
+function isPointInsideAnyRing(point, rings) {
+  return rings.some((ring) => isPointInsideRing(point, ring));
 }
 
 function distanceToSegment([px, py], [ax, ay], [bx, by]) {
@@ -794,19 +891,21 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
   const name = escapeHtml(feature.properties.name);
   const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
   let popupHtml = `<strong>${name}</strong><br>${safeDetail}`;
-  if (!options.landmark || !latestPosition) return popupHtml;
+  if (!options.landmark) return popupHtml;
 
   const target = guidanceTracker.targets.get(feature.properties.id);
   if (!target) return popupHtml;
 
-  const distanceMeters = distanceBetweenLatLngs(latestPosition.latlng, target.latlng);
-  const bearing = calculateTrueBearing(latestPosition.latlng, target.latlng);
-  popupHtml +=
-    `<span class="landmark-distance">${escapeHtml(formatLandmarkDistance(distanceMeters, bearing))}</span>`;
+  if (latestPosition) {
+    const distanceMeters = distanceBetweenLatLngs(latestPosition.latlng, target.latlng);
+    const bearing = calculateTrueBearing(latestPosition.latlng, target.latlng);
+    popupHtml +=
+      `<span class="landmark-distance">${escapeHtml(formatLandmarkDistance(distanceMeters, bearing))}</span>`;
+  }
   if (canOfferCompassGuidance()) {
     popupHtml +=
       `<button class="guide-me-button" type="button" data-landmark-id="${escapeHtml(target.id)}">` +
-      "Guide me</button>";
+      `${guidanceButtonLabel(target.id)}</button>`;
   }
   return popupHtml;
 }
@@ -837,11 +936,17 @@ function bindMapFeature(layer, feature, detail, options = {}) {
 }
 
 function formatLandmarkDistance(distanceMeters, bearing) {
+  const distanceText = formatApproximateDistance(distanceMeters);
+  if (distanceText === "you're here") return distanceText;
+  return `${distanceText} \u00b7 ${bearingToCompassPoint(bearing)}`;
+}
+
+function formatApproximateDistance(distanceMeters) {
   const distanceFeet = distanceMeters * 3.28084;
   if (distanceFeet < 15) return "you're here";
   const increment = distanceFeet < 300 ? 10 : 25;
   const roundedFeet = Math.round(distanceFeet / increment) * increment;
-  return `about ${roundedFeet} ft \u00b7 ${bearingToCompassPoint(bearing)}`;
+  return `about ${roundedFeet} ft`;
 }
 
 function bearingToCompassPoint(bearing) {
@@ -890,64 +995,102 @@ function canOfferCompassGuidance() {
   return hasCoarsePointer && hasOrientationSupport && !guidanceTracker.hideGuideButton;
 }
 
+function guidanceButtonLabel(targetId) {
+  if (!guidanceTracker.isActive || !guidanceTracker.target) return "Guide me";
+  return guidanceTracker.target.id === targetId
+    ? "Stop guiding"
+    : "Guide here instead";
+}
+
 function handleGuideButtonClick(event) {
   const button = event.target.closest?.(".guide-me-button");
   if (!button) return;
   event.preventDefault();
   event.stopPropagation();
+  if (
+    guidanceTracker.isActive &&
+    guidanceTracker.target?.id === button.dataset.landmarkId
+  ) {
+    stopGuidance();
+    return;
+  }
   startGuidance(button.dataset.landmarkId);
 }
 
 async function startGuidance(targetId) {
   const target = guidanceTracker.targets.get(targetId);
-  if (!target || !latestPosition) return;
+  if (!target) return;
 
-  clearGuidanceTimers();
-  guidanceTracker.target = target;
   if (guidanceTracker.isActive) {
-    updateGuidanceFromPosition(latestPosition.latlng);
+    guidanceTracker.target = target;
+    if (latestPosition) {
+      updateGuidanceFromPosition(latestPosition.latlng);
+    } else {
+      pauseGuidanceForLocation();
+    }
     map.closePopup();
     return;
   }
 
-  if (distanceBetweenLatLngs(latestPosition.latlng, target.latlng) <= ARRIVAL_DISTANCE_METERS) {
+  clearGuidanceTimers();
+  guidanceTracker.target = target;
+  if (
+    latestPosition &&
+    distanceBetweenLatLngs(latestPosition.latlng, target.latlng) <= ARRIVAL_DISTANCE_METERS
+  ) {
     showGuidanceArrival();
     map.closePopup();
     return;
   }
 
   const permissionRequest = window.DeviceOrientationEvent?.requestPermission;
+  guidanceTracker.lastPermissionResult =
+    typeof permissionRequest === "function" ? "pending" : "not-required";
   if (
     typeof permissionRequest === "function" &&
     guidanceTracker.orientationPermission !== "granted"
   ) {
     try {
       const permission = await permissionRequest.call(window.DeviceOrientationEvent);
+      guidanceTracker.lastPermissionResult = permission;
       if (permission !== "granted") {
         declineCompassGuidance();
         return;
       }
       guidanceTracker.orientationPermission = "granted";
     } catch {
+      guidanceTracker.lastPermissionResult = "error";
       declineCompassGuidance();
       return;
     }
+  } else if (guidanceTracker.orientationPermission === "granted") {
+    guidanceTracker.lastPermissionResult = "previously-granted";
   }
 
   guidanceTracker.isActive = true;
-  guidanceTracker.isWaitingForLocation = false;
+  guidanceTracker.isWaitingForLocation = !latestPosition;
+  guidanceTracker.isIosPermissionPath = typeof permissionRequest === "function";
+  guidanceTracker.orientationEventFired = false;
+  guidanceTracker.sawWebkitCompassHeading = false;
+  guidanceTracker.sawFiniteAlpha = false;
   guidanceTracker.androidAbsoluteSeen = false;
   guidanceTracker.smoothedSin = null;
   guidanceTracker.smoothedCos = null;
   guidanceTracker.lastHeadingAt = 0;
   guidanceTracker.lastVisualUpdateAt = 0;
-  setGuidancePill(`Guiding to ${target.name}`);
-  attachOrientationListeners(typeof permissionRequest === "function");
-  updateGuidanceFromPosition(latestPosition.latlng);
-  guidanceTracker.headingTimeout = window.setTimeout(() => {
-    guidanceTracker.hideGuideButton = true;
-    stopGuidance();
-  }, GUIDANCE_HEADING_TIMEOUT_MS);
+  updateGuidancePill();
+  renderGuidanceTint(110, { centered: true });
+  attachOrientationListeners(guidanceTracker.isIosPermissionPath);
+  logGuidanceDiagnostic("start");
+  if (latestPosition) {
+    updateGuidanceFromPosition(latestPosition.latlng);
+  } else {
+    requestInitialLocation();
+  }
+  guidanceTracker.headingTimeout = window.setTimeout(
+    handleGuidanceHeadingTimeout,
+    GUIDANCE_HEADING_TIMEOUT_MS,
+  );
   map.closePopup();
 }
 
@@ -981,6 +1124,12 @@ function detachOrientationListeners() {
 }
 
 function handleOrientationEvent(event) {
+  guidanceTracker.orientationEventFired = true;
+  if (Number.isFinite(event.webkitCompassHeading)) {
+    guidanceTracker.sawWebkitCompassHeading = true;
+  }
+  if (Number.isFinite(event.alpha)) guidanceTracker.sawFiniteAlpha = true;
+
   let heading = null;
   let isAndroidHeading = false;
 
@@ -1001,11 +1150,13 @@ function handleOrientationEvent(event) {
   }
 
   if (!Number.isFinite(heading)) return;
-  const screenRotation = Number(screen.orientation?.angle ?? window.orientation) || 0;
   // Android absolute alpha is magnetic near Lake Luzerne. Field-verify this
   // correction while standing along a known bearing such as Mountain Drive.
-  if (isAndroidHeading) heading += MAGNETIC_DECLINATION_DEG;
-  heading = normalizeAngle(heading + screenRotation);
+  if (isAndroidHeading) {
+    const screenRotation = Number(screen.orientation?.angle) || 0;
+    heading += MAGNETIC_DECLINATION_DEG + screenRotation;
+  }
+  heading = normalizeAngle(heading);
 
   window.clearTimeout(guidanceTracker.headingTimeout);
   guidanceTracker.headingTimeout = null;
@@ -1052,7 +1203,7 @@ function updateGuidanceFromPosition(latlng) {
 
   guidanceTracker.isWaitingForLocation = false;
   guidanceTracker.targetBearing = calculateTrueBearing(latlng, guidanceTracker.target.latlng);
-  setGuidancePill(`Guiding to ${guidanceTracker.target.name}`);
+  updateGuidancePill();
   if (guidanceTracker.smoothedSin !== null) {
     const filteredHeading = normalizeAngle(
       (Math.atan2(guidanceTracker.smoothedSin, guidanceTracker.smoothedCos) * 180) /
@@ -1068,15 +1219,15 @@ function pauseGuidanceForLocation() {
   if (!guidanceTracker.isActive) return;
   guidanceTracker.isWaitingForLocation = true;
   guidanceTracker.targetBearing = null;
-  guidanceTint.classList.remove("guidance-tint--active", "guidance-tint--locked");
-  setGuidancePill("Waiting for location\u2026");
+  renderGuidanceTint(110, { centered: true });
+  updateGuidancePill();
 }
 
-function renderGuidanceTint(error) {
+function renderGuidanceTint(error, { centered = false } = {}) {
   const ramp = readGuidanceRamp();
   const magnitude = Math.min(Math.abs(error), 110);
   const style = interpolateGuidanceRamp(magnitude, ramp);
-  const offset = Math.max(-1, Math.min(1, error / 90)) * 46;
+  const offset = centered ? 0 : Math.max(-1, Math.min(1, error / 90)) * 46;
   guidanceTint.style.setProperty("--guidance-offset", `${offset}vw`);
   guidanceTint.style.setProperty("--guidance-saturation", `${style.saturation}%`);
   guidanceTint.style.setProperty("--guidance-lightness", `${style.lightness}%`);
@@ -1133,6 +1284,45 @@ function setGuidancePill(message) {
   guidancePill.hidden = false;
 }
 
+function updateGuidancePill() {
+  if (!guidanceTracker.target) return;
+  if (!latestPosition || guidanceTracker.isWaitingForLocation) {
+    setGuidancePill(`Guiding to ${guidanceTracker.target.name} \u00b7 waiting for location`);
+    return;
+  }
+  const distance = distanceBetweenLatLngs(latestPosition.latlng, guidanceTracker.target.latlng);
+  setGuidancePill(
+    `Guiding to ${guidanceTracker.target.name} \u00b7 ${formatApproximateDistance(distance)}`,
+  );
+}
+
+function handleGuidanceHeadingTimeout() {
+  if (!guidanceTracker.isActive || guidanceTracker.smoothedSin !== null) return;
+  logGuidanceDiagnostic("timeout");
+  detachOrientationListeners();
+  guidanceTracker.headingTimeout = null;
+  setGuidancePill("Compass unavailable");
+  if (guidanceTracker.isIosPermissionPath && !guidanceTracker.hasShownIosOrientationHint) {
+    guidanceTracker.hasShownIosOrientationHint = true;
+    guidanceTracker.unavailableHintTimer = window.setTimeout(() => {
+      setGuidancePill("Check Settings \u2192 Safari \u2192 Motion & Orientation Access");
+    }, GUIDANCE_IOS_HINT_DELAY_MS);
+  }
+  guidanceTracker.unavailableEndTimer = window.setTimeout(
+    stopGuidance,
+    GUIDANCE_UNAVAILABLE_HOLD_MS,
+  );
+}
+
+function logGuidanceDiagnostic(phase) {
+  console.info(
+    `[457 guidance] ${phase} events=${guidanceTracker.orientationEvents.join(",") || "none"} ` +
+      `permission=${guidanceTracker.lastPermissionResult} ` +
+      `event=${guidanceTracker.orientationEventFired} ` +
+      `webkit=${guidanceTracker.sawWebkitCompassHeading} alpha=${guidanceTracker.sawFiniteAlpha}`,
+  );
+}
+
 function showGuidanceArrival() {
   detachOrientationListeners();
   window.clearTimeout(guidanceTracker.headingTimeout);
@@ -1171,7 +1361,14 @@ function stopGuidance() {
 }
 
 function clearGuidanceTimers() {
-  ["headingTimeout", "tintStartTimer", "tintHideTimer", "pillHideTimer"].forEach(
+  [
+    "headingTimeout",
+    "tintStartTimer",
+    "tintHideTimer",
+    "pillHideTimer",
+    "unavailableHintTimer",
+    "unavailableEndTimer",
+  ].forEach(
     (key) => {
       window.clearTimeout(guidanceTracker[key]);
       guidanceTracker[key] = null;

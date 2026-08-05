@@ -1,7 +1,13 @@
 :root {
   color-scheme: light;
-  --panel: rgba(20, 35, 29, 0.95);
-  --panel-text: #ffffff;
+  --chrome-surface: rgba(20, 35, 29, 0.95);
+  --chrome-text: #ffffff;
+  --chrome-muted: #c7d6cf;
+  --chrome-border: 1px solid rgba(255, 255, 255, 0.28);
+  --chrome-radius: 13px;
+  --chrome-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+  --panel: var(--chrome-surface);
+  --panel-text: var(--chrome-text);
   --owned: #5ee6bd;
   --owned-dark: #102f29;
   --location: #2f8cff;
@@ -155,11 +161,11 @@ button { font: inherit; }
   position: relative;
   width: min(440px, 100%);
   padding: 25px 48px 24px 25px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 13px;
-  color: var(--panel-text);
-  background: var(--panel);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+  box-shadow: var(--chrome-shadow);
 }
 
 .info-dialog h2 {
@@ -183,7 +189,7 @@ button { font: inherit; }
   padding: 0;
   border: 0;
   border-radius: 7px;
-  color: #ffffff;
+  color: var(--chrome-text);
   background: transparent;
   font-size: 25px;
   line-height: 1;
@@ -208,8 +214,8 @@ button { font: inherit; }
   margin: 0;
   padding: 9px 11px;
   border-radius: 8px;
-  color: var(--panel-text);
-  background: var(--panel);
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
   font-size: 12px;
   line-height: 1.3;
@@ -314,10 +320,99 @@ button { font: inherit; }
   line-height: 1.2;
 }
 
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+}
+
+.leaflet-popup-content-wrapper {
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  box-shadow: var(--chrome-shadow);
+}
+
+.leaflet-popup-content {
+  margin: 14px 38px 15px 16px;
+  font-size: 0.87rem;
+  line-height: 1.5;
+}
+
+.map-popup-content > strong {
+  display: block;
+  margin: 0 0 5px;
+  font-size: 1.05rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+.map-popup-secondary,
+.map-popup-detail,
+.map-popup-caveat {
+  display: block;
+}
+
+.map-popup-secondary {
+  margin-bottom: 4px;
+  color: var(--chrome-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.map-popup-caveat {
+  margin-top: 6px;
+  color: var(--chrome-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.leaflet-container a.leaflet-popup-close-button {
+  top: 7px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  color: var(--chrome-text);
+  font-size: 23px;
+  line-height: 30px;
+}
+
+.leaflet-container a.leaflet-popup-close-button:hover,
+.leaflet-container a.leaflet-popup-close-button:focus-visible {
+  color: var(--chrome-text);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.leaflet-tooltip:not(.off-property-tooltip) {
+  padding: 5px 8px;
+  border: var(--chrome-border);
+  border-radius: 8px;
+  color: var(--chrome-text);
+  background: rgba(20, 35, 29, 0.88);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.leaflet-tooltip-top:not(.off-property-tooltip)::before {
+  border-top-color: rgba(20, 35, 29, 0.88);
+}
+
+.leaflet-tooltip-bottom:not(.off-property-tooltip)::before {
+  border-bottom-color: rgba(20, 35, 29, 0.88);
+}
+
+.leaflet-tooltip-left:not(.off-property-tooltip)::before {
+  border-left-color: rgba(20, 35, 29, 0.88);
+}
+
+.leaflet-tooltip-right:not(.off-property-tooltip)::before {
+  border-right-color: rgba(20, 35, 29, 0.88);
+}
+
 .landmark-distance {
   display: block;
   margin-top: 5px;
-  color: #52665f;
+  color: var(--chrome-muted);
   font-size: 0.78rem;
 }
 
@@ -342,7 +437,7 @@ button { font: inherit; }
 
 .compass-note {
   display: block;
-  color: #52665f;
+  color: var(--chrome-muted);
   font-size: 0.82rem;
 }
 
@@ -366,11 +461,11 @@ button { font: inherit; }
   align-items: center;
   gap: 9px;
   padding: 9px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 13px;
-  color: #ffffff;
-  background: #14231d;
-  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.42);
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+  box-shadow: var(--chrome-shadow);
   font-size: 0.8rem;
   font-weight: 750;
   cursor: pointer;

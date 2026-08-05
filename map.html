@@ -7,10 +7,11 @@
   <title>457 Property Map</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
-  <link rel="stylesheet" href="styles.css?v=20260804-5">
+  <link rel="stylesheet" href="styles.css?v=20260804-6">
 </head>
 <body>
   <main id="map" aria-label="Interactive map of the approximate 457 Property boundaries"></main>
+  <div class="guidance-tint" id="guidance-tint" aria-hidden="true"></div>
   <a class="map-control home-link" href="index.html" aria-label="Return to the home page" title="Home">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"></path></svg>
   </a>
@@ -33,8 +34,14 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m19.5 4.5-7.1 15-2.1-6.8-6.8-2.1 16-6.1Z"></path></svg>
     </button>
   </div>
+  <div class="guidance-pill" id="guidance-pill" role="status" aria-live="polite" hidden>
+    <button id="guidance-dismiss" type="button" aria-label="End landmark guidance">
+      <span id="guidance-pill-text">Guidance</span>
+      <span aria-hidden="true">&times;</span>
+    </button>
+  </div>
   <noscript>This map requires JavaScript.</noscript>
   <script src="vendor/leaflet/leaflet.js"></script>
-  <script src="app.js?v=20260804-5"></script>
+  <script src="app.js?v=20260804-6"></script>
 </body>
 </html>

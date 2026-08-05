@@ -20,6 +20,17 @@ Processed map data is organized by the type of feature shown in the layer picker
 - The Pavilion-side intersection is placed 5 m northeast of the Pavilion point so the symbols do not overlap. The trail's other endpoint is snapped 1.5 m to Mountain Drive.
 - After the owner manually refined Front Field Zone on August 4, Garden Cut Through was trimmed at its first west-to-east crossing of the revised boundary. The trail endpoint, an inserted zone-edge vertex, and the intersection marker share `[-73.8350683, 43.3590097]`; the inserted vertex does not change the owner-edited field shape.
 
+### Routes and segments
+
+- A **segment** is one continuous, actually walked piece of tread. Segments are the only trail data that carries geometry, each has a stable id in `trails/walking-trails.geojson`, and connectors and spurs are segments like any other.
+- A **route** is a visitor-facing walk such as an Inner Loop or an out-and-back. It is an ordered list of segment ids with descriptive attributes in `trails/routes.json`; routes deliberately have no geometry of their own.
+- Routes reference segments, never the other way around. A segment may belong to more than one route, while an unassigned connector stays mapped without needing to be presented as a destination.
+- Do not merge segment coordinates into route geometry. Map highlighting and labels should work from the route's member ids, so coordinates remain in one hand-editable source.
+
+### Pin separation
+
+- Keep no two pin features within 3 m of one another. When symbols would overlap, use a small logical offset along the associated road or trail so at least a corner of the lower-priority pin remains visible, as was already done for the Pavilion-side intersection.
+
 ## Landmarks
 
 - `landmarks/buildings.geojson` — central point locations for Home and Pavilion.

@@ -38,6 +38,8 @@ const savedMapPreferences = readMapPreferences();
 let preferencesReady = false;
 let pendingFeaturePopupTimer = null;
 let suppressFeaturePopupsUntil = 0;
+const routesBySegmentId = new Map();
+let hasRouteDefinitions = false;
 
 const offPropertyTracker = {
   geometry: null,
@@ -89,6 +91,46 @@ const map = L.map("map", {
 // Give Leaflet a valid drawing viewport before asynchronous GeoJSON arrives.
 map.setView([43.3596, -73.8348], 17);
 
+const MAP_PANES = Object.freeze({
+  outsideShading: "outside-shading-pane",
+  zones: "zones-pane",
+  corridor: "corridor-pane",
+  boundary: "boundary-pane",
+  roads: "roads-pane",
+  trails: "trails-pane",
+  naturalLandmarks: "natural-landmarks-pane",
+  corners: "corners-pane",
+  intersections: "intersections-pane",
+  buildings: "buildings-pane",
+});
+
+[
+  [MAP_PANES.outsideShading, 401],
+  [MAP_PANES.zones, 402],
+  [MAP_PANES.corridor, 403],
+  [MAP_PANES.boundary, 404],
+  [MAP_PANES.roads, 405],
+  [MAP_PANES.trails, 406],
+  [MAP_PANES.naturalLandmarks, 610],
+  [MAP_PANES.corners, 615],
+  [MAP_PANES.intersections, 620],
+  [MAP_PANES.buildings, 630],
+].forEach(([name, zIndex]) => {
+  map.createPane(name);
+  map.getPane(name).style.zIndex = zIndex;
+});
+
+const outsideMaskRenderer = L.svg({
+  pane: MAP_PANES.outsideShading,
+  padding: 0.5,
+});
+const corridorRenderer = L.canvas({ pane: MAP_PANES.corridor });
+const boundaryRenderer = L.canvas({ pane: MAP_PANES.boundary });
+const roadsRenderer = L.canvas({ pane: MAP_PANES.roads });
+const trailsRenderer = L.canvas({ pane: MAP_PANES.trails });
+const zonesRenderer = L.canvas({ pane: MAP_PANES.zones });
+const intersectionsRenderer = L.canvas({ pane: MAP_PANES.intersections });
+
 const nysAerial = L.tileLayer(
   "https://orthos.its.ny.gov/arcgis/rest/services/wms/2022/MapServer/tile/{z}/{y}/{x}",
   {
@@ -111,8 +153,8 @@ const topoMap = L.tileLayer(
 
 (savedMapPreferences.baseMap === "topo" ? topoMap : nysAerial).addTo(map);
 
-const outsideMaskRenderer = L.svg({ padding: 0.5 });
 const outsideMaskLayer = L.geoJSON(null, {
+  pane: MAP_PANES.outsideShading,
   renderer: outsideMaskRenderer,
   interactive: false,
   style: {
@@ -124,6 +166,8 @@ const outsideMaskLayer = L.geoJSON(null, {
 }).addTo(map);
 
 const corridorLayer = L.geoJSON(null, {
+  pane: MAP_PANES.corridor,
+  renderer: corridorRenderer,
   style: {
     color: "#d5d9dc",
     weight: 3,
@@ -137,29 +181,34 @@ const corridorLayer = L.geoJSON(null, {
     if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
       layer.bindTooltip(message, { sticky: true, direction: "top" });
     }
-    layer.bindPopup(
-      `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
-        "Not our land, but access is allowed.<br>" +
-        "<small>Shaded extent is approximate; corridor edges are not surveyed here.</small>",
+    layer.bindPopup(() =>
+      buildMapFeaturePopup(feature, "Not our land, but access is allowed.", {
+        caveat: "Shaded extent is approximate; corridor edges are not surveyed here.",
+      }),
     );
   },
 }).addTo(map);
 
 const roadHalo = L.geoJSON(null, {
+  pane: MAP_PANES.roads,
+  renderer: roadsRenderer,
   interactive: false,
   style: {
     color: "#473522",
-    weight: 8,
-    opacity: 0.78,
+    // Retained as a ready-to-tune layer if aerial imagery later needs a thin halo.
+    weight: 0,
+    opacity: 0,
     lineCap: "round",
     lineJoin: "round",
   },
 });
 
 const roadsLayer = L.geoJSON(null, {
+  pane: MAP_PANES.roads,
+  renderer: roadsRenderer,
   style: {
     color: "#d89a4a",
-    weight: 5,
+    weight: 3,
     opacity: 0.98,
     lineCap: "round",
     lineJoin: "round",
@@ -172,24 +221,22 @@ const roadsGroup = L.layerGroup([roadHalo, roadsLayer]);
 addOverlayIfEnabled(roadsGroup, "roads", true);
 
 const trailsLayer = L.geoJSON(null, {
-  style: {
-    color: "#63b8e8",
-    weight: 3,
-    opacity: 1,
-    dashArray: "7 6",
-    lineCap: "round",
-    lineJoin: "round",
-  },
+  pane: MAP_PANES.trails,
+  renderer: trailsRenderer,
+  style: trailStyle,
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, "Provisional walking-trail centerline from repeated phone-GPS passes.");
+    const popupOptions = buildTrailPopupOptions(feature);
+    bindMapFeature(layer, feature, popupOptions.detail, popupOptions);
   },
 });
 addOverlayIfEnabled(trailsLayer, "trails", true);
 
 const zonesLayer = L.geoJSON(null, {
+  pane: MAP_PANES.zones,
+  renderer: zonesRenderer,
   style: {
     color: "#f0c85f",
-    weight: 3,
+    weight: 2,
     opacity: 0.95,
     dashArray: "2 7",
     fillColor: "#f5dda0",
@@ -211,7 +258,7 @@ const buildingIcon = L.icon({
 
 const landmarksLayer = L.geoJSON(null, {
   pointToLayer(feature, latlng) {
-    return L.marker(latlng, { icon: buildingIcon });
+    return L.marker(latlng, { icon: buildingIcon, pane: MAP_PANES.buildings });
   },
   onEachFeature(feature, layer) {
     registerGuidanceTarget(feature);
@@ -226,8 +273,12 @@ const landmarksLayer = L.geoJSON(null, {
 addOverlayIfEnabled(landmarksLayer, "landmarks", true);
 
 const intersectionsLayer = L.geoJSON(null, {
+  pane: MAP_PANES.intersections,
+  renderer: intersectionsRenderer,
   pointToLayer(feature, latlng) {
     return L.circleMarker(latlng, {
+      pane: MAP_PANES.intersections,
+      renderer: intersectionsRenderer,
       radius: 5,
       color: "#ffffff",
       weight: 2,
@@ -242,6 +293,8 @@ const intersectionsLayer = L.geoJSON(null, {
 addOverlayIfEnabled(intersectionsLayer, "intersections", false);
 
 const boundaryHalo = L.geoJSON(null, {
+  pane: MAP_PANES.boundary,
+  renderer: boundaryRenderer,
   interactive: false,
   style: {
     color: "#102f29",
@@ -253,6 +306,8 @@ const boundaryHalo = L.geoJSON(null, {
 }).addTo(map);
 
 const boundaryLayer = L.geoJSON(null, {
+  pane: MAP_PANES.boundary,
+  renderer: boundaryRenderer,
   interactive: false,
   style: {
     color: "#5ee6bd",
@@ -265,33 +320,32 @@ const boundaryLayer = L.geoJSON(null, {
 }).addTo(map);
 
 const mainBoundaryInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.boundary,
+  renderer: boundaryRenderer,
   style: { color: "#000000", weight: 12, opacity: 0.001 },
   onEachFeature(feature, layer) {
     const description = feature.properties.popup_description || feature.properties.note;
-    layer.bindPopup(
-      `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
-        `${escapeHtml(description)}`,
-    );
+    layer.bindPopup(() => buildMapFeaturePopup(feature, description));
   },
 }).addTo(map);
 
 const sliverInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.boundary,
+  renderer: boundaryRenderer,
   filter(feature) {
     return feature.properties.name === "Sliver";
   },
   style: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
   onEachFeature(feature, layer) {
     const description = feature.properties.popup_description || feature.properties.note;
-    layer.bindPopup(
-      `<strong>${escapeHtml(feature.properties.name)}</strong><br>` +
-        `${escapeHtml(description)}`,
-    );
+    layer.bindPopup(() => buildMapFeaturePopup(feature, description));
   },
 }).addTo(map);
 
 const cornersLayer = L.geoJSON(null, {
   pointToLayer(feature, latlng) {
     return L.marker(latlng, {
+      pane: MAP_PANES.corners,
       icon: L.divIcon({
         className: "corner-marker",
         iconSize: [9, 9],
@@ -368,12 +422,6 @@ Promise.all([
     corridorLayer.addData(corridorData);
     outsideMaskLayer.addData(buildOutsideMask(boundaryData, corridorData));
     installOutsideHatchPattern();
-    outsideMaskLayer.bringToBack();
-    corridorLayer.bringToFront();
-    boundaryHalo.bringToFront();
-    boundaryLayer.bringToFront();
-    mainBoundaryInteractionLayer.bringToFront();
-    sliverInteractionLayer.bringToFront();
     if (hasSavedMapView(savedMapPreferences)) {
       map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
     } else {
@@ -400,8 +448,14 @@ loadGeoJson("data/roads/dirt-roads.geojson")
   })
   .catch((error) => console.error(error));
 
-loadGeoJson("data/trails/walking-trails.geojson")
-  .then((data) => trailsLayer.addData(data))
+Promise.all([
+  loadGeoJson("data/trails/walking-trails.geojson"),
+  loadOptionalRoutes(),
+])
+  .then(([trailData, routes]) => {
+    configureTrailRoutes(trailData, routes);
+    trailsLayer.addData(trailData);
+  })
   .catch((error) => console.error(error));
 
 loadGeoJson("data/landmarks/buildings.geojson")
@@ -771,6 +825,74 @@ async function loadGeoJson(url) {
   return response.json();
 }
 
+async function loadOptionalRoutes() {
+  try {
+    const response = await fetch("data/trails/routes.json");
+    if (!response.ok) throw new Error(`Could not load routes: ${response.status}`);
+    const data = await response.json();
+    return Array.isArray(data.routes) ? data.routes : [];
+  } catch (error) {
+    console.info("Route definitions are unavailable; trail segment labels remain in use.", error);
+    return [];
+  }
+}
+
+function configureTrailRoutes(trailData, routes) {
+  routesBySegmentId.clear();
+  hasRouteDefinitions = routes.length > 0;
+  const knownSegmentIds = new Set(
+    trailData.features.map((feature) => feature.properties?.id).filter(Boolean),
+  );
+
+  routes.forEach((route) => {
+    if (!route?.id || !route.name || !Array.isArray(route.segments)) {
+      console.warn("Skipping an incomplete route definition.", route);
+      return;
+    }
+    route.segments.forEach((segmentId) => {
+      if (!knownSegmentIds.has(segmentId)) {
+        console.warn(
+          `Route \"${route.id}\" references unknown trail segment \"${segmentId}\"; skipping it.`,
+        );
+        return;
+      }
+      const segmentRoutes = routesBySegmentId.get(segmentId) || [];
+      segmentRoutes.push(route);
+      routesBySegmentId.set(segmentId, segmentRoutes);
+    });
+  });
+}
+
+function routesForTrail(feature) {
+  return routesBySegmentId.get(feature.properties?.id) || [];
+}
+
+function trailStyle(feature) {
+  const isConnector = hasRouteDefinitions && routesForTrail(feature).length === 0;
+  return {
+    color: "#63b8e8",
+    weight: 3,
+    // Keep unassigned segments present, but subtly secondary to named routes.
+    opacity: isConnector ? 0.78 : 1,
+    dashArray: "7 6",
+    lineCap: "round",
+    lineJoin: "round",
+  };
+}
+
+function buildTrailPopupOptions(feature) {
+  const segmentName = feature.properties.name;
+  const routes = routesForTrail(feature);
+  const detail = "Provisional walking-trail centerline from repeated phone-GPS passes.";
+  if (routes.length === 0) return { detail };
+
+  return {
+    title: routes.map((route) => route.name).join(" \u00b7 "),
+    secondary: `Segment: ${segmentName}`,
+    detail,
+  };
+}
+
 function buildMainBoundaryLine(boundaryData) {
   const mainParcel = boundaryData.features.find(
     (feature) => feature.properties.name === "Main Parcel",
@@ -888,13 +1010,21 @@ function registerGuidanceTarget(feature) {
 }
 
 function buildMapFeaturePopup(feature, detail, options = {}) {
-  const name = escapeHtml(feature.properties.name);
+  const name = escapeHtml(options.title || feature.properties.name);
   const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
-  let popupHtml = `<strong>${name}</strong><br>${safeDetail}`;
-  if (!options.landmark) return popupHtml;
+  let popupHtml = '<div class="map-popup-content">';
+  popupHtml += `<strong>${name}</strong>`;
+  if (options.secondary) {
+    popupHtml += `<span class="map-popup-secondary">${escapeHtml(options.secondary)}</span>`;
+  }
+  popupHtml += `<span class="map-popup-detail">${safeDetail}</span>`;
+  if (options.caveat) {
+    popupHtml += `<small class="map-popup-caveat">${escapeHtml(options.caveat)}</small>`;
+  }
+  if (!options.landmark) return `${popupHtml}</div>`;
 
   const target = guidanceTracker.targets.get(feature.properties.id);
-  if (!target) return popupHtml;
+  if (!target) return `${popupHtml}</div>`;
 
   if (latestPosition) {
     const distanceMeters = distanceBetweenLatLngs(latestPosition.latlng, target.latlng);
@@ -907,7 +1037,7 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
       `<button class="guide-me-button" type="button" data-landmark-id="${escapeHtml(target.id)}">` +
       `${guidanceButtonLabel(target.id)}</button>`;
   }
-  return popupHtml;
+  return `${popupHtml}</div>`;
 }
 
 function bindMapFeature(layer, feature, detail, options = {}) {

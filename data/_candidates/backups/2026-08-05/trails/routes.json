@@ -1,8 +1,0 @@
-{
-  "_comment": [
-    "Routes are presentational visitor experiences. They hold no geometry; their member segments remain the only geometry on the map.",
-    "Each route entry needs: id, name, segments (an ordered array of walking-trails.geojson ids), shape (loop or out-and-back), difficulty (easy, moderate, or rugged), length_ft, optional elevation_gain_ft, description, and status (provisional or confirmed).",
-    "Routes reference segments only. Do not add route membership back onto segment features or merge segment coordinates into route geometry."
-  ],
-  "routes": []
-}

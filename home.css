@@ -95,6 +95,24 @@ body {
 .home-qr-image + p { margin-top: 3px; font-size: 0.84rem; font-weight: 750; }
 .home-qr-url { color: #61776f; font-size: 0.69rem; }
 
+.home-routes {
+  width: min(440px, 86vw);
+}
+.home-routes h2 { margin: 0 0 10px; font-size: 1.05rem; }
+#home-route-list { display: grid; gap: 8px; }
+#home-route-list article a {
+  display: grid;
+  gap: 3px;
+  padding: 11px 13px;
+  border: 1px solid rgba(41, 70, 60, 0.22);
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+#home-route-list article a:hover,
+#home-route-list article a:focus-visible { border-color: #3c7160; }
+#home-route-list span { font-size: 0.78rem; line-height: 1.4; }
+
 @media (max-width: 600px) {
   .home-main { justify-content: flex-start; }
 }

@@ -35,11 +35,18 @@ const DEFAULT_OVERLAY_VISIBILITY = Object.freeze({
   intersections: false,
 });
 const savedMapPreferences = readMapPreferences();
+const requestedFeatureId = new URLSearchParams(window.location.search)
+  .get("feature")
+  ?.trim();
 let preferencesReady = false;
+let initialViewReady = false;
 let pendingFeaturePopupTimer = null;
 let suppressFeaturePopupsUntil = 0;
 const routesBySegmentId = new Map();
+const routesById = new Map();
+const focusableFeaturesById = new Map();
 let hasRouteDefinitions = false;
+let requestedFeatureFocused = false;
 
 const offPropertyTracker = {
   geometry: null,
@@ -177,6 +184,7 @@ const corridorLayer = L.geoJSON(null, {
     fillOpacity: 0.28,
   },
   onEachFeature(feature, layer) {
+    registerFocusableFeature(feature, layer, corridorLayer);
     const message = "National Grid powerline cut — not our land, but access is allowed.";
     if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
       layer.bindTooltip(message, { sticky: true, direction: "top" });
@@ -214,7 +222,9 @@ const roadsLayer = L.geoJSON(null, {
     lineJoin: "round",
   },
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, `${feature.properties.status}. ${feature.properties.note}`);
+    bindMapFeature(layer, feature, `${feature.properties.status}. ${feature.properties.note}`, {
+      focusOverlay: roadsGroup,
+    });
   },
 });
 const roadsGroup = L.layerGroup([roadHalo, roadsLayer]);
@@ -226,6 +236,7 @@ const trailsLayer = L.geoJSON(null, {
   style: trailStyle,
   onEachFeature(feature, layer) {
     const popupOptions = buildTrailPopupOptions(feature);
+    popupOptions.focusOverlay = trailsLayer;
     bindMapFeature(layer, feature, popupOptions.detail, popupOptions);
   },
 });
@@ -243,7 +254,7 @@ const zonesLayer = L.geoJSON(null, {
     fillOpacity: 0.14,
   },
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, feature.properties.note);
+    bindMapFeature(layer, feature, feature.properties.note, { focusOverlay: zonesLayer });
   },
 });
 addOverlayIfEnabled(zonesLayer, "zones", true);
@@ -265,8 +276,9 @@ const landmarksLayer = L.geoJSON(null, {
     bindMapFeature(
       layer,
       feature,
-      `${feature.properties.type}; provisional center from walked extent.`,
-      { landmark: true },
+      feature.properties.note ||
+        `${feature.properties.type}; provisional center from walked extent.`,
+      { landmark: true, focusOverlay: landmarksLayer },
     );
   },
 });
@@ -287,7 +299,9 @@ const intersectionsLayer = L.geoJSON(null, {
     });
   },
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, feature.properties.note);
+    bindMapFeature(layer, feature, feature.properties.note, {
+      focusOverlay: intersectionsLayer,
+    });
   },
 });
 addOverlayIfEnabled(intersectionsLayer, "intersections", false);
@@ -324,6 +338,7 @@ const mainBoundaryInteractionLayer = L.geoJSON(null, {
   renderer: boundaryRenderer,
   style: { color: "#000000", weight: 12, opacity: 0.001 },
   onEachFeature(feature, layer) {
+    registerFocusableFeature(feature, layer, mainBoundaryInteractionLayer);
     const description = feature.properties.popup_description || feature.properties.note;
     layer.bindPopup(() => buildMapFeaturePopup(feature, description));
   },
@@ -337,6 +352,7 @@ const sliverInteractionLayer = L.geoJSON(null, {
   },
   style: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
   onEachFeature(feature, layer) {
+    registerFocusableFeature(feature, layer, sliverInteractionLayer);
     const description = feature.properties.popup_description || feature.properties.note;
     layer.bindPopup(() => buildMapFeaturePopup(feature, description));
   },
@@ -352,6 +368,9 @@ const cornersLayer = L.geoJSON(null, {
         iconAnchor: [4.5, 4.5],
       }),
     }).bindTooltip(feature.properties.label);
+  },
+  onEachFeature(feature, layer) {
+    registerFocusableFeature(feature, layer, cornersLayer);
   },
 });
 addOverlayIfEnabled(cornersLayer, "corners", false);
@@ -433,18 +452,23 @@ Promise.all([
     }
     preferencesReady = true;
     saveMapPreferences();
+    initialViewReady = true;
+    tryFocusRequestedFeature();
   })
   .catch((error) => {
     console.error(error);
     showLocationStatus("Map data could not be loaded.");
     map.setView([43.3596, -73.8348], 17);
     preferencesReady = true;
+    initialViewReady = true;
+    tryFocusRequestedFeature();
   });
 
 loadGeoJson("data/roads/dirt-roads.geojson")
   .then((data) => {
     roadHalo.addData(data);
     roadsLayer.addData(data);
+    tryFocusRequestedFeature();
   })
   .catch((error) => console.error(error));
 
@@ -455,19 +479,33 @@ Promise.all([
   .then(([trailData, routes]) => {
     configureTrailRoutes(trailData, routes);
     trailsLayer.addData(trailData);
+    tryFocusRequestedFeature();
   })
   .catch((error) => console.error(error));
 
-loadGeoJson("data/landmarks/buildings.geojson")
-  .then((data) => landmarksLayer.addData(data))
+Promise.all([
+  loadGeoJson("data/landmarks/buildings.geojson"),
+  loadOptionalGeoJson("data/landmarks/landmarks.geojson"),
+])
+  .then(([buildings, otherLandmarks]) => {
+    landmarksLayer.addData(buildings);
+    landmarksLayer.addData(otherLandmarks);
+    tryFocusRequestedFeature();
+  })
   .catch((error) => console.error(error));
 
 loadGeoJson("data/zones/zones.geojson")
-  .then((data) => zonesLayer.addData(data))
+  .then((data) => {
+    zonesLayer.addData(data);
+    tryFocusRequestedFeature();
+  })
   .catch((error) => console.error(error));
 
 loadGeoJson("data/intersections/intersections.geojson")
-  .then((data) => intersectionsLayer.addData(data))
+  .then((data) => {
+    intersectionsLayer.addData(data);
+    tryFocusRequestedFeature();
+  })
   .catch((error) => console.error(error));
 
 infoButton.addEventListener("click", openInfo);
@@ -837,8 +875,18 @@ async function loadOptionalRoutes() {
   }
 }
 
+async function loadOptionalGeoJson(url) {
+  try {
+    return await loadGeoJson(url);
+  } catch (error) {
+    console.info(`Optional map data are unavailable at ${url}.`, error);
+    return { type: "FeatureCollection", features: [] };
+  }
+}
+
 function configureTrailRoutes(trailData, routes) {
   routesBySegmentId.clear();
+  routesById.clear();
   hasRouteDefinitions = routes.length > 0;
   const knownSegmentIds = new Set(
     trailData.features.map((feature) => feature.properties?.id).filter(Boolean),
@@ -849,6 +897,7 @@ function configureTrailRoutes(trailData, routes) {
       console.warn("Skipping an incomplete route definition.", route);
       return;
     }
+    routesById.set(route.id, route);
     route.segments.forEach((segmentId) => {
       if (!knownSegmentIds.has(segmentId)) {
         console.warn(
@@ -861,6 +910,81 @@ function configureTrailRoutes(trailData, routes) {
       routesBySegmentId.set(segmentId, segmentRoutes);
     });
   });
+}
+
+function registerFocusableFeature(feature, layer, focusOverlay = null) {
+  const featureId = feature?.properties?.id;
+  if (!featureId) return;
+  focusableFeaturesById.set(featureId, { feature, layer, focusOverlay });
+}
+
+function layerFocusBounds(layer) {
+  if (typeof layer.getBounds === "function") {
+    const bounds = layer.getBounds();
+    if (bounds?.isValid()) return bounds;
+  }
+  if (typeof layer.getLatLng === "function") {
+    return L.latLngBounds([layer.getLatLng()]);
+  }
+  return null;
+}
+
+function fitFocusBounds(bounds) {
+  if (!bounds?.isValid()) return false;
+  if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+    map.setView(bounds.getCenter(), 19, { animate: false });
+  } else {
+    map.fitBounds(bounds, {
+      paddingTopLeft: PROPERTY_BOUNDS_PADDING,
+      paddingBottomRight: PROPERTY_BOUNDS_PADDING,
+      maxZoom: 19,
+      animate: false,
+    });
+  }
+  return true;
+}
+
+function tryFocusRequestedFeature() {
+  if (!requestedFeatureId || requestedFeatureFocused || !initialViewReady) return;
+
+  const route = routesById.get(requestedFeatureId);
+  if (route) {
+    const members = route.segments
+      .map((segmentId) => focusableFeaturesById.get(segmentId))
+      .filter(Boolean);
+    if (members.length !== route.segments.length) return;
+    if (!map.hasLayer(trailsLayer)) map.addLayer(trailsLayer);
+    const bounds = L.latLngBounds([]);
+    members.forEach(({ layer }) => {
+      const memberBounds = layerFocusBounds(layer);
+      if (memberBounds) bounds.extend(memberBounds);
+    });
+    if (!fitFocusBounds(bounds)) return;
+    requestedFeatureFocused = true;
+    const details = [route.shape, route.difficulty].filter(Boolean).join(" \u00b7 ");
+    L.popup()
+      .setLatLng(bounds.getCenter())
+      .setContent(
+        `<div class="map-popup-content"><strong>${escapeHtml(route.name)}</strong>` +
+          (details ? `<span class="map-popup-secondary">${escapeHtml(details)}</span>` : "") +
+          `</div>`,
+      )
+      .openOn(map);
+    return;
+  }
+
+  const match = focusableFeaturesById.get(requestedFeatureId);
+  if (!match) return;
+  if (match.focusOverlay && !map.hasLayer(match.focusOverlay)) map.addLayer(match.focusOverlay);
+  const bounds = layerFocusBounds(match.layer);
+  if (!fitFocusBounds(bounds)) return;
+  requestedFeatureFocused = true;
+  L.popup()
+    .setLatLng(bounds.getCenter())
+    .setContent(
+      `<div class="map-popup-content"><strong>${escapeHtml(match.feature.properties.name)}</strong></div>`,
+    )
+    .openOn(map);
 }
 
 function routesForTrail(feature) {
@@ -1041,6 +1165,7 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
 }
 
 function bindMapFeature(layer, feature, detail, options = {}) {
+  registerFocusableFeature(feature, layer, options.focusOverlay);
   const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
   if (hasFinePointer) {
     layer.bindTooltip(escapeHtml(feature.properties.name), {

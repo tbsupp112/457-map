@@ -1,0 +1,272 @@
+{
+  "intake_date": "2026-08-05",
+  "source_dir": "Raw gaia gpx 8.5.26",
+  "warnings": [
+    "Owner confirmed that main-loop, both ends of main-loop-ext, and barbershop-trail share the same clearing node.",
+    "Owner confirmed that the Barbershop Trail remains a dead end for now; a Shooting Range landmark is offset 5 m north of it.",
+    "Owner confirmed that the driveway geometry remains unchanged while Front Field Zone keeps at least 2 m clearance.",
+    "Owner confirmed that main-loop extends to a clean driveway intersection.",
+    "Placeholder names remain: Main Loop Ext, Field Connector, and Main Loop Route.",
+    "Connector endpoint reversals produce four complete legs, despite the spec's approximate three-pass wording; the merged feature is still about 30 m rather than 122 m."
+  ],
+  "jobs": [
+    {
+      "id": "main-loop",
+      "name": "Main Loop",
+      "type": "path",
+      "inputs": ["main-loop.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-05",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "New main trail segment; owner confirmation and naming remain provisional."
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.8,
+        "segment_bridge_cap": 15.0,
+        "split_passes": false
+      },
+      "expect": {"length_range_m": [145, 175], "legs": {"main-loop.gpx": 1}}
+    },
+    {
+      "id": "main-loop-ext",
+      "name": "Main Loop Ext",
+      "type": "path",
+      "inputs": ["main-loop-ext.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-05",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Closed loop segment; placeholder name pending owner review."
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.8,
+        "loop_close_threshold": 10.0,
+        "split_passes": false
+      },
+      "expect": {"closed": true, "length_range_m": [280, 350], "legs": {"main-loop-ext.gpx": 1}}
+    },
+    {
+      "id": "barbershop-trail",
+      "name": "Barbershop Trail",
+      "type": "path",
+      "inputs": ["barbershop-trail.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-05",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Dead-end spur from the shared clearing; its far end is intentionally free."
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.75,
+        "min_leg_length": 15.0,
+        "pass_match_cap": 12.0,
+        "split_passes": true
+      },
+      "expect": {"length_range_m": [48, 70], "legs": {"barbershop-trail.gpx": 4}}
+    },
+    {
+      "id": "field-connector",
+      "name": "Field Connector",
+      "type": "path",
+      "inputs": ["connector.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-05",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Infrastructure connector between Main Loop Ext and Front Field Zone; placeholder name."
+      },
+      "options": {
+        "spacing": 2.5,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.7,
+        "min_leg_length": 15.0,
+        "pass_match_cap": 12.0,
+        "split_passes": true
+      },
+      "expect": {"length_range_m": [24, 36], "legs": {"connector.gpx": 4}}
+    },
+    {
+      "id": "driveway",
+      "name": "Driveway",
+      "type": "path",
+      "inputs": ["driveway.gpx", "driveway (1).gpx"],
+      "target": "roads/dirt-roads.geojson",
+      "recorded_on": "2026-08-05",
+      "properties": {
+        "type": "dirt road",
+        "status": "provisional",
+        "note": "Driveway road centerline from two opposite-direction passes."
+      },
+      "options": {
+        "spacing": 5.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 1.1,
+        "pass_match_cap": 12.0,
+        "max_speed_mph": 25.0,
+        "split_passes": false,
+        "trim_to": {
+          "input": "driveway (1).gpx",
+          "endpoint": "end",
+          "reference_input": "driveway.gpx",
+          "reference_endpoint": "end"
+        }
+      },
+      "expect": {
+        "length_range_m": [125, 160],
+        "legs": {"driveway.gpx": 1, "driveway (1).gpx": 1},
+        "reversed_passes": 1,
+        "trim_removed_range_m": [12, 25]
+      }
+    }
+  ],
+  "joins": [
+    {
+      "id": "main-loop-clearing-node",
+      "name": "Main Loop Clearing",
+      "action": "node",
+      "members": [
+        {"feature": "main-loop-ext", "endpoint": "start"},
+        {"feature": "main-loop-ext", "endpoint": "end"},
+        {"feature": "barbershop-trail", "endpoint": "start"},
+        {
+          "feature": "main-loop",
+          "endpoint": "start",
+          "contributes": false,
+          "mode": "relocate",
+          "movement_cap": 35.0
+        }
+      ],
+      "extension_cap": 8.0,
+      "approach_length": 3.0,
+      "expected_lonlat": [-73.8342328, 43.3591675],
+      "expected_tolerance": 1.0,
+      "emit_intersection": {
+        "id": "main-loop-clearing",
+        "name": "Main Loop Clearing",
+        "note": "Main Loop, both ends of Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node."
+      }
+    },
+    {
+      "id": "garden-cut-through-main-loop",
+      "name": "Garden Cut Through / Main Loop",
+      "feature": "garden-cut-through",
+      "endpoint": "end",
+      "target_feature": "main-loop",
+      "target_kind": "line",
+      "action": "extend",
+      "movement_cap": 12.0,
+      "emit_intersection": {
+        "id": "garden-cut-through-open-end",
+        "name": "Garden Cut Through / Main Loop",
+        "note": "The former open connection point now terminates cleanly on Main Loop."
+      }
+    },
+    {
+      "id": "pavilion-side-trail-main-loop",
+      "name": "Pavilion Side Trail / Main Loop",
+      "feature": "pavilion-side-trail",
+      "endpoint": "start",
+      "target_feature": "main-loop",
+      "target_kind": "line",
+      "action": "extend",
+      "movement_cap": 15.0,
+      "pin_id": "pavilion",
+      "min_pin_distance_m": 10.0,
+      "emit_intersection": {
+        "id": "main-loop-pavilion-side-trail",
+        "name": "Main Loop / Pavilion Side Trail",
+        "note": "Pavilion Side Trail was extended beyond its existing Pavilion-offset vertex to Main Loop."
+      }
+    },
+    {
+      "id": "main-loop-driveway",
+      "name": "Main Loop / Driveway",
+      "feature": "main-loop",
+      "endpoint": "end",
+      "target_feature": "driveway",
+      "target_kind": "line",
+      "action": "extend",
+      "movement_cap": 15.0,
+      "emit_intersection": {
+        "id": "main-loop-driveway",
+        "name": "Main Loop / Driveway",
+        "note": "Main Loop was smoothly extended to the unchanged driveway centerline."
+      }
+    },
+    {
+      "id": "field-connector-main-loop-ext",
+      "name": "Field Connector / Main Loop Ext",
+      "feature": "field-connector",
+      "endpoint": "end",
+      "target_feature": "main-loop-ext",
+      "target_kind": "line",
+      "action": "snap",
+      "emit_intersection": {
+        "id": "field-connector-main-loop-ext",
+        "name": "Field Connector / Main Loop Ext",
+        "note": "Connector endpoint snapped to Main Loop Ext."
+      }
+    },
+    {
+      "id": "field-connector-front-field-zone",
+      "name": "Field Connector / Front Field Zone",
+      "feature": "field-connector",
+      "endpoint": "start",
+      "target_feature": "front-field-zone",
+      "target_kind": "ring",
+      "action": "trim",
+      "emit_intersection": {
+        "id": "field-connector-front-field-zone",
+        "name": "Field Connector / Front Field Zone",
+        "note": "Connector overshoot was trimmed at the existing zone edge without an additional inset."
+      }
+    },
+    {
+      "id": "driveway-front-field-zone-clearance",
+      "name": "Driveway / Front Field Zone Clearance",
+      "feature": "driveway",
+      "target_feature": "front-field-zone",
+      "target_kind": "ring",
+      "action": "clearance",
+      "minimum_clearance_m": 2.0
+    }
+  ],
+  "derived_points": [
+    {
+      "id": "shooting-range",
+      "name": "Shooting Range",
+      "feature": "barbershop-trail",
+      "endpoint": "end",
+      "offset_m": {"north": 5.0},
+      "target": "landmarks/landmarks.geojson",
+      "properties": {
+        "type": "shooting range",
+        "status": "provisional; derived from trail endpoint",
+        "note": "Approximate shooting-range location, placed 5 m north of the current Barbershop Trail dead end."
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "main-loop-route",
+      "name": "Main Loop Route",
+      "segments": ["main-loop", "main-loop-ext"],
+      "shape": "loop",
+      "difficulty": "easy",
+      "description": "Provisional main loop route linking the shared clearing with the longer loop segment.",
+      "status": "provisional"
+    }
+  ],
+  "route_omissions": ["field-connector", "barbershop-trail", "driveway"]
+}

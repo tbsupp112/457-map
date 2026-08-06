@@ -1,0 +1,80 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Walking trails"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pavilion-side-trail",
+        "name": "Pavilion Side Trail",
+        "type": "walking trail",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Pavilion_side_trail.gpx"
+        ],
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. South endpoint placed 5 m northeast of the Pavilion point to separate the building and intersection symbols; north endpoint snapped 1.5 m to Mountain Drive.",
+            "length_m": 31.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8353589,
+            43.359259
+          ],
+          [
+            -73.8353505,
+            43.3593315
+          ],
+          [
+            -73.8354239,
+            43.3594199
+          ],
+          [
+            -73.8354833,
+            43.3595137
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "garden-cut-through",
+        "name": "Garden Cut Through",
+        "type": "walking trail",
+        "status": "provisional",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "Garden_cut_through.gpx"
+        ],
+            "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. After the owner refined the Front Field Zone, the field end was trimmed at the first west-to-east crossing of the revised zone boundary.",
+            "length_m": 21.0
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8350683,
+            43.3590097
+          ],
+          [
+            -73.8351049,
+            43.3590796
+          ],
+          [
+            -73.8351636,
+            43.359115
+          ],
+          [
+            -73.8352395,
+            43.359134
+          ]
+        ]
+      }
+    }
+  ]
+}

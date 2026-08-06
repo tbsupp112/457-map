@@ -34,6 +34,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 ## Landmarks
 
 - `landmarks/buildings.geojson` — central point locations for Home and Pavilion.
+- `landmarks/landmarks.geojson` — non-building destinations such as the provisional Shooting Range location.
 - Each occupied two-meter spatial cell from the walked building extent counts once. This prevents time spent standing in one location from biasing the result.
 - Future natural landmarks and miscellaneous landmarks should use separate GeoJSON files in this folder. Empty placeholder files are intentionally avoided.
 
@@ -50,4 +51,22 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 ## Reprocessing
 
-`tools/process_gps.py` records the original August 4 intake when the seven source GPX files are present in `Unprocessed GPS Files`. It does not reproduce the owner's later manual Front Field boundary edit or the resulting Garden trail trim, and it writes directly over live files; treat it as an intake record rather than rerunning it against the current layers. The raw folder is not required by the published map and can be removed after the outputs are reviewed.
+`tools/process_gps.py` is a manifest-driven intake command. It reads one JSON manifest from `tools/intakes/`, validates its inputs and declared joins, and writes deterministic review files only under `data/_candidates/`. A normal intake run never changes live map data.
+
+Example staging command:
+
+```text
+python tools/process_gps.py tools/intakes/2026-08-05-loop-and-driveway.json
+```
+
+Review the console report and generated `data/_candidates/QA-YYYY-MM-DD.md`, compare each processed line with its raw track, and resolve every consolidated warning before promotion. The command reports raw and processed lengths, pass detection, speed-gate drops, elevation, station spread, closure, self-intersections, joins, route membership, and nearby mapped features.
+
+Promotion is always separate and explicit:
+
+```text
+python tools/process_gps.py tools/intakes/2026-08-05-loop-and-driveway.json --promote --backup
+```
+
+The command first prints an id-by-id diff and asks for confirmation. Promotion merges by stable feature id, preserves untouched live features byte-for-byte, and can place pre-promotion copies under the ignored candidate backup folder. `--yes` is available only with `--promote` and counts as the explicit confirmation for that invocation.
+
+Raw GPX folders, generated candidates, and Python cache files are excluded by `.gitignore`; they are local intake material rather than published map assets. The August 4 manifest is retained as the first worked intake record, but its original raw folder is not present in this working copy, so that historical regression can run only after those files are restored locally. It also predates the owner's later manual Front Field boundary refinement and must not be used to overwrite that edit.

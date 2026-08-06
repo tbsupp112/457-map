@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Compass & Haptics Diagnostic</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; padding: 20px 18px calc(28px + env(safe-area-inset-bottom));
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    background: #18211d; color: #e7efe9;
+  }
+  h1 { font-size: 1.15rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: #9bb0a5; font-size: 0.85rem; }
+  button {
+    font: inherit; font-weight: 650; width: 100%;
+    padding: 15px 18px; margin-bottom: 10px;
+    border: 1px solid #3f6d5c; border-radius: 11px;
+    background: #24413a; color: #dff5ea;
+  }
+  button:active { background: #2e5249; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #2a3630; }
+  .row span:first-child { color: #9bb0a5; }
+  .row span:last-child { font-variant-numeric: tabular-nums; font-weight: 650; text-align: right; }
+  .ok { color: #5ee6bd; } .bad { color: #ef6b6b; } .warn { color: #f0a03c; }
+  #dial { display: block; margin: 16px auto 6px; }
+  #log {
+    margin-top: 16px; padding: 11px; border-radius: 9px;
+    background: #101815; color: #b9cdc2;
+    font: 11.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre-wrap; word-break: break-word; max-height: 220px; overflow: auto;
+  }
+  h2 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9bb0a5; margin: 22px 0 6px; }
+</style>
+</head>
+<body>
+<h1>Compass &amp; Haptics Diagnostic</h1>
+<p class="sub">457 map — temporary test page. Tap the button, then slowly turn all the way around.</p>
+
+<button id="start" type="button">Start compass test</button>
+<button id="buzz" type="button">Test vibration (Vibration API)</button>
+<button id="haptic" type="button">Test iOS haptic (switch trick)</button>
+<button id="beep" type="button">Test alert sound</button>
+<label id="haptic-host" style="position:absolute;left:-9999px"><input id="haptic-input" type="checkbox" switch></label>
+
+<svg id="dial" width="150" height="150" viewBox="0 0 150 150" aria-hidden="true">
+  <circle cx="75" cy="75" r="66" fill="#101815" stroke="#2f4a41" stroke-width="2"/>
+  <text x="75" y="22" fill="#9bb0a5" font-size="11" text-anchor="middle">N</text>
+  <g id="needle">
+    <polygon points="75,20 82,80 75,72 68,80" fill="#5ee6bd"/>
+  </g>
+  <circle cx="75" cy="75" r="4" fill="#e7efe9"/>
+</svg>
+
+<h2>Environment</h2>
+<div class="row"><span>Secure context (HTTPS)</span><span id="v-https">—</span></div>
+<div class="row"><span>DeviceOrientationEvent</span><span id="v-doe">—</span></div>
+<div class="row"><span>requestPermission() exists</span><span id="v-req">—</span></div>
+<div class="row"><span>deviceorientationabsolute</span><span id="v-abs">—</span></div>
+<div class="row"><span>navigator.vibrate</span><span id="v-vib">—</span></div>
+<div class="row"><span>Browser engine guess</span><span id="v-eng">—</span></div>
+
+<h2>Live readings</h2>
+<div class="row"><span>Permission result</span><span id="v-perm">not requested</span></div>
+<div class="row"><span>Events received</span><span id="v-count">0</span></div>
+<div class="row"><span>Event type firing</span><span id="v-type">—</span></div>
+<div class="row"><span>webkitCompassHeading</span><span id="v-wch">—</span></div>
+<div class="row"><span>alpha / absolute</span><span id="v-alpha">—</span></div>
+<div class="row"><span>Screen angle</span><span id="v-scr">—</span></div>
+<div class="row"><span class="ok">HEADING USED</span><span id="v-head">—</span></div>
+
+<h2>Log</h2>
+<div id="log">waiting…</div>
+
+<script>
+"use strict";
+var $ = function (id) { return document.getElementById(id); };
+var lines = [];
+function log(msg) {
+  lines.unshift(msg);
+  if (lines.length > 60) lines.pop();
+  $("log").textContent = lines.join("\n");
+}
+function mark(el, text, cls) {
+  el.textContent = text;
+  el.className = cls || "";
+}
+
+var ua = navigator.userAgent;
+var engine = /CriOS/.test(ua) ? "Chrome on iOS (WebKit)"
+  : /FxiOS/.test(ua) ? "Firefox on iOS (WebKit)"
+  : /iPhone|iPad|iPod/.test(ua) ? "Safari on iOS (WebKit)"
+  : /Android/.test(ua) ? "Android (Chromium?)" : "desktop / other";
+
+mark($("v-https"), window.isSecureContext ? "yes" : "NO — geolocation & sensors blocked",
+     window.isSecureContext ? "ok" : "bad");
+mark($("v-doe"), "DeviceOrientationEvent" in window ? "present" : "MISSING",
+     "DeviceOrientationEvent" in window ? "ok" : "bad");
+var hasReq = "DeviceOrientationEvent" in window &&
+             typeof window.DeviceOrientationEvent.requestPermission === "function";
+mark($("v-req"), hasReq ? "yes (iOS path)" : "no (Android/desktop path)", hasReq ? "ok" : "warn");
+mark($("v-abs"), "ondeviceorientationabsolute" in window ? "supported" : "not supported",
+     "ondeviceorientationabsolute" in window ? "ok" : "warn");
+mark($("v-vib"), typeof navigator.vibrate === "function" ? "supported" : "NOT supported (expected on iOS)",
+     typeof navigator.vibrate === "function" ? "ok" : "warn");
+mark($("v-eng"), engine);
+log("page loaded — " + engine);
+log("UA: " + ua);
+
+var count = 0, sawUsable = false, timer = null;
+
+function onOrient(e) {
+  count += 1;
+  mark($("v-count"), String(count), "ok");
+  mark($("v-type"), e.type);
+  var wch = (typeof e.webkitCompassHeading === "number" && isFinite(e.webkitCompassHeading))
+    ? e.webkitCompassHeading.toFixed(1) + "°" : "null";
+  mark($("v-wch"), wch, wch === "null" ? "warn" : "ok");
+  var al = (typeof e.alpha === "number" && isFinite(e.alpha)) ? e.alpha.toFixed(1) + "°" : "null";
+  mark($("v-alpha"), al + "  abs=" + e.absolute, al === "null" ? "warn" : "ok");
+  var scr = (screen.orientation && typeof screen.orientation.angle === "number")
+    ? screen.orientation.angle : (window.orientation || 0);
+  mark($("v-scr"), scr + "°");
+
+  var heading = null, how = "";
+  if (typeof e.webkitCompassHeading === "number" && isFinite(e.webkitCompassHeading)) {
+    heading = e.webkitCompassHeading; how = "webkitCompassHeading";
+  } else if (e.absolute === true && typeof e.alpha === "number" && isFinite(e.alpha)) {
+    heading = (360 - e.alpha + scr) % 360; how = "360-alpha (absolute)";
+  }
+
+  if (heading === null) {
+    mark($("v-head"), "no usable heading", "bad");
+    if (count === 1) log("EVENT fired but no usable heading — alpha/webkitCompassHeading unavailable");
+    return;
+  }
+  mark($("v-head"), heading.toFixed(0) + "°  via " + how, "ok");
+  $("needle").setAttribute("transform", "rotate(" + (-heading).toFixed(1) + " 75 75)");
+  if (!sawUsable) {
+    sawUsable = true;
+    window.clearTimeout(timer);
+    log("SUCCESS — usable heading via " + how + ". The needle should now point north as you turn.");
+  }
+}
+
+function attach(iosPath) {
+  var names = iosPath ? ["deviceorientation"] : ["deviceorientationabsolute", "deviceorientation"];
+  names.forEach(function (n) { window.addEventListener(n, onOrient, true); });
+  log("listeners attached: " + names.join(", "));
+  timer = window.setTimeout(function () {
+    if (count === 0) {
+      log("TIMEOUT — 4s passed and ZERO orientation events fired.");
+      log("  On iOS this usually means motion access was blocked, or this browser");
+      log("  does not deliver orientation events. Try Safari specifically.");
+      mark($("v-head"), "no events at all", "bad");
+    }
+  }, 4000);
+}
+
+$("start").addEventListener("click", function () {
+  log("--- start tapped ---");
+  if (hasReq) {
+    window.DeviceOrientationEvent.requestPermission().then(function (r) {
+      mark($("v-perm"), r, r === "granted" ? "ok" : "bad");
+      log("requestPermission() resolved: " + r);
+      if (r === "granted") attach(true);
+      else log("DENIED — no prompt appeared? then motion access is blocked at the device level.");
+    }).catch(function (err) {
+      mark($("v-perm"), "threw", "bad");
+      log("requestPermission() threw: " + err);
+    });
+  } else {
+    mark($("v-perm"), "not required");
+    attach(false);
+  }
+});
+
+$("buzz").addEventListener("click", function () {
+  if (typeof navigator.vibrate === "function") {
+    var r = navigator.vibrate(35);
+    log("navigator.vibrate(35) returned " + r + " — felt anything?");
+  } else {
+    log("navigator.vibrate is undefined — this device cannot vibrate from a web page.");
+  }
+});
+
+// iOS 17.4+ Safari produces a small haptic tick when a switch-styled checkbox
+// changes. Undocumented, unreliable, and may do nothing at all. Worth one test.
+$("haptic").addEventListener("click", function () {
+  var input = $("haptic-input");
+  var supported = "switch" in HTMLInputElement.prototype;
+  log("switch attribute supported: " + supported);
+  try {
+    $("haptic-host").style.left = "0";
+    $("haptic-host").style.position = "static";
+    input.checked = !input.checked;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    input.click();
+    log("toggled switch to " + input.checked + " — felt a tick?");
+  } catch (err) { log("switch trick failed: " + err); }
+  window.setTimeout(function () {
+    $("haptic-host").style.position = "absolute";
+    $("haptic-host").style.left = "-9999px";
+  }, 1200);
+});
+
+var audioCtx = null;
+$("beep").addEventListener("click", function () {
+  try {
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) { log("Web Audio not available."); return; }
+    if (!audioCtx) { audioCtx = new Ctx(); log("AudioContext created, state=" + audioCtx.state); }
+    audioCtx.resume().then(function () {
+      var t = audioCtx.currentTime;
+      var osc = audioCtx.createOscillator();
+      var gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(660, t);
+      osc.frequency.exponentialRampToValueAtTime(440, t + 0.10);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.13, t + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.17);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t); osc.stop(t + 0.19);
+      log("played tone, ctx state=" + audioCtx.state + " — heard it? (check the ringer/silent switch)");
+    });
+  } catch (err) { log("audio failed: " + err); }
+});
+</script>
+</body>
+</html>

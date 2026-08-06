@@ -31,6 +31,45 @@
       <p id="home-qr-caption">Scan to open this map</p>
       <p class="home-qr-url">tbsupp112.github.io/457-map/</p>
     </section>
+    <section class="home-routes" id="home-routes" aria-labelledby="home-routes-title" hidden>
+      <h2 id="home-routes-title">Walking routes</h2>
+      <div id="home-route-list"></div>
+    </section>
   </main>
+  <script>
+    "use strict";
+    fetch("data/trails/routes.json")
+      .then((response) => {
+        if (!response.ok) throw new Error(`Could not load routes: ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        const routes = Array.isArray(data.routes) ? data.routes : [];
+        if (routes.length === 0) return;
+        const section = document.getElementById("home-routes");
+        const list = document.getElementById("home-route-list");
+        routes.forEach((route) => {
+          if (!route?.id || !route.name) return;
+          const entry = document.createElement("article");
+          const link = document.createElement("a");
+          const title = document.createElement("strong");
+          const facts = document.createElement("span");
+          const description = document.createElement("span");
+          link.href = `map.html?feature=${encodeURIComponent(route.id)}`;
+          title.textContent = route.name;
+          facts.textContent = [
+            Number.isFinite(route.length_ft) ? `${route.length_ft.toLocaleString()} ft` : "",
+            route.difficulty || "",
+            route.shape || "",
+          ].filter(Boolean).join(" · ");
+          description.textContent = route.description || "Open this route on the property map.";
+          link.append(title, facts, description);
+          entry.append(link);
+          list.append(entry);
+        });
+        section.hidden = list.childElementCount === 0;
+      })
+      .catch(() => {});
+  </script>
 </body>
 </html>

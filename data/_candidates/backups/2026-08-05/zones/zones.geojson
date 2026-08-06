@@ -15,15 +15,14 @@
         "source_files": [
           "Front_field_zone.gpx"
         ],
-        "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. The owner manually refined the field boundary on 2026-08-04; an exact vertex was then inserted on the unchanged boundary edge at the first west-to-east Garden Cut Through crossing. A matching vertex was inserted for join `field-connector-front-field-zone`. Join `driveway-front-field-zone-clearance` moved only conflicting zone vertices by at most 0.8 m.",
-        "note": "Rough test zone; not a surveyed or exact boundary.",
-        "acres_computed": 0.241
+            "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. The owner manually refined the field boundary on 2026-08-04; an exact vertex was then inserted on the unchanged boundary edge at the first west-to-east Garden Cut Through crossing.",
+        "note": "Rough test zone; not a surveyed or exact boundary."
       },
       "geometry": {
         "type": "Polygon",
         "coordinates": [
           [
-            [
+             [
               -73.8350349,
               43.3591096
             ],
@@ -68,10 +67,6 @@
               43.3588452
             ],
             [
-              -73.8347378,
-              43.3588363
-            ],
-            [
               -73.834862,
               43.358767
             ],
@@ -92,8 +87,8 @@
               43.358734
             ],
             [
-              -73.8352923,
-              43.3588014
+              -73.8353016,
+              43.3587991
             ],
             [
               -73.8352758,

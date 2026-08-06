@@ -1,0 +1,113 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Confirmed feature intersections"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "pavilion-pavilion-side-trail",
+        "name": "Pavilion / Pavilion Side Trail",
+        "type": "confirmed intersection",
+        "features": [
+          "pavilion",
+          "pavilion-side-trail"
+        ],
+        "status": "confirmed in person; mapped approximately",
+        "map_offset_from_building_m": 5.0,
+        "note": "Placed 5 m northeast of the Pavilion point along the trail so the building and intersection symbols remain distinct."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8353589,
+          43.359259
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "garden-cut-through-front-field-zone",
+        "name": "Garden Cut Through / Front Field Zone",
+        "type": "confirmed intersection",
+        "features": [
+          "garden-cut-through",
+          "front-field-zone"
+        ],
+        "status": "confirmed in person; mapped approximately",
+        "note": "Trail endpoint and the owner-refined zone boundary share the first west-to-east crossing coordinate exactly; the trail segment beyond this point was removed."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8350683,
+          43.3590097
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "mountain-drive-pavilion-side-trail",
+        "name": "Mountain Drive / Pavilion Side Trail",
+        "type": "confirmed intersection",
+        "features": [
+          "mountain-drive",
+          "pavilion-side-trail"
+        ],
+        "status": "confirmed in person; mapped approximately",
+        "snap_adjustment_m": 1.5,
+        "note": "The trail endpoint and an inserted Mountain Drive vertex share this exact coordinate."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8354833,
+          43.3595137
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "mountain-drive-southwest-end",
+        "name": "Mountain Drive Southwest Connection",
+        "type": "open connection point",
+        "features": [
+          "mountain-drive"
+        ],
+        "status": "adjoining feature not yet mapped",
+        "note": "Known connection point at the southwest end of Mountain Drive; the intersecting feature will be added later."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8359205,
+          43.3592015
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "garden-cut-through-open-end",
+        "name": "Garden Cut Through Open Connection",
+        "type": "open connection point",
+        "features": [
+          "garden-cut-through"
+        ],
+        "status": "adjoining feature not yet mapped",
+        "note": "Known connection point at the non-field end of Garden Cut Through; the intersecting feature will be added later."
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8352395,
+          43.359134
+        ]
+      }
+    }
+  ]
+}

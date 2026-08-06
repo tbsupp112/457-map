@@ -1,0 +1,112 @@
+{
+  "intake_date": "2026-08-04",
+  "source_dir": "Unprocessed GPS Files",
+  "warnings": [
+    "This worked regression example requires the original August 4 raw GPX folder, which is intentionally not committed.",
+    "Single-pass paths and the new arc-length centerline may differ from the historical principal-axis output; review QA rather than forcing byte equality."
+  ],
+  "jobs": [
+    {
+      "id": "home",
+      "name": "Home",
+      "type": "point",
+      "inputs": ["Home_point.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "properties": {"type": "building", "status": "provisional"},
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "pavilion",
+      "name": "Pavilion",
+      "type": "point",
+      "inputs": ["Pavilion_point.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "properties": {"type": "building", "status": "provisional"},
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "front-field-zone",
+      "name": "Front Field Zone",
+      "type": "zone",
+      "inputs": ["Front_field_zone.gpx"],
+      "target": "zones/zones.geojson",
+      "properties": {"type": "zone", "status": "rough / provisional"},
+      "options": {"area_threshold": 5.0}
+    },
+    {
+      "id": "mountain-drive",
+      "name": "Mountain Drive",
+      "type": "path",
+      "inputs": ["New_rd_down.gpx", "New_Road_up.gpx"],
+      "target": "roads/dirt-roads.geojson",
+      "properties": {"type": "dirt road", "status": "work in progress", "provisional": true},
+      "options": {"spacing": 6.0, "smooth_passes": 1, "simplify_tolerance": 1.68, "split_passes": false}
+    },
+    {
+      "id": "pavilion-side-trail",
+      "name": "Pavilion Side Trail",
+      "type": "path",
+      "inputs": ["Pavilion_side_trail.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "properties": {"type": "walking trail", "status": "provisional"},
+      "options": {"spacing": 3.0, "smooth_passes": 1, "simplify_tolerance": 0.84, "split_passes": false}
+    },
+    {
+      "id": "garden-cut-through",
+      "name": "Garden Cut Through",
+      "type": "path",
+      "inputs": ["Garden_cut_through.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "properties": {"type": "walking trail", "status": "provisional"},
+      "options": {"spacing": 3.0, "smooth_passes": 1, "simplify_tolerance": 0.84, "split_passes": false}
+    }
+  ],
+  "joins": [
+    {
+      "id": "pavilion-pavilion-side-trail",
+      "feature": "pavilion-side-trail",
+      "target_feature": "pavilion",
+      "target_kind": "point",
+      "action": "offset",
+      "distance_m": 5.0,
+      "emit_intersection": {"id": "pavilion-pavilion-side-trail", "name": "Pavilion / Pavilion Side Trail", "note": "Placed 5 m along the trail from the Pavilion pin."}
+    },
+    {
+      "id": "mountain-drive-pavilion-side-trail",
+      "feature": "pavilion-side-trail",
+      "endpoint": "nearest",
+      "target_feature": "mountain-drive",
+      "target_kind": "line",
+      "action": "snap",
+      "emit_intersection": {"id": "mountain-drive-pavilion-side-trail", "name": "Mountain Drive / Pavilion Side Trail", "note": "Trail and road share an inserted vertex."}
+    },
+    {
+      "id": "garden-cut-through-front-field-zone",
+      "feature": "garden-cut-through",
+      "endpoint": "nearest",
+      "target_feature": "front-field-zone",
+      "target_kind": "ring",
+      "action": "snap",
+      "inset": 7.5,
+      "emit_intersection": {"id": "garden-cut-through-front-field-zone", "name": "Garden Cut Through / Front Field Zone", "note": "Trail and locally inset zone edge share an exact vertex."}
+    }
+  ],
+  "derived_points": [
+    {
+      "id": "mountain-drive-southwest-end",
+      "name": "Mountain Drive Southwest Connection",
+      "feature": "mountain-drive",
+      "endpoint": "start",
+      "target": "intersections/intersections.geojson",
+      "properties": {"type": "open connection point", "features": ["mountain-drive"], "status": "adjoining feature not yet mapped", "note": "Known open endpoint."}
+    },
+    {
+      "id": "garden-cut-through-open-end",
+      "name": "Garden Cut Through Open Connection",
+      "feature": "garden-cut-through",
+      "endpoint": "end",
+      "target": "intersections/intersections.geojson",
+      "properties": {"type": "open connection point", "features": ["garden-cut-through"], "status": "adjoining feature not yet mapped", "note": "Known open endpoint."}
+    }
+  ]
+}

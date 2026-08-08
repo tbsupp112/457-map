@@ -17,17 +17,13 @@
           "New_rd_down.gpx",
           "New_Road_up.gpx"
         ],
-        "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road. Join `mountain-drive-driveway` adjusted its endpoint to the declared connection.",
-        "length_m": 207.5,
+            "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road.",
+        "length_m": 199.3,
         "note": "New/continued dirt road following an older route. Replace when better GPS coverage is available."
       },
       "geometry": {
         "type": "LineString",
         "coordinates": [
-          [
-            -73.8359212,
-            43.3591277
-          ],
           [
             -73.8359205,
             43.3592015
@@ -92,7 +88,7 @@
           "driveway (1).gpx"
         ],
         "recorded_on": "2026-08-05",
-        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 5 m stations. A matching vertex was inserted for join `main-loop-driveway`. A matching vertex was inserted for join `mountain-drive-driveway`.",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 5 m stations. A matching vertex was inserted for join `main-loop-driveway`.",
         "length_m": 141.1,
         "length_ft": 463,
         "elevation_gain_ft": 25
@@ -119,10 +115,6 @@
           [
             -73.8357439,
             43.3590867
-          ],
-          [
-            -73.8359212,
-            43.3591277
           ],
           [
             -73.8359377,

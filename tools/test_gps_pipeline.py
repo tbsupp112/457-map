@@ -200,14 +200,16 @@ class IntakeIntegrationTests(unittest.TestCase):
         extension = coordinates("main-loop-ext")
         barbershop = coordinates("barbershop-trail")
         self.assertEqual(extension[0], clearing)
-        self.assertEqual(extension[-1], clearing)
+        self.assertNotEqual(extension[-1], clearing)
         self.assertEqual(barbershop[0], clearing)
 
         main_loop = coordinates("main-loop")
         connector = coordinates("field-connector")
         driveway = coordinates("driveway")
+        mountain_drive = coordinates("mountain-drive")
         self.assertEqual(main_loop[0], clearing)
         self.assertIn(main_loop[-1], driveway)
+        self.assertIn(mountain_drive[0], driveway)
         self.assertIn(connector[-1], extension)
 
         manifest = load_manifest(self.manifest)
@@ -227,6 +229,18 @@ class IntakeIntegrationTests(unittest.TestCase):
         )
         route = next(route for route in result.candidate_routes if route["id"] == "main-loop-route")
         self.assertEqual(route["difficulty"], "easy")
+        self.assertEqual(route["shape"], "out-and-back")
+        self.assertEqual(
+            route["length_ft"],
+            round(
+                (
+                    result.catalog["main-loop"].feature["properties"]["length_m"]
+                    + result.catalog["main-loop-ext"].feature["properties"]["length_m"]
+                )
+                * 3.28084
+                * 2
+            ),
+        )
 
         live_trails = json.loads((DATA / "trails" / "walking-trails.geojson").read_text(encoding="utf-8"))
         live_by_id = {item["properties"]["id"]: item for item in live_trails["features"]}

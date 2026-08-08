@@ -517,9 +517,19 @@ def process_node_join(
     contributing_points = [
         point for member, point in endpoint_records if member.get("contributes", True)
     ]
-    if len(contributing_points) < 3:
+    fixed_node = join.get("node_lonlat")
+    if fixed_node is not None:
+        if not (
+            isinstance(fixed_node, list)
+            and len(fixed_node) == 2
+            and all(isinstance(value, (int, float)) for value in fixed_node)
+        ):
+            raise ValueError("A fixed node_lonlat must be a [longitude, latitude] pair")
+        node = to_xy(*fixed_node)
+    elif len(contributing_points) < 3:
         raise ValueError("A node join needs at least three coordinate-contributing members")
-    node = mean_point(contributing_points)
+    else:
+        node = mean_point(contributing_points)
     cap = float(join.get("extension_cap", 8.0))
     movements = []
     for member, original in endpoint_records:
@@ -839,6 +849,7 @@ def build_route_candidates(
         length_ft = round(
             sum(float(catalog[segment_id].feature["properties"].get("length_m", 0)) for segment_id in segment_ids)
             * 3.28084
+            * (2 if definition.get("shape") == "out-and-back" else 1)
         )
         gain_values = [
             catalog[segment_id].feature["properties"].get("elevation_gain_ft")

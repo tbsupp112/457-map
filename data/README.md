@@ -10,11 +10,13 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 ## Roads
 
+- Mountain Drive's south endpoint is extended to a shared vertex on the otherwise unchanged Driveway centerline, closing the small mapped gap between the two road recordings.
 - `roads/dirt-roads.geojson` — dirt roads, separate from walking trails.
 - Mountain Drive combines `New_rd_down.gpx` and `New_Road_up.gpx`. Each pass contributes equally within six-meter distance bands so the noisier pass does not dominate. Status: work in progress; replace when better GPS data is available.
 
 ## Trails
 
+- Main Loop Ext is an out-and-back recording. Its two directions are split into separate passes and consolidated into one centerline rather than displayed as two nearby trails.
 - `trails/walking-trails.geojson` — walking-trail centerlines.
 - Repeated passes were consolidated into median positions by distance along each trail, then lightly smoothed and simplified.
 - The Pavilion-side intersection is placed 5 m northeast of the Pavilion point so the symbols do not overlap. The trail's other endpoint is snapped 1.5 m to Mountain Drive.
@@ -22,6 +24,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 ### Routes and segments
 
+- An `out-and-back` route's displayed length counts its member segments twice, once in each direction.
 - A **segment** is one continuous, actually walked piece of tread. Segments are the only trail data that carries geometry, each has a stable id in `trails/walking-trails.geojson`, and connectors and spurs are segments like any other.
 - A **route** is a visitor-facing walk such as an Inner Loop or an out-and-back. It is an ordered list of segment ids with descriptive attributes in `trails/routes.json`; routes deliberately have no geometry of their own.
 - Routes reference segments, never the other way around. A segment may belong to more than one route, while an unassigned connector stays mapped without needing to be presented as a destination.

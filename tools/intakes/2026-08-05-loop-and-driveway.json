@@ -2,12 +2,14 @@
   "intake_date": "2026-08-05",
   "source_dir": "Raw gaia gpx 8.5.26",
   "warnings": [
-    "Owner confirmed that main-loop, both ends of main-loop-ext, and barbershop-trail share the same clearing node.",
+    "Owner confirmed that main-loop, main-loop-ext, and barbershop-trail share the same clearing node.",
     "Owner confirmed that the Barbershop Trail remains a dead end for now; a Shooting Range landmark is offset 5 m north of it.",
     "Owner confirmed that the driveway geometry remains unchanged while Front Field Zone keeps at least 2 m clearance.",
     "Owner confirmed that main-loop extends to a clean driveway intersection.",
     "Placeholder names remain: Main Loop Ext, Field Connector, and Main Loop Route.",
-    "Connector endpoint reversals produce four complete legs, despite the spec's approximate three-pass wording; the merged feature is still about 30 m rather than 122 m."
+    "Connector endpoint reversals produce four complete legs, despite the spec's approximate three-pass wording; the merged feature is still about 30 m rather than 122 m.",
+    "Owner clarified that main-loop-ext is one out-and-back trail, not two nearby trail branches; its two passes are consolidated into one centerline.",
+    "Owner requested that Mountain Drive connect cleanly to the existing driveway geometry."
   ],
   "jobs": [
     {
@@ -41,16 +43,17 @@
       "properties": {
         "type": "walking trail",
         "status": "provisional",
-        "note": "Closed loop segment; placeholder name pending owner review."
+        "note": "Out-and-back trail centerline consolidated from the two recorded directions; placeholder name pending owner review."
       },
       "options": {
         "spacing": 3.0,
         "smooth_passes": 1,
         "simplify_tolerance": 0.8,
-        "loop_close_threshold": 10.0,
-        "split_passes": false
+        "min_leg_length": 50.0,
+        "pass_match_cap": 20.0,
+        "split_passes": true
       },
-      "expect": {"closed": true, "length_range_m": [280, 350], "legs": {"main-loop-ext.gpx": 1}}
+      "expect": {"closed": false, "length_range_m": [140, 175], "legs": {"main-loop-ext.gpx": 2}, "reversed_passes": 1}
     },
     {
       "id": "barbershop-trail",
@@ -137,7 +140,6 @@
       "action": "node",
       "members": [
         {"feature": "main-loop-ext", "endpoint": "start"},
-        {"feature": "main-loop-ext", "endpoint": "end"},
         {"feature": "barbershop-trail", "endpoint": "start"},
         {
           "feature": "main-loop",
@@ -149,12 +151,13 @@
       ],
       "extension_cap": 8.0,
       "approach_length": 3.0,
+      "node_lonlat": [-73.8342293, 43.3591683],
       "expected_lonlat": [-73.8342328, 43.3591675],
       "expected_tolerance": 1.0,
       "emit_intersection": {
         "id": "main-loop-clearing",
         "name": "Main Loop Clearing",
-        "note": "Main Loop, both ends of Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node."
+        "note": "Main Loop, Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node."
       }
     },
     {
@@ -202,6 +205,21 @@
         "id": "main-loop-driveway",
         "name": "Main Loop / Driveway",
         "note": "Main Loop was smoothly extended to the unchanged driveway centerline."
+      }
+    },
+    {
+      "id": "mountain-drive-driveway",
+      "name": "Mountain Drive / Driveway",
+      "feature": "mountain-drive",
+      "endpoint": "start",
+      "target_feature": "driveway",
+      "target_kind": "line",
+      "action": "extend",
+      "movement_cap": 15.0,
+      "emit_intersection": {
+        "id": "mountain-drive-driveway",
+        "name": "Mountain Drive / Driveway",
+        "note": "Mountain Drive was smoothly extended to the existing driveway centerline."
       }
     },
     {
@@ -262,9 +280,9 @@
       "id": "main-loop-route",
       "name": "Main Loop Route",
       "segments": ["main-loop", "main-loop-ext"],
-      "shape": "loop",
+      "shape": "out-and-back",
       "difficulty": "easy",
-      "description": "Provisional main loop route linking the shared clearing with the longer loop segment.",
+      "description": "Provisional out-and-back route linking the driveway, shared clearing, and consolidated Main Loop Ext centerline.",
       "status": "provisional"
     }
   ],

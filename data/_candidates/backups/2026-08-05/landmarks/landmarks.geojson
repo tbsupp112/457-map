@@ -1,0 +1,26 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Landmarks"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "shooting-range",
+        "name": "Shooting Range",
+        "type": "shooting range",
+        "status": "provisional; derived from trail endpoint",
+        "note": "Approximate shooting-range location, placed 5 m north of the current Barbershop Trail dead end.",
+        "recorded_on": "2026-08-05"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8338405,
+          43.3595731
+        ]
+      }
+    }
+  ]
+}

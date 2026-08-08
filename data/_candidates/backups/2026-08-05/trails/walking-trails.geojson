@@ -152,7 +152,7 @@
         ],
         "recorded_on": "2026-08-05",
         "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 2.5 m stations. Join `field-connector-main-loop-ext` adjusted its endpoint to the declared connection. Join `field-connector-front-field-zone` adjusted its endpoint to the declared connection.",
-        "length_m": 29.2,
+        "length_m": 27.5,
         "length_ft": 95,
         "elevation_gain_ft": 10
       },
@@ -176,8 +176,8 @@
             43.3588447
           ],
           [
-            -73.8343892,
-            43.3588265
+            -73.8344109,
+            43.3588266
           ]
         ]
       }
@@ -284,15 +284,15 @@
         "name": "Main Loop Ext",
         "type": "walking trail",
         "status": "provisional",
-        "note": "Out-and-back trail centerline consolidated from the two recorded directions; placeholder name pending owner review.",
+        "note": "Closed loop segment; placeholder name pending owner review.",
         "source_files": [
           "main-loop-ext.gpx"
         ],
         "recorded_on": "2026-08-05",
-        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 5.1 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`.",
-        "length_m": 158.2,
-        "length_ft": 502,
-        "elevation_gain_ft": 68
+        "processing": "Single-pass order-preserving smoothing and RDP simplification. Its start endpoint was extended 5.2 m to the shared Main Loop Clearing centroid. Its end endpoint was extended 1.4 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`.",
+        "length_m": 307.0,
+        "length_ft": 996,
+        "elevation_gain_ft": 136
       },
       "geometry": {
         "type": "LineString",
@@ -302,76 +302,116 @@
             43.3591683
           ],
           [
-            -73.8342239,
-            43.3591505
+            -73.8342174,
+            43.3591529
           ],
           [
-            -73.8342269,
-            43.3590832
+            -73.8342165,
+            43.3590887
           ],
           [
-            -73.8342585,
-            43.3590226
+            -73.834222,
+            43.359048
           ],
           [
-            -73.8342669,
-            43.3590156
+            -73.8343077,
+            43.358973
           ],
           [
-            -73.8342852,
-            43.3590263
+            -73.834356,
+            43.3588815
           ],
           [
-            -73.8343816,
-            43.3588895
+            -73.8343755,
+            43.3587987
           ],
           [
-            -73.8343892,
-            43.3588265
+            -73.8343313,
+            43.358748
           ],
           [
-            -73.8343954,
-            43.3587757
+            -73.8342107,
+            43.3586895
           ],
           [
-            -73.8343418,
-            43.3587382
+            -73.834132,
+            43.358628
           ],
           [
-            -73.8342115,
-            43.3586935
+            -73.8340778,
+            43.3585515
           ],
           [
-            -73.8341402,
-            43.3586388
+            -73.8338722,
+            43.358342
           ],
           [
-            -73.8340972,
-            43.3585694
+            -73.8337945,
+            43.358302
           ],
           [
-            -73.8339385,
-            43.3583893
+            -73.833672,
+            43.3581192
           ],
           [
-            -73.8337864,
-            43.3582948
+            -73.8336097,
+            43.358063
           ],
           [
-            -73.8337078,
-            43.3581138
+            -73.8335965,
+            43.3580672
           ],
           [
-            -73.8336615,
-            43.3580855
+            -73.8336097,
+            43.3580798
           ],
           [
-            -73.8335832,
-            43.3580637
+            -73.8337125,
+            43.3580943
           ],
           [
-            -73.833583,
-            43.358077
+            -73.8337512,
+            43.3581113
+          ],
+          [
+            -73.8337895,
+            43.358286
+          ],
+          [
+            -73.833934,
+            43.3583817
+          ],
+          [
+            -73.8342015,
+            43.358683
+          ],
+          [
+            -73.8343705,
+            43.3587415
+          ],
+          [
+            -73.834423,
+            43.3587817
+          ],
+          [
+            -73.8344109,
+            43.3588266
+          ],
+          [
+            -73.834388,
+            43.358912
+          ],
+          [
+            -73.8342462,
+            43.3590958
+          ],
+          [
+            -73.834235,
+            43.3591417
+          ],
+          [
+            -73.8342293,
+            43.3591683
           ]
         ]
       }

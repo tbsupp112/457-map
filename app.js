@@ -280,8 +280,8 @@ const buildingIcon = L.icon({
 const guidanceTargetIcon = L.divIcon({
   className: "guidance-target-highlight",
   html: '<span aria-hidden="true"></span>',
-  iconSize: [46, 46],
-  iconAnchor: [23, 23],
+  iconSize: [30, 30],
+  iconAnchor: [15, 28],
 });
 
 const landmarksLayer = L.geoJSON(null, {
@@ -1200,7 +1200,7 @@ function buildRouteSummaryHtml(routes) {
         `<span>${escapeHtml(difficulty.label)}</span></span>`
       : "";
     const lengthHtml = Number.isFinite(Number(route.length_ft))
-      ? `<span class="route-length">${escapeHtml(formatRouteLength(Number(route.length_ft)))}</span>`
+      ? `<span class="route-length">${escapeHtml(formatRouteLengthLabel(route))}</span>`
       : "";
     return `<span class="route-summary-row">${difficultyHtml}${lengthHtml}</span>`;
   });
@@ -1221,31 +1221,45 @@ function formatRouteLength(lengthFeet) {
   return miles < 0.15 ? `${Math.round(lengthFeet)} ft` : `${miles.toFixed(2)} mi`;
 }
 
+function formatRouteLengthLabel(route) {
+  const distance = formatRouteLength(Number(route.length_ft));
+  return route.shape === "out-and-back" ? `${distance} round trip` : distance;
+}
+
 function bindMapFeature(layer, feature, detail, options = {}) {
   registerFocusableFeature(feature, layer, options.focusOverlay);
-  const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-  layer.bindTooltip(escapeHtml(options.title || feature.properties.name), {
-    sticky: true,
-    direction: "top",
-  });
-  installFeatureHoverFeedback(layer);
+  const hasFinePointer = window.matchMedia(
+    "(any-hover: hover) and (any-pointer: fine)",
+  ).matches;
   if (hasFinePointer) {
-    layer.bindPopup(() => buildMapFeaturePopup(feature, detail, options));
-    return;
+    layer.bindTooltip(escapeHtml(options.title || feature.properties.name), {
+      sticky: true,
+      direction: "top",
+    });
+    installFeatureHoverFeedback(layer);
   }
 
   layer.on("click", (event) => {
-    layer.closeTooltip();
+    if (!hasFinePointer) layer.closeTooltip();
     window.clearTimeout(pendingFeaturePopupTimer);
     if (performance.now() < suppressFeaturePopupsUntil) return;
 
-    pendingFeaturePopupTimer = window.setTimeout(() => {
+    const openPopup = () => {
+      pendingFeaturePopupTimer = null;
       if (performance.now() < suppressFeaturePopupsUntil) return;
       L.popup()
         .setLatLng(event.latlng)
         .setContent(buildMapFeaturePopup(feature, detail, options))
         .openOn(map);
-    }, RAPID_DOUBLE_TAP_MS + 20);
+    };
+    if (hasFinePointer) {
+      openPopup();
+    } else {
+      pendingFeaturePopupTimer = window.setTimeout(
+        openPopup,
+        RAPID_DOUBLE_TAP_MS + 20,
+      );
+    }
   });
 }
 
@@ -1796,6 +1810,7 @@ function installLayerControlHoverDelay(control) {
 }
 
 function resetMapToDefaults() {
+  stopGuidance();
   map.closePopup();
   if (map.hasLayer(topoMap)) map.removeLayer(topoMap);
   if (!map.hasLayer(nysAerial)) map.addLayer(nysAerial);

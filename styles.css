@@ -478,16 +478,16 @@ button { font: inherit; }
 
 .guidance-target-highlight span {
   position: absolute;
-  inset: 4px;
-  border: 3px solid #ffffff;
+  inset: 3px;
+  border: 2px solid #ffffff;
   border-radius: 50%;
-  box-shadow: 0 0 0 3px rgba(0, 185, 73, 0.9), 0 0 18px 7px rgba(0, 185, 73, 0.72);
+  box-shadow: 0 0 0 2px rgba(0, 185, 73, 0.9), 0 0 8px 3px rgba(0, 185, 73, 0.62);
   animation: guidance-target-pulse 1.35s ease-in-out infinite;
 }
 
 @keyframes guidance-target-pulse {
-  0%, 100% { transform: scale(0.86); opacity: 0.78; }
-  50% { transform: scale(1.08); opacity: 1; }
+  0%, 100% { transform: scale(0.9); opacity: 0.78; }
+  50% { transform: scale(1.04); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -626,6 +626,47 @@ button { font: inherit; }
     font-size: 19px !important;
   }
 
+}
+
+@media (max-width: 720px) {
+  .leaflet-control-layers-expanded .leaflet-control-layers-list {
+    min-width: 210px;
+    padding: 10px 13px 9px 10px;
+    border-radius: 8px;
+  }
+
+  .leaflet-control-layers label {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    margin: 0;
+    padding: 4px 1px;
+    font-size: 15px;
+    line-height: 1.35;
+    touch-action: manipulation;
+  }
+
+  .leaflet-control-layers-selector {
+    width: 18px;
+    height: 18px;
+    margin: 0 8px 0 0;
+    flex: 0 0 auto;
+  }
+
+  .leaflet-control-layers-separator {
+    margin: 7px 0;
+  }
+
+  .layer-reset-section {
+    margin-top: 8px;
+    padding-top: 9px;
+  }
+
+  .layer-reset-button {
+    min-height: 42px;
+    padding: 8px 11px;
+    font-size: 14px;
+  }
 }
 
 @media (max-width: 520px) {

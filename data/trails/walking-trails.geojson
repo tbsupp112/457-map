@@ -99,7 +99,18 @@
         "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 3.8 m to the shared Main Loop Clearing centroid.",
         "length_m": 56.2,
         "length_ft": 174,
-        "elevation_gain_ft": 21
+        "elevation_gain_ft": 21,
+        "elevation_loss_ft": 20,
+        "elevation_profile_ft": [
+          902.9,
+          900.9,
+          899.2,
+          898.0,
+          896.9,
+          896.1,
+          895.6,
+          895.7
+        ]
       },
       "geometry": {
         "type": "LineString",
@@ -154,7 +165,15 @@
         "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 2.5 m stations. Join `field-connector-main-loop-ext` adjusted its endpoint to the declared connection. Join `field-connector-front-field-zone` adjusted its endpoint to the declared connection.",
         "length_m": 29.2,
         "length_ft": 95,
-        "elevation_gain_ft": 10
+        "elevation_gain_ft": 10,
+        "elevation_loss_ft": 7,
+        "elevation_profile_ft": [
+          882.5,
+          891.4,
+          897.7,
+          901.1,
+          902.9
+        ]
       },
       "geometry": {
         "type": "LineString",
@@ -197,7 +216,30 @@
         "processing": "Single-pass order-preserving smoothing and RDP simplification. Its start endpoint was extended 31.6 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `garden-cut-through-main-loop`. A matching vertex was inserted for join `pavilion-side-trail-main-loop`. Join `main-loop-driveway` adjusted its endpoint to the declared connection.",
         "length_m": 149.4,
         "length_ft": 529,
-        "elevation_gain_ft": 51
+        "elevation_gain_ft": 51,
+        "elevation_loss_ft": 67,
+        "elevation_profile_ft": [
+          892.4,
+          896.7,
+          899.7,
+          900.3,
+          899.0,
+          896.9,
+          895.8,
+          893.8,
+          891.0,
+          886.7,
+          882.2,
+          880.1,
+          880.1,
+          881.5,
+          880.2,
+          876.6,
+          872.9,
+          872.0,
+          873.5,
+          876.0
+        ]
       },
       "geometry": {
         "type": "LineString",
@@ -292,7 +334,29 @@
         "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 5.1 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`.",
         "length_m": 158.2,
         "length_ft": 502,
-        "elevation_gain_ft": 68
+        "elevation_gain_ft": 68,
+        "elevation_loss_ft": 48,
+        "elevation_profile_ft": [
+          887.6,
+          892.9,
+          897.4,
+          900.4,
+          902.0,
+          902.8,
+          903.2,
+          903.3,
+          902.6,
+          901.1,
+          899.1,
+          896.6,
+          894.4,
+          891.6,
+          890.1,
+          888.1,
+          885.7,
+          880.2,
+          872.7
+        ]
       },
       "geometry": {
         "type": "LineString",

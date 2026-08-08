@@ -487,6 +487,81 @@ def elevation_gain(points: Sequence[TrackPoint]) -> float | None:
     return gain
 
 
+def elevation_loss(points: Sequence[TrackPoint]) -> float | None:
+    elevations = [point.elevation for point in points]
+    if sum(value is not None for value in elevations) < 2:
+        return None
+    loss = 0.0
+    previous = None
+    for value in elevations:
+        if value is None:
+            continue
+        if previous is not None and value < previous:
+            loss += previous - value
+        previous = value
+    return loss
+
+
+def _elevation_at_fraction(points: Sequence[TrackPoint], fraction: float) -> float | None:
+    if not points:
+        return None
+    stations = cumulative_lengths([point.xy for point in points])
+    valid = [
+        (stations[index], point.elevation)
+        for index, point in enumerate(points)
+        if point.elevation is not None
+    ]
+    if not valid:
+        return None
+    target = stations[-1] * max(0.0, min(1.0, fraction))
+    if target <= valid[0][0]:
+        return valid[0][1]
+    if target >= valid[-1][0]:
+        return valid[-1][1]
+    for (left_station, left_value), (right_station, right_value) in zip(valid, valid[1:]):
+        if target > right_station:
+            continue
+        span = right_station - left_station
+        if span <= 1e-9:
+            return right_value
+        ratio = (target - left_station) / span
+        return left_value + (right_value - left_value) * ratio
+    return valid[-1][1]
+
+
+def median_elevation_profile(
+    passes: Sequence[Sequence[TrackPoint]],
+    spacing_m: float = 10.0,
+    smoothing_passes: int = 2,
+) -> list[float]:
+    usable = [list(points) for points in passes if sum(p.elevation is not None for p in points) >= 2]
+    if not usable:
+        return []
+    longest = max(track_length(points) for points in usable)
+    sample_count = max(2, math.ceil(longest / max(spacing_m, 1.0)) + 1)
+    profile = []
+    for index in range(sample_count):
+        fraction = index / (sample_count - 1)
+        values = [
+            value
+            for points in usable
+            if (value := _elevation_at_fraction(points, fraction)) is not None
+        ]
+        profile.append(statistics.median(values))
+    for _ in range(max(0, smoothing_passes)):
+        if len(profile) < 3:
+            break
+        profile = [
+            profile[0],
+            *[
+                statistics.mean(profile[index - 1 : index + 2])
+                for index in range(1, len(profile) - 1)
+            ],
+            profile[-1],
+        ]
+    return profile
+
+
 def _first_sustained_radial_turn(points: Sequence[TrackPoint], threshold: float) -> int | None:
     start = points[0].xy
     peak_value = 0.0

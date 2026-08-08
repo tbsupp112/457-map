@@ -366,6 +366,57 @@ button { font: inherit; }
   line-height: 1.45;
 }
 
+.route-summary {
+  display: block;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.route-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  color: var(--chrome-text);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.route-summary-row + .route-summary-row {
+  margin-top: 6px;
+}
+
+.route-difficulty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.route-difficulty-symbol {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  background: currentColor;
+}
+
+.route-difficulty--easy { color: #58d36b; }
+.route-difficulty--easy .route-difficulty-symbol { border-radius: 50%; }
+.route-difficulty--moderate { color: #62a8ff; }
+.route-difficulty--rugged { color: #f4f6f5; }
+.route-difficulty--rugged .route-difficulty-symbol {
+  width: 10px;
+  height: 10px;
+  margin: 0 1px;
+  transform: rotate(45deg);
+}
+
+.route-length {
+  color: var(--chrome-muted);
+  white-space: nowrap;
+}
+
 .leaflet-container a.leaflet-popup-close-button {
   top: 7px;
   right: 8px;
@@ -407,6 +458,40 @@ button { font: inherit; }
 
 .leaflet-tooltip-right:not(.off-property-tooltip)::before {
   border-right-color: rgba(20, 35, 29, 0.88);
+}
+
+.landmark-marker {
+  transition: filter 130ms ease;
+}
+
+.landmark-marker:hover,
+.landmark-marker:focus-visible {
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 5px rgba(94, 230, 189, 0.9));
+}
+
+.guidance-target-highlight {
+  border: 0;
+  background: transparent;
+  pointer-events: none;
+}
+
+.guidance-target-highlight span {
+  position: absolute;
+  inset: 4px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(0, 185, 73, 0.9), 0 0 18px 7px rgba(0, 185, 73, 0.72);
+  animation: guidance-target-pulse 1.35s ease-in-out infinite;
+}
+
+@keyframes guidance-target-pulse {
+  0%, 100% { transform: scale(0.86); opacity: 0.78; }
+  50% { transform: scale(1.08); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guidance-target-highlight span { animation: none; }
 }
 
 .landmark-distance {

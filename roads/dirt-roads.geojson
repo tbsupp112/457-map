@@ -1,0 +1,147 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Dirt roads"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "mountain-drive",
+        "name": "Mountain Drive",
+        "type": "dirt road",
+        "status": "work in progress",
+        "provisional": true,
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "New_rd_down.gpx",
+          "New_Road_up.gpx"
+        ],
+        "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road. Join `mountain-drive-driveway` adjusted its endpoint to the declared connection.",
+        "length_m": 207.5,
+        "note": "New/continued dirt road following an older route. Replace when better GPS coverage is available."
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8359212,
+            43.3591277
+          ],
+          [
+            -73.8359205,
+            43.3592015
+          ],
+          [
+            -73.8359193,
+            43.3593367
+          ],
+          [
+            -73.8358657,
+            43.3593707
+          ],
+          [
+            -73.8356051,
+            43.3594245
+          ],
+          [
+            -73.8354957,
+            43.3594944
+          ],
+          [
+            -73.8354833,
+            43.3595137
+          ],
+          [
+            -73.8354316,
+            43.3595946
+          ],
+          [
+            -73.8351067,
+            43.3596738
+          ],
+          [
+            -73.8349879,
+            43.3597511
+          ],
+          [
+            -73.8348198,
+            43.3599924
+          ],
+          [
+            -73.8347548,
+            43.3602226
+          ],
+          [
+            -73.83456,
+            43.360511
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "driveway",
+        "name": "Driveway",
+        "type": "dirt road",
+        "status": "provisional",
+        "note": "Driveway road centerline from two opposite-direction passes.",
+        "source_files": [
+          "driveway.gpx",
+          "driveway (1).gpx"
+        ],
+        "recorded_on": "2026-08-05",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 5 m stations. A matching vertex was inserted for join `main-loop-driveway`. A matching vertex was inserted for join `mountain-drive-driveway`.",
+        "length_m": 141.1,
+        "length_ft": 463,
+        "elevation_gain_ft": 25
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.835256,
+            43.358663
+          ],
+          [
+            -73.8353216,
+            43.3588026
+          ],
+          [
+            -73.8354391,
+            43.3589369
+          ],
+          [
+            -73.835443,
+            43.3589414
+          ],
+          [
+            -73.8357439,
+            43.3590867
+          ],
+          [
+            -73.8359212,
+            43.3591277
+          ],
+          [
+            -73.8359377,
+            43.3591315
+          ],
+          [
+            -73.8360187,
+            43.3590946
+          ],
+          [
+            -73.8362225,
+            43.3587791
+          ],
+          [
+            -73.836337,
+            43.3586816
+          ]
+        ]
+      }
+    }
+  ]
+}

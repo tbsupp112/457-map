@@ -20,6 +20,8 @@ const GUIDANCE_IOS_HINT_DELAY_MS = 1800;
 const GUIDANCE_SMOOTHING_TIME_MS = 250;
 const GUIDANCE_VISUAL_INTERVAL_MS = 100;
 const LAYER_CONTROL_COLLAPSE_DELAY_MS = 280;
+const ROAD_HIT_TOLERANCE_PX = 5;
+const TRAIL_HIT_TOLERANCE_PX = 6;
 const PROPERTY_REFERENCE_LAT = 43.3596;
 const PROPERTY_REFERENCE_LON = -73.8350;
 const METERS_PER_LATITUDE_DEGREE = 111132;
@@ -85,6 +87,7 @@ const guidanceTracker = {
   pillHideTimer: null,
   unavailableHintTimer: null,
   unavailableEndTimer: null,
+  highlightLayer: null,
   hasShownIosOrientationHint: false,
 };
 
@@ -133,8 +136,14 @@ const outsideMaskRenderer = L.svg({
 });
 const corridorRenderer = L.canvas({ pane: MAP_PANES.corridor });
 const boundaryRenderer = L.canvas({ pane: MAP_PANES.boundary });
-const roadsRenderer = L.canvas({ pane: MAP_PANES.roads });
-const trailsRenderer = L.canvas({ pane: MAP_PANES.trails });
+const roadsRenderer = L.canvas({
+  pane: MAP_PANES.roads,
+  tolerance: ROAD_HIT_TOLERANCE_PX,
+});
+const trailsRenderer = L.canvas({
+  pane: MAP_PANES.trails,
+  tolerance: TRAIL_HIT_TOLERANCE_PX,
+});
 const zonesRenderer = L.canvas({ pane: MAP_PANES.zones });
 const intersectionsRenderer = L.canvas({ pane: MAP_PANES.intersections });
 
@@ -261,10 +270,18 @@ addOverlayIfEnabled(zonesLayer, "zones", true);
 
 const buildingIcon = L.icon({
   iconUrl: "assets/icons/building-pin.webp",
-  iconSize: [20, 27],
-  iconAnchor: [10, 27],
-  popupAnchor: [0, -24],
-  tooltipAnchor: [0, -22],
+  className: "landmark-marker",
+  iconSize: [22, 30],
+  iconAnchor: [11, 30],
+  popupAnchor: [0, -27],
+  tooltipAnchor: [0, -25],
+});
+
+const guidanceTargetIcon = L.divIcon({
+  className: "guidance-target-highlight",
+  html: '<span aria-hidden="true"></span>',
+  iconSize: [46, 46],
+  iconAnchor: [23, 23],
 });
 
 const landmarksLayer = L.geoJSON(null, {
@@ -272,7 +289,7 @@ const landmarksLayer = L.geoJSON(null, {
     return L.marker(latlng, { icon: buildingIcon, pane: MAP_PANES.buildings });
   },
   onEachFeature(feature, layer) {
-    registerGuidanceTarget(feature);
+    registerGuidanceTarget(feature, layer);
     bindMapFeature(
       layer,
       feature,
@@ -961,13 +978,17 @@ function tryFocusRequestedFeature() {
     });
     if (!fitFocusBounds(bounds)) return;
     requestedFeatureFocused = true;
-    const details = [route.shape, route.difficulty].filter(Boolean).join(" \u00b7 ");
     L.popup()
       .setLatLng(bounds.getCenter())
       .setContent(
-        `<div class="map-popup-content"><strong>${escapeHtml(route.name)}</strong>` +
-          (details ? `<span class="map-popup-secondary">${escapeHtml(details)}</span>` : "") +
-          `</div>`,
+        buildMapFeaturePopup(
+          { properties: { name: route.name } },
+          route.description || "Mapped visitor route.",
+          {
+            secondary: route.shape,
+            routes: [route],
+          },
+        ),
       )
       .openOn(map);
     return;
@@ -1014,6 +1035,7 @@ function buildTrailPopupOptions(feature) {
     title: routes.map((route) => route.name).join(" \u00b7 "),
     secondary: `Segment: ${segmentName}`,
     detail,
+    routes,
   };
 }
 
@@ -1123,13 +1145,14 @@ function hideLocationStatus() {
   locationPanel.dataset.showStatus = "false";
 }
 
-function registerGuidanceTarget(feature) {
+function registerGuidanceTarget(feature, layer) {
   if (feature.geometry.type !== "Point" || !feature.properties.id) return;
   const [longitude, latitude] = feature.geometry.coordinates;
   guidanceTracker.targets.set(feature.properties.id, {
     id: feature.properties.id,
     name: feature.properties.name,
     latlng: L.latLng(latitude, longitude),
+    layer,
   });
 }
 
@@ -1144,6 +1167,9 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
   popupHtml += `<span class="map-popup-detail">${safeDetail}</span>`;
   if (options.caveat) {
     popupHtml += `<small class="map-popup-caveat">${escapeHtml(options.caveat)}</small>`;
+  }
+  if (Array.isArray(options.routes) && options.routes.length > 0) {
+    popupHtml += buildRouteSummaryHtml(options.routes);
   }
   if (!options.landmark) return `${popupHtml}</div>`;
 
@@ -1164,19 +1190,52 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
   return `${popupHtml}</div>`;
 }
 
+function buildRouteSummaryHtml(routes) {
+  const summaries = routes.map((route) => {
+    const difficulty = routeDifficultyPresentation(route.difficulty);
+    const difficultyHtml = difficulty
+      ? `<span class="route-difficulty route-difficulty--${difficulty.className}" ` +
+        `aria-label="${escapeHtml(difficulty.label)} difficulty">` +
+        `<span class="route-difficulty-symbol" aria-hidden="true"></span>` +
+        `<span>${escapeHtml(difficulty.label)}</span></span>`
+      : "";
+    const lengthHtml = Number.isFinite(Number(route.length_ft))
+      ? `<span class="route-length">${escapeHtml(formatRouteLength(Number(route.length_ft)))}</span>`
+      : "";
+    return `<span class="route-summary-row">${difficultyHtml}${lengthHtml}</span>`;
+  });
+  return `<span class="route-summary">${summaries.join("")}</span>`;
+}
+
+function routeDifficultyPresentation(value) {
+  const difficulty = String(value || "").toLowerCase();
+  return {
+    easy: { className: "easy", label: "Easy" },
+    moderate: { className: "moderate", label: "Moderate" },
+    rugged: { className: "rugged", label: "Rugged" },
+  }[difficulty] || null;
+}
+
+function formatRouteLength(lengthFeet) {
+  const miles = lengthFeet / 5280;
+  return miles < 0.15 ? `${Math.round(lengthFeet)} ft` : `${miles.toFixed(2)} mi`;
+}
+
 function bindMapFeature(layer, feature, detail, options = {}) {
   registerFocusableFeature(feature, layer, options.focusOverlay);
   const hasFinePointer = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+  layer.bindTooltip(escapeHtml(options.title || feature.properties.name), {
+    sticky: true,
+    direction: "top",
+  });
+  installFeatureHoverFeedback(layer);
   if (hasFinePointer) {
-    layer.bindTooltip(escapeHtml(feature.properties.name), {
-      sticky: true,
-      direction: "top",
-    });
     layer.bindPopup(() => buildMapFeaturePopup(feature, detail, options));
     return;
   }
 
   layer.on("click", (event) => {
+    layer.closeTooltip();
     window.clearTimeout(pendingFeaturePopupTimer);
     if (performance.now() < suppressFeaturePopupsUntil) return;
 
@@ -1188,6 +1247,25 @@ function bindMapFeature(layer, feature, detail, options = {}) {
         .openOn(map);
     }, RAPID_DOUBLE_TAP_MS + 20);
   });
+}
+
+function installFeatureHoverFeedback(layer) {
+  if (typeof layer.setStyle !== "function") return;
+  const baseStyle = {};
+  ["color", "weight", "opacity", "fillOpacity"].forEach((key) => {
+    if (layer.options[key] !== undefined) baseStyle[key] = layer.options[key];
+  });
+  layer.on("mouseover", () => {
+    const hoverStyle = {
+      weight: (Number(baseStyle.weight) || 0) + 2,
+      opacity: 1,
+    };
+    if (baseStyle.fillOpacity !== undefined) {
+      hoverStyle.fillOpacity = Math.min(1, Number(baseStyle.fillOpacity) + 0.08);
+    }
+    layer.setStyle(hoverStyle);
+  });
+  layer.on("mouseout", () => layer.setStyle(baseStyle));
 }
 
 function formatLandmarkDistance(distanceMeters, bearing) {
@@ -1276,6 +1354,7 @@ async function startGuidance(targetId) {
   const target = guidanceTracker.targets.get(targetId);
   if (!target) return;
 
+  showGuidanceTargetHighlight(target);
   if (guidanceTracker.isActive) {
     guidanceTracker.target = target;
     if (latestPosition) {
@@ -1352,6 +1431,7 @@ async function startGuidance(targetId) {
 function declineCompassGuidance() {
   guidanceTracker.orientationPermission = "denied";
   guidanceTracker.hideGuideButton = true;
+  clearGuidanceTargetHighlight();
   const popup = map._popup;
   if (!popup) return;
   popup.setContent('<span class="compass-note">Compass access was declined</span>');
@@ -1592,6 +1672,7 @@ function showGuidanceArrival() {
   }, 1000);
   guidanceTracker.pillHideTimer = window.setTimeout(() => {
     guidancePill.hidden = true;
+    clearGuidanceTargetHighlight();
     guidanceTracker.target = null;
   }, 2000);
 }
@@ -1609,10 +1690,28 @@ function stopGuidance() {
     "guidance-tint--starting",
     "guidance-tint--locked",
   );
+  clearGuidanceTargetHighlight();
   guidanceTracker.pillHideTimer = window.setTimeout(() => {
     guidancePill.hidden = true;
     guidanceTracker.target = null;
   }, 260);
+}
+
+function showGuidanceTargetHighlight(target) {
+  clearGuidanceTargetHighlight();
+  guidanceTracker.highlightLayer = L.marker(target.latlng, {
+    icon: guidanceTargetIcon,
+    pane: MAP_PANES.buildings,
+    interactive: false,
+    keyboard: false,
+    zIndexOffset: -1000,
+  }).addTo(map);
+}
+
+function clearGuidanceTargetHighlight() {
+  if (!guidanceTracker.highlightLayer) return;
+  guidanceTracker.highlightLayer.remove();
+  guidanceTracker.highlightLayer = null;
 }
 
 function clearGuidanceTimers() {

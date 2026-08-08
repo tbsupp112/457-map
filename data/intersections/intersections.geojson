@@ -72,26 +72,6 @@
     {
       "type": "Feature",
       "properties": {
-        "id": "mountain-drive-southwest-end",
-        "name": "Mountain Drive Southwest Connection",
-        "type": "open connection point",
-        "features": [
-          "mountain-drive"
-        ],
-        "status": "adjoining feature not yet mapped",
-        "note": "Known connection point at the southwest end of Mountain Drive; the intersecting feature will be added later."
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          -73.8359205,
-          43.3592015
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
         "id": "garden-cut-through-open-end",
         "name": "Garden Cut Through / Main Loop",
         "type": "confirmed intersection",

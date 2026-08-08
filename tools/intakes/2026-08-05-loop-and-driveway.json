@@ -9,7 +9,8 @@
     "Placeholder names remain: Main Loop Ext, Field Connector, and Main Loop Route.",
     "Connector endpoint reversals produce four complete legs, despite the spec's approximate three-pass wording; the merged feature is still about 30 m rather than 122 m.",
     "Owner clarified that main-loop-ext is one out-and-back trail, not two nearby trail branches; its two passes are consolidated into one centerline.",
-    "Owner requested that Mountain Drive connect cleanly to the existing driveway geometry."
+    "Owner requested that Mountain Drive connect cleanly to the existing driveway geometry.",
+    "The former Mountain Drive southwest open-connection marker is superseded by the confirmed Mountain Drive / Driveway join and is intentionally removed from live intersections."
   ],
   "jobs": [
     {
@@ -280,6 +281,7 @@
       "id": "main-loop-route",
       "name": "Main Loop Route",
       "segments": ["main-loop", "main-loop-ext"],
+      "segment_directions": ["reverse", "forward"],
       "shape": "out-and-back",
       "difficulty": "easy",
       "description": "Provisional out-and-back route linking the driveway, shared clearing, and consolidated Main Loop Ext centerline.",

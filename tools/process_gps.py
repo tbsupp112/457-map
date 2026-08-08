@@ -24,6 +24,7 @@ from gps_lib import (
     closest_point_on_ring,
     distance,
     elevation_gain,
+    elevation_loss,
     enforce_ring_clearance_from_line,
     endpoint_name,
     extend_endpoint_to_line,
@@ -34,6 +35,7 @@ from gps_lib import (
     line_length,
     max_vertex_displacement,
     mean_point,
+    median_elevation_profile,
     move_endpoint_to_node,
     move_toward,
     occupied_cell_spread,
@@ -62,6 +64,8 @@ COMPUTED_FIELDS = {
     "length_m",
     "length_ft",
     "elevation_gain_ft",
+    "elevation_loss_ft",
+    "elevation_profile_ft",
     "acres_computed",
     "processing",
     "source_files",
@@ -342,7 +346,9 @@ def process_job(
 
     else:
         passes = []
+        pass_tracks = []
         leg_gains = []
+        leg_losses = []
         detected_leg_counts: dict[str, int] = {}
         split_setting = options.get("split_passes", "auto")
         for filename in job["inputs"]:
@@ -376,7 +382,9 @@ def process_job(
                     f"{filename}: detected leg lengths differ by more than 15% ({[round(value, 1) for value in lengths]} m)."
                 )
             passes.extend([[point.xy for point in leg] for leg in file_legs])
+            pass_tracks.extend(file_legs)
             leg_gains.extend(value for value in (elevation_gain(leg) for leg in file_legs) if value is not None)
+            leg_losses.extend(value for value in (elevation_loss(leg) for leg in file_legs) if value is not None)
 
         spacing = float(options.get("spacing", 3.0))
         result = arc_length_centerline(
@@ -390,7 +398,14 @@ def process_job(
         length_m = line_length(output_line)
         length_ft = round(length_m * 3.28084)
         gain_m = statistics.median(leg_gains) if leg_gains else None
+        loss_m = statistics.median(leg_losses) if leg_losses else None
         gain_ft = round(gain_m * 3.28084) if gain_m is not None else None
+        loss_ft = round(loss_m * 3.28084) if loss_m is not None else None
+        oriented_tracks = [
+            list(reversed(track)) if result.reversed_passes[index] else list(track)
+            for index, track in enumerate(pass_tracks)
+        ]
+        elevation_profile_m = median_elevation_profile(oriented_tracks)
         closed = distance(output_line[0], output_line[-1]) <= float(
             options.get("loop_close_threshold", 10.0)
         )
@@ -408,6 +423,12 @@ def process_job(
         }
         if gain_ft is not None:
             computed["elevation_gain_ft"] = gain_ft
+        if loss_ft is not None:
+            computed["elevation_loss_ft"] = loss_ft
+        if elevation_profile_m:
+            computed["elevation_profile_ft"] = [
+                round(value * 3.28084, 1) for value in elevation_profile_m
+            ]
         properties = merge_computed_properties(job, computed, warnings)
         output = feature("LineString", [to_lonlat(point) for point in output_line], properties)
         median_spread = statistics.median(result.station_spreads) if result.station_spreads else 0.0
@@ -416,7 +437,11 @@ def process_job(
             [
                 f"- Output vertices: {len(output_line)}.",
                 f"- Length: {length_m:.1f} m / {length_m * 3.28084:.0f} ft (`length_ft`: {length_ft}).",
-                f"- Elevation gain: {gain_m:.1f} m / {gain_ft} ft." if gain_m is not None else "- Elevation gain: unavailable.",
+                (
+                    f"- Elevation gain/loss: {gain_m:.1f}/{loss_m:.1f} m / {gain_ft}/{loss_ft} ft."
+                    if gain_m is not None and loss_m is not None
+                    else "- Elevation gain/loss: unavailable."
+                ),
                 f"- Station spread MAD: median {median_spread:.1f} m; maximum {max_spread:.1f} m.",
                 f"- Shape: {'closed loop' if closed else 'open path'}; endpoint gap {distance(output_line[0], output_line[-1]):.1f} m.",
                 f"- Self-intersections: {self_intersection_count(output_line)}.",
@@ -837,6 +862,60 @@ def qa_proximity(
     return f"Nearest existing mapped feature: `{nearest_id}` at {nearest_distance:.1f} m.", warnings
 
 
+def build_route_elevation(
+    definition: dict[str, Any], catalog: dict[str, WorkingFeature]
+) -> tuple[list[list[float]], int, int]:
+    segment_ids = definition["segments"]
+    directions = definition.get("segment_directions", ["forward"] * len(segment_ids))
+    if len(directions) != len(segment_ids) or any(
+        direction not in {"forward", "reverse"} for direction in directions
+    ):
+        raise ValueError(
+            f"Route {definition['id']} needs one forward/reverse segment direction per segment"
+        )
+
+    outbound_profile: list[list[float]] = []
+    outbound_distance_ft = 0.0
+    outbound_gain_ft = 0.0
+    outbound_loss_ft = 0.0
+    for segment_id, direction in zip(segment_ids, directions):
+        properties = catalog[segment_id].feature["properties"]
+        segment_length_ft = float(properties.get("length_m", 0)) * 3.28084
+        values = [
+            float(value)
+            for value in properties.get("elevation_profile_ft", [])
+            if isinstance(value, (int, float))
+        ]
+        segment_gain = float(properties.get("elevation_gain_ft", 0))
+        segment_loss = float(properties.get("elevation_loss_ft", 0))
+        if direction == "reverse":
+            values.reverse()
+            segment_gain, segment_loss = segment_loss, segment_gain
+        if values:
+            for index, elevation_ft in enumerate(values):
+                if outbound_profile and index == 0:
+                    continue
+                fraction = index / max(len(values) - 1, 1)
+                outbound_profile.append(
+                    [
+                        round(outbound_distance_ft + segment_length_ft * fraction, 1),
+                        round(elevation_ft, 1),
+                    ]
+                )
+        outbound_distance_ft += segment_length_ft
+        outbound_gain_ft += segment_gain
+        outbound_loss_ft += segment_loss
+
+    if definition.get("shape") == "out-and-back":
+        return_profile = [
+            [round(2 * outbound_distance_ft - distance_ft, 1), elevation_ft]
+            for distance_ft, elevation_ft in reversed(outbound_profile[:-1])
+        ]
+        total_change = round(outbound_gain_ft + outbound_loss_ft)
+        return outbound_profile + return_profile, total_change, total_change
+    return outbound_profile, round(outbound_gain_ft), round(outbound_loss_ft)
+
+
 def build_route_candidates(
     manifest: dict[str, Any], catalog: dict[str, WorkingFeature], warnings: list[str]
 ) -> list[dict[str, Any]]:
@@ -851,14 +930,13 @@ def build_route_candidates(
             * 3.28084
             * (2 if definition.get("shape") == "out-and-back" else 1)
         )
-        gain_values = [
-            catalog[segment_id].feature["properties"].get("elevation_gain_ft")
-            for segment_id in segment_ids
-        ]
-        gain_ft = round(sum(value for value in gain_values if isinstance(value, (int, float))))
+        elevation_profile, gain_ft, loss_ft = build_route_elevation(definition, catalog)
         route = copy.deepcopy(definition)
         route["length_ft"] = length_ft
         route["elevation_gain_ft"] = gain_ft
+        route["elevation_loss_ft"] = loss_ft
+        if elevation_profile:
+            route["elevation_profile_ft"] = elevation_profile
         routes.append(route)
     omitted = manifest.get("route_omissions", [])
     if omitted:
@@ -915,7 +993,9 @@ def build_qa(
         for route in route_candidates:
             lines.append(
                 f"- `{route['id']}`: {route['name']}; segments {route['segments']}; "
-                f"`length_ft` {route['length_ft']}; `elevation_gain_ft` {route.get('elevation_gain_ft', 0)}."
+                f"`length_ft` {route['length_ft']}; `elevation_gain_ft` {route.get('elevation_gain_ft', 0)}; "
+                f"`elevation_loss_ft` {route.get('elevation_loss_ft', 0)}; "
+                f"profile points {len(route.get('elevation_profile_ft', []))}."
             )
     else:
         lines.append("- No route candidates in this intake.")

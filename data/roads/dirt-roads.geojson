@@ -95,7 +95,26 @@
         "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 5 m stations. A matching vertex was inserted for join `main-loop-driveway`. A matching vertex was inserted for join `mountain-drive-driveway`.",
         "length_m": 141.1,
         "length_ft": 463,
-        "elevation_gain_ft": 25
+        "elevation_gain_ft": 25,
+        "elevation_loss_ft": 53,
+        "elevation_profile_ft": [
+          860.9,
+          861.4,
+          861.7,
+          862.2,
+          862.5,
+          863.1,
+          863.0,
+          862.0,
+          858.7,
+          854.3,
+          849.7,
+          846.5,
+          843.8,
+          841.0,
+          837.4,
+          833.2
+        ]
       },
       "geometry": {
         "type": "LineString",

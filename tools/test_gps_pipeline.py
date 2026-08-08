@@ -20,7 +20,10 @@ from gps_lib import (  # noqa: E402
     arc_length_centerline,
     closest_distance_between_lines,
     distance,
+    elevation_gain,
+    elevation_loss,
     line_length,
+    median_elevation_profile,
     read_gpx,
     segment_intersection,
     split_out_and_back,
@@ -58,6 +61,19 @@ def candidate_hashes() -> dict[str, str]:
 
 
 class GeometryTests(unittest.TestCase):
+    def test_elevation_profile_and_changes_preserve_endpoints(self) -> None:
+        track = [
+            TrackPoint(0, 0, 100),
+            TrackPoint(10, 0, 105),
+            TrackPoint(20, 0, 102),
+            TrackPoint(30, 0, 110),
+        ]
+        self.assertEqual(elevation_gain(track), 13)
+        self.assertEqual(elevation_loss(track), 3)
+        profile = median_elevation_profile([track], spacing_m=10, smoothing_passes=1)
+        self.assertEqual(profile[0], 100)
+        self.assertEqual(profile[-1], 110)
+
     def test_arc_length_centerline_keeps_a_single_pass_loop(self) -> None:
         loop = [
             point(0, 0), point(20, 0), point(20, 20), point(0, 20), point(0, 0)
@@ -241,6 +257,14 @@ class IntakeIntegrationTests(unittest.TestCase):
                 * 2
             ),
         )
+        self.assertEqual(route["elevation_gain_ft"], route["elevation_loss_ft"])
+        self.assertGreater(route["elevation_gain_ft"], 0)
+        self.assertGreater(len(route["elevation_profile_ft"]), 20)
+        self.assertEqual(route["elevation_profile_ft"][0][0], 0)
+        self.assertAlmostEqual(
+            route["elevation_profile_ft"][-1][0], route["length_ft"], delta=1
+        )
+        self.assertNotIn("mountain-drive-southwest-end", result.catalog)
 
         live_trails = json.loads((DATA / "trails" / "walking-trails.geojson").read_text(encoding="utf-8"))
         live_by_id = {item["properties"]["id"]: item for item in live_trails["features"]}

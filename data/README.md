@@ -25,6 +25,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 ### Routes and segments
 
 - An `out-and-back` route's displayed length counts its member segments twice, once in each direction.
+- Route elevation profiles are sampled from the recorded GPX elevations. `elevation_gain_ft` and `elevation_loss_ft` describe the complete visitor route; for an out-and-back, both include the return trip.
 - A **segment** is one continuous, actually walked piece of tread. Segments are the only trail data that carries geometry, each has a stable id in `trails/walking-trails.geojson`, and connectors and spurs are segments like any other.
 - A **route** is a visitor-facing walk such as an Inner Loop or an out-and-back. It is an ordered list of segment ids with descriptive attributes in `trails/routes.json`; routes deliberately have no geometry of their own.
 - Routes reference segments, never the other way around. A segment may belong to more than one route, while an unassigned connector stays mapped without needing to be presented as a destination.
@@ -50,7 +51,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 - `intersections/intersections.geojson` — confirmed real-world connections between mapped features.
 - This layer is hidden by default. Shared coordinates enforce clean topology and can later support intersection filtering or sign planning.
-- It includes three confirmed joins plus two open connection points whose adjoining features have not yet been mapped.
+- Superseded open-connection markers are removed when a mapped adjoining feature creates a real shared join, as with Mountain Drive and Driveway.
 
 ## Reprocessing
 

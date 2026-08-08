@@ -145,13 +145,13 @@
         ],
         "status": "provisional; derived from declared join",
         "recorded_on": "2026-08-05",
-        "note": "Connector endpoint snapped to Main Loop Ext. Declared snap join moved/extended the end side by 3.1 m; source and target now share [-73.8343892, 43.3588265]."
+        "note": "Connector endpoint snapped to Main Loop Ext. Declared snap join moved/extended the end side by 1.4 m; source and target now share [-73.8344109, 43.3588266]."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -73.8343892,
-          43.3588265
+          -73.8344109,
+          43.3588266
         ]
       }
     },
@@ -168,7 +168,7 @@
         ],
         "status": "provisional; derived from declared join",
         "recorded_on": "2026-08-05",
-        "note": "Main Loop, Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node. Node centroid [-73.8342293, 43.3591683]; endpoint movements: main-loop-ext start 5.1 m, barbershop-trail start 3.8 m, main-loop start 31.6 m."
+        "note": "Main Loop, both ends of Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node. Node centroid [-73.8342293, 43.3591683]; endpoint movements: main-loop-ext start 5.2 m, main-loop-ext end 1.4 m, barbershop-trail start 3.8 m, main-loop start 31.6 m."
       },
       "geometry": {
         "type": "Point",
@@ -219,28 +219,6 @@
         "coordinates": [
           -73.8352243,
           43.3592239
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "id": "mountain-drive-driveway",
-        "name": "Mountain Drive / Driveway",
-        "type": "confirmed intersection",
-        "features": [
-          "mountain-drive",
-          "driveway"
-        ],
-        "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Mountain Drive was smoothly extended to the existing driveway centerline. Declared extend join moved/extended the start side by 8.2 m; source and target now share [-73.8359212, 43.3591277]."
-      },
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-          -73.8359212,
-          43.3591277
         ]
       }
     }

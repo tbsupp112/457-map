@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Routes are presentational visitor experiences. They hold no geometry; their member segments remain the only geometry on the map.",
+    "Each route entry needs: id, name, segments (an ordered array of walking-trails.geojson ids), shape (loop or out-and-back), difficulty (easy, moderate, or rugged), length_ft, optional elevation_gain_ft, description, and status (provisional or confirmed).",
+    "For an out-and-back route, length_ft counts the member segments twice so the displayed distance includes the return trip.",
+    "Routes reference segments only. Do not add route membership back onto segment features or merge segment coordinates into route geometry."
+  ],
+  "routes": [
+    {
+      "id": "main-loop-route",
+      "name": "Main Loop Route",
+      "segments": [
+        "main-loop",
+        "main-loop-ext"
+      ],
+      "shape": "out-and-back",
+      "difficulty": "easy",
+      "description": "Provisional out-and-back route linking the driveway, shared clearing, and consolidated Main Loop Ext centerline.",
+      "status": "provisional",
+      "length_ft": 2018,
+      "elevation_gain_ft": 119
+    }
+  ]
+}

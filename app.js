@@ -21,6 +21,7 @@ const GUIDANCE_SMOOTHING_TIME_MS = 250;
 const GUIDANCE_VISUAL_INTERVAL_MS = 100;
 const LAYER_CONTROL_COLLAPSE_DELAY_MS = 280;
 const ROAD_HIT_TOLERANCE_PX = 5;
+const ROAD_INTERACTION_WEIGHT_PX = 15;
 const TRAIL_HIT_TOLERANCE_PX = 6;
 const PROPERTY_REFERENCE_LAT = 43.3596;
 const PROPERTY_REFERENCE_LON = -73.8350;
@@ -49,6 +50,9 @@ const routesById = new Map();
 const focusableFeaturesById = new Map();
 let hasRouteDefinitions = false;
 let requestedFeatureFocused = false;
+let selectedFeatureLayers = [];
+let openMapRouteDetails = null;
+const roadVisualLayersById = new Map();
 
 const offPropertyTracker = {
   geometry: null,
@@ -107,6 +111,7 @@ const MAP_PANES = Object.freeze({
   corridor: "corridor-pane",
   boundary: "boundary-pane",
   roads: "roads-pane",
+  roadInteractions: "road-interactions-pane",
   trails: "trails-pane",
   naturalLandmarks: "natural-landmarks-pane",
   corners: "corners-pane",
@@ -120,6 +125,7 @@ const MAP_PANES = Object.freeze({
   [MAP_PANES.corridor, 403],
   [MAP_PANES.boundary, 404],
   [MAP_PANES.roads, 405],
+  [MAP_PANES.roadInteractions, 405.5],
   [MAP_PANES.trails, 406],
   [MAP_PANES.naturalLandmarks, 610],
   [MAP_PANES.corners, 615],
@@ -139,6 +145,10 @@ const boundaryRenderer = L.canvas({ pane: MAP_PANES.boundary });
 const roadsRenderer = L.canvas({
   pane: MAP_PANES.roads,
   tolerance: ROAD_HIT_TOLERANCE_PX,
+});
+const roadInteractionsRenderer = L.svg({
+  pane: MAP_PANES.roadInteractions,
+  padding: 0.5,
 });
 const trailsRenderer = L.canvas({
   pane: MAP_PANES.trails,
@@ -223,6 +233,7 @@ const roadHalo = L.geoJSON(null, {
 const roadsLayer = L.geoJSON(null, {
   pane: MAP_PANES.roads,
   renderer: roadsRenderer,
+  interactive: false,
   style: {
     color: "#d89a4a",
     weight: 3,
@@ -231,12 +242,29 @@ const roadsLayer = L.geoJSON(null, {
     lineJoin: "round",
   },
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, `${feature.properties.status}. ${feature.properties.note}`, {
+    if (feature.properties?.id) roadVisualLayersById.set(feature.properties.id, layer);
+  },
+});
+const roadInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.roadInteractions,
+  renderer: roadInteractionsRenderer,
+  style: {
+    color: "#ffffff",
+    weight: ROAD_INTERACTION_WEIGHT_PX,
+    opacity: 0.001,
+    lineCap: "round",
+    lineJoin: "round",
+  },
+  onEachFeature(feature, layer) {
+    const popupOptions = buildRoadPopupOptions(feature);
+    bindMapFeature(layer, feature, popupOptions.detail, {
+      ...popupOptions,
       focusOverlay: roadsGroup,
+      visualLayer: roadVisualLayersById.get(feature.properties?.id),
     });
   },
 });
-const roadsGroup = L.layerGroup([roadHalo, roadsLayer]);
+const roadsGroup = L.layerGroup([roadHalo, roadsLayer, roadInteractionLayer]);
 addOverlayIfEnabled(roadsGroup, "roads", true);
 
 const trailsLayer = L.geoJSON(null, {
@@ -438,7 +466,12 @@ let locationMarker = null;
 let offPropertyTooltipTimer = null;
 
 map.getContainer().addEventListener("click", handleGuideButtonClick, true);
+map.getContainer().addEventListener("click", handleRouteDetailsClick, true);
 guidanceDismiss.addEventListener("click", stopGuidance);
+map.on("popupclose", () => {
+  clearSelectedFeatureHighlight();
+  closeMapRouteDetails();
+});
 
 Promise.all([
   loadGeoJson("data/property/boundaries.geojson"),
@@ -481,20 +514,16 @@ Promise.all([
     tryFocusRequestedFeature();
   });
 
-loadGeoJson("data/roads/dirt-roads.geojson")
-  .then((data) => {
-    roadHalo.addData(data);
-    roadsLayer.addData(data);
-    tryFocusRequestedFeature();
-  })
-  .catch((error) => console.error(error));
-
 Promise.all([
+  loadGeoJson("data/roads/dirt-roads.geojson"),
   loadGeoJson("data/trails/walking-trails.geojson"),
   loadOptionalRoutes(),
 ])
-  .then(([trailData, routes]) => {
-    configureTrailRoutes(trailData, routes);
+  .then(([roadData, trailData, routes]) => {
+    configureMapRoutes([roadData, trailData], routes);
+    roadHalo.addData(roadData);
+    roadsLayer.addData(roadData);
+    roadInteractionLayer.addData(roadData);
     trailsLayer.addData(trailData);
     tryFocusRequestedFeature();
   })
@@ -531,7 +560,9 @@ infoOverlay.addEventListener("click", (event) => {
   if (event.target === infoOverlay) closeInfo();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !infoOverlay.hidden) closeInfo();
+  if (event.key !== "Escape") return;
+  if (!infoOverlay.hidden) closeInfo();
+  closeMapRouteDetails();
 });
 
 locateButton.addEventListener("click", () => {
@@ -901,12 +932,15 @@ async function loadOptionalGeoJson(url) {
   }
 }
 
-function configureTrailRoutes(trailData, routes) {
+function configureMapRoutes(featureCollections, routes) {
   routesBySegmentId.clear();
   routesById.clear();
   hasRouteDefinitions = routes.length > 0;
   const knownSegmentIds = new Set(
-    trailData.features.map((feature) => feature.properties?.id).filter(Boolean),
+    featureCollections
+      .flatMap((collection) => collection.features || [])
+      .map((feature) => feature.properties?.id)
+      .filter(Boolean),
   );
 
   routes.forEach((route) => {
@@ -918,7 +952,7 @@ function configureTrailRoutes(trailData, routes) {
     route.segments.forEach((segmentId) => {
       if (!knownSegmentIds.has(segmentId)) {
         console.warn(
-          `Route \"${route.id}\" references unknown trail segment \"${segmentId}\"; skipping it.`,
+          `Route \"${route.id}\" references unknown map segment \"${segmentId}\"; skipping it.`,
         );
         return;
       }
@@ -952,9 +986,9 @@ function fitFocusBounds(bounds) {
     map.setView(bounds.getCenter(), 19, { animate: false });
   } else {
     map.fitBounds(bounds, {
-      paddingTopLeft: PROPERTY_BOUNDS_PADDING,
-      paddingBottomRight: PROPERTY_BOUNDS_PADDING,
-      maxZoom: 19,
+      paddingTopLeft: [48, 58],
+      paddingBottomRight: [58, 58],
+      maxZoom: 18,
       animate: false,
     });
   }
@@ -970,7 +1004,9 @@ function tryFocusRequestedFeature() {
       .map((segmentId) => focusableFeaturesById.get(segmentId))
       .filter(Boolean);
     if (members.length !== route.segments.length) return;
-    if (!map.hasLayer(trailsLayer)) map.addLayer(trailsLayer);
+    members.forEach(({ focusOverlay }) => {
+      if (focusOverlay && !map.hasLayer(focusOverlay)) map.addLayer(focusOverlay);
+    });
     const bounds = L.latLngBounds([]);
     members.forEach(({ layer }) => {
       const memberBounds = layerFocusBounds(layer);
@@ -978,7 +1014,8 @@ function tryFocusRequestedFeature() {
     });
     if (!fitFocusBounds(bounds)) return;
     requestedFeatureFocused = true;
-    L.popup()
+    setSelectedFeatureLayers(members.map(({ layer }) => layer));
+    L.popup({ autoPan: false })
       .setLatLng(bounds.getCenter())
       .setContent(
         buildMapFeaturePopup(
@@ -1000,7 +1037,8 @@ function tryFocusRequestedFeature() {
   const bounds = layerFocusBounds(match.layer);
   if (!fitFocusBounds(bounds)) return;
   requestedFeatureFocused = true;
-  L.popup()
+  setSelectedFeatureLayers([match.layer]);
+  L.popup({ autoPan: false })
     .setLatLng(bounds.getCenter())
     .setContent(
       `<div class="map-popup-content"><strong>${escapeHtml(match.feature.properties.name)}</strong></div>`,
@@ -1008,12 +1046,12 @@ function tryFocusRequestedFeature() {
     .openOn(map);
 }
 
-function routesForTrail(feature) {
+function routesForFeature(feature) {
   return routesBySegmentId.get(feature.properties?.id) || [];
 }
 
 function trailStyle(feature) {
-  const isConnector = hasRouteDefinitions && routesForTrail(feature).length === 0;
+  const isConnector = hasRouteDefinitions && routesForFeature(feature).length === 0;
   return {
     color: "#63b8e8",
     weight: 3,
@@ -1027,13 +1065,25 @@ function trailStyle(feature) {
 
 function buildTrailPopupOptions(feature) {
   const segmentName = feature.properties.name;
-  const routes = routesForTrail(feature);
+  const routes = routesForFeature(feature);
   const detail = "Provisional walking-trail centerline from repeated phone-GPS passes.";
   if (routes.length === 0) return { detail };
 
   return {
     title: routes.map((route) => route.name).join(" \u00b7 "),
     secondary: `Segment: ${segmentName}`,
+    detail,
+    routes,
+  };
+}
+
+function buildRoadPopupOptions(feature) {
+  const routes = routesForFeature(feature);
+  const detail = `${feature.properties.status}. ${feature.properties.note}`;
+  if (routes.length === 0) return { detail };
+  return {
+    title: routes.map((route) => route.name).join(" \u00b7 "),
+    secondary: `Road: ${feature.properties.name}`,
     detail,
     routes,
   };
@@ -1202,7 +1252,10 @@ function buildRouteSummaryHtml(routes) {
     const lengthHtml = Number.isFinite(Number(route.length_ft))
       ? `<span class="route-length">${escapeHtml(formatRouteLengthLabel(route))}</span>`
       : "";
-    return `<span class="route-summary-row">${difficultyHtml}${lengthHtml}</span>`;
+    const detailsHtml =
+      `<button class="route-details-trigger" type="button" ` +
+      `data-route-id="${escapeHtml(route.id)}">Route details</button>`;
+    return `<span class="route-summary-row">${difficultyHtml}${detailsHtml}${lengthHtml}</span>`;
   });
   return `<span class="route-summary">${summaries.join("")}</span>`;
 }
@@ -1227,7 +1280,7 @@ function formatRouteLengthLabel(route) {
 }
 
 function bindMapFeature(layer, feature, detail, options = {}) {
-  registerFocusableFeature(feature, layer, options.focusOverlay);
+  registerFocusableFeature(feature, options.visualLayer || layer, options.focusOverlay);
   const hasFinePointer = window.matchMedia(
     "(any-hover: hover) and (any-pointer: fine)",
   ).matches;
@@ -1236,7 +1289,7 @@ function bindMapFeature(layer, feature, detail, options = {}) {
       sticky: true,
       direction: "top",
     });
-    installFeatureHoverFeedback(layer);
+    installFeatureHoverFeedback(options.visualLayer || layer, layer);
   }
 
   layer.on("click", (event) => {
@@ -1247,6 +1300,10 @@ function bindMapFeature(layer, feature, detail, options = {}) {
     const openPopup = () => {
       pendingFeaturePopupTimer = null;
       if (performance.now() < suppressFeaturePopupsUntil) return;
+      map.closePopup();
+      if (!hasFinePointer) {
+        setSelectedFeatureLayers(featureSelectionLayers(layer, options));
+      }
       L.popup()
         .setLatLng(event.latlng)
         .setContent(buildMapFeaturePopup(feature, detail, options))
@@ -1263,13 +1320,13 @@ function bindMapFeature(layer, feature, detail, options = {}) {
   });
 }
 
-function installFeatureHoverFeedback(layer) {
-  if (typeof layer.setStyle !== "function") return;
+function installFeatureHoverFeedback(layer, eventLayer = layer) {
+  if (!layer || typeof layer.setStyle !== "function") return;
   const baseStyle = {};
   ["color", "weight", "opacity", "fillOpacity"].forEach((key) => {
     if (layer.options[key] !== undefined) baseStyle[key] = layer.options[key];
   });
-  layer.on("mouseover", () => {
+  eventLayer.on("mouseover", () => {
     const hoverStyle = {
       weight: (Number(baseStyle.weight) || 0) + 2,
       opacity: 1,
@@ -1279,7 +1336,45 @@ function installFeatureHoverFeedback(layer) {
     }
     layer.setStyle(hoverStyle);
   });
-  layer.on("mouseout", () => layer.setStyle(baseStyle));
+  eventLayer.on("mouseout", () => layer.setStyle(baseStyle));
+}
+
+function featureSelectionLayers(layer, options = {}) {
+  const route = Array.isArray(options.routes) ? options.routes[0] : null;
+  if (route?.segments?.length) {
+    const routeLayers = route.segments
+      .map((segmentId) => focusableFeaturesById.get(segmentId)?.layer)
+      .filter(Boolean);
+    if (routeLayers.length) return routeLayers;
+  }
+  return [options.visualLayer || layer].filter(Boolean);
+}
+
+function clearSelectedFeatureHighlight() {
+  selectedFeatureLayers.forEach(({ layer, style }) => layer.setStyle(style));
+  selectedFeatureLayers = [];
+}
+
+function setSelectedFeatureLayers(layers) {
+  clearSelectedFeatureHighlight();
+  const uniqueLayers = [...new Set(layers)].filter(
+    (layer) => layer && typeof layer.setStyle === "function",
+  );
+  selectedFeatureLayers = uniqueLayers.map((layer) => {
+    const style = {};
+    ["color", "weight", "opacity", "fillOpacity"].forEach((key) => {
+      if (layer.options[key] !== undefined) style[key] = layer.options[key];
+    });
+    const selectedStyle = {
+      weight: (Number(style.weight) || 0) + 2,
+      opacity: 1,
+    };
+    if (style.fillOpacity !== undefined) {
+      selectedStyle.fillOpacity = Math.min(1, Number(style.fillOpacity) + 0.08);
+    }
+    layer.setStyle(selectedStyle);
+    return { layer, style };
+  });
 }
 
 function formatLandmarkDistance(distanceMeters, bearing) {
@@ -1291,6 +1386,9 @@ function formatLandmarkDistance(distanceMeters, bearing) {
 function formatApproximateDistance(distanceMeters) {
   const distanceFeet = distanceMeters * 3.28084;
   if (distanceFeet < 15) return "you're here";
+  if (distanceFeet >= 0.15 * 5280) {
+    return `about ${(distanceFeet / 5280).toFixed(2)} mi`;
+  }
   const increment = distanceFeet < 300 ? 10 : 25;
   const roundedFeet = Math.round(distanceFeet / increment) * increment;
   return `about ${roundedFeet} ft`;
@@ -1362,6 +1460,35 @@ function handleGuideButtonClick(event) {
     return;
   }
   startGuidance(button.dataset.landmarkId);
+}
+
+function handleRouteDetailsClick(event) {
+  const button = event.target.closest?.(".route-details-trigger");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const route = routesById.get(button.dataset.routeId);
+  if (!route || !window.RouteDetails) return;
+
+  closeMapRouteDetails();
+  const { details, closeButton } = window.RouteDetails.createPanel(route, {
+    className: "route-details-popout--map",
+  });
+  closeButton.addEventListener("click", () => {
+    closeMapRouteDetails();
+    button.focus();
+  });
+  document.body.append(details);
+  details.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+  openMapRouteDetails = { button, details };
+}
+
+function closeMapRouteDetails() {
+  if (!openMapRouteDetails) return;
+  openMapRouteDetails.button.setAttribute("aria-expanded", "false");
+  openMapRouteDetails.details.remove();
+  openMapRouteDetails = null;
 }
 
 async function startGuidance(targetId) {

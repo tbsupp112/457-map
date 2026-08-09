@@ -286,6 +286,16 @@
       "difficulty": "easy",
       "description": "Provisional out-and-back route linking the driveway, shared clearing, and consolidated Main Loop Ext centerline.",
       "status": "provisional"
+    },
+    {
+      "id": "mountain-drive-route",
+      "name": "Mountain Drive Route",
+      "segments": ["mountain-drive"],
+      "segment_directions": ["forward"],
+      "shape": "out-and-back",
+      "difficulty": "moderate",
+      "description": "Provisional out-and-back route following Mountain Drive from its driveway connection to the current mapped endpoint.",
+      "status": "provisional"
     }
   ],
   "route_omissions": ["field-connector", "barbershop-trail", "driveway"]

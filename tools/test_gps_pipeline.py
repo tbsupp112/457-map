@@ -264,6 +264,16 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertAlmostEqual(
             route["elevation_profile_ft"][-1][0], route["length_ft"], delta=1
         )
+        mountain_route = next(
+            route for route in result.candidate_routes if route["id"] == "mountain-drive-route"
+        )
+        self.assertEqual(mountain_route["difficulty"], "moderate")
+        self.assertEqual(mountain_route["shape"], "out-and-back")
+        self.assertEqual(mountain_route["segments"], ["mountain-drive"])
+        self.assertEqual(mountain_route["length_ft"], 1362)
+        self.assertEqual(mountain_route["elevation_gain_ft"], 312)
+        self.assertEqual(mountain_route["elevation_loss_ft"], 312)
+        self.assertGreater(len(mountain_route["elevation_profile_ft"]), 20)
         self.assertNotIn("mountain-drive-southwest-end", result.catalog)
 
         live_trails = json.loads((DATA / "trails" / "walking-trails.geojson").read_text(encoding="utf-8"))

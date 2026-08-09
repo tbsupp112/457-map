@@ -376,8 +376,8 @@ button { font: inherit; }
 .route-summary-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
+  justify-content: flex-start;
+  gap: 12px;
   color: var(--chrome-text);
   font-size: 0.8rem;
   font-weight: 700;
@@ -413,8 +413,94 @@ button { font: inherit; }
 }
 
 .route-length {
+  margin-left: auto;
   color: var(--chrome-muted);
   white-space: nowrap;
+}
+
+.route-details-trigger {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  color: #9bdcc8;
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.route-details-trigger:hover,
+.route-details-trigger:focus-visible {
+  color: #ffffff;
+  outline: 2px solid #5ee6bd;
+  outline-offset: 3px;
+}
+
+.route-details-popout {
+  position: absolute;
+  z-index: 20;
+  width: min(350px, calc(100vw - 44px));
+  padding: 17px;
+  border: 1px solid rgba(41, 70, 60, 0.3);
+  border-radius: 13px;
+  color: #183129;
+  background: rgba(253, 252, 247, 0.98);
+  box-shadow: 0 16px 40px rgba(28, 50, 42, 0.25);
+}
+.route-details-popout[hidden] { display: none; }
+.route-details-popout h3 { margin: 0 34px 10px 0; font-size: 1.05rem; }
+.route-details-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #29463c;
+  background: transparent;
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+.route-details-close:hover,
+.route-details-close:focus-visible { background: rgba(60, 113, 96, 0.12); }
+.route-elevation-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.route-elevation-baseline { stroke: rgba(41, 70, 60, 0.24); stroke-width: 1; }
+.route-elevation-area { fill: rgba(60, 113, 96, 0.13); }
+.route-elevation-line {
+  fill: none;
+  stroke: #3c7160;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-elevation-label { fill: #61776f; font-size: 10px; font-weight: 700; }
+.route-elevation-unavailable { margin: 14px 0; color: #61776f; font-size: 0.8rem; }
+.route-elevation-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 5px;
+}
+.route-elevation-stats span {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(60, 113, 96, 0.08);
+}
+.route-elevation-stats small { color: #61776f; font-size: 0.68rem; }
+.route-elevation-stats strong { font-size: 0.9rem; }
+.route-elevation-note { margin: 10px 0; color: #61776f; font-size: 0.72rem; line-height: 1.4; }
+
+.route-details-popout--map {
+  position: fixed;
+  z-index: 1100;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 .leaflet-container a.leaflet-popup-close-button {

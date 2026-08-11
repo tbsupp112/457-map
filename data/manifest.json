@@ -1,0 +1,135 @@
+{
+  "version": 1,
+  "constraints": {
+    "boundary_roles": ["main-parcel", "sliver"],
+    "coordinate_bounds": {
+      "minimum_longitude": -73.9,
+      "maximum_longitude": -73.75,
+      "minimum_latitude": 43.3,
+      "maximum_latitude": 43.45
+    },
+    "minimum_pin_separation_m": 3
+  },
+  "sources": [
+    {
+      "key": "boundaries",
+      "path": "data/property/boundaries.geojson",
+      "format": "geojson",
+      "geometry_types": ["Polygon"],
+      "required": true,
+      "ids": false,
+      "required_properties": ["name", "role"],
+      "optional_properties": ["id", "accuracy", "acres_computed", "note", "popup_description"],
+      "authored_properties": ["id", "name", "role", "accuracy", "note", "popup_description"],
+      "generated_properties": ["acres_computed"]
+    },
+    {
+      "key": "corners",
+      "path": "data/property/corners.geojson",
+      "format": "geojson",
+      "geometry_types": ["Point"],
+      "required": false,
+      "ids": false,
+      "required_properties": ["label", "parcel"],
+      "optional_properties": [],
+      "authored_properties": ["label", "parcel"],
+      "generated_properties": []
+    },
+    {
+      "key": "corridor",
+      "path": "data/property/powerline-corridor.geojson",
+      "format": "geojson",
+      "geometry_types": ["Polygon"],
+      "required": true,
+      "ids": false,
+      "required_properties": ["name", "ownership", "access"],
+      "optional_properties": ["accuracy"],
+      "authored_properties": ["name", "ownership", "access", "accuracy"],
+      "generated_properties": []
+    },
+    {
+      "key": "roads",
+      "path": "data/roads/dirt-roads.geojson",
+      "format": "geojson",
+      "geometry_types": ["LineString"],
+      "required": true,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
+      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+    },
+    {
+      "key": "trails",
+      "path": "data/trails/walking-trails.geojson",
+      "format": "geojson",
+      "geometry_types": ["LineString"],
+      "required": true,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "note", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "type", "status", "note"],
+      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+    },
+    {
+      "key": "routes",
+      "path": "data/trails/routes.json",
+      "format": "route-collection",
+      "geometry_types": [],
+      "required": false,
+      "ids": true,
+      "required_properties": ["id", "name", "segments", "segment_directions", "shape", "difficulty"],
+      "optional_properties": ["description", "status", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "segments", "segment_directions", "shape", "difficulty", "description", "status"],
+      "generated_properties": ["length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+    },
+    {
+      "key": "buildings",
+      "path": "data/landmarks/buildings.geojson",
+      "format": "geojson",
+      "geometry_types": ["Point"],
+      "required": true,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "recorded_on", "source_files", "processing"],
+      "authored_properties": ["id", "name", "type", "status"],
+      "generated_properties": ["recorded_on", "source_files", "processing"]
+    },
+    {
+      "key": "landmarks",
+      "path": "data/landmarks/landmarks.geojson",
+      "format": "geojson",
+      "geometry_types": ["Point"],
+      "required": false,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "note", "recorded_on"],
+      "authored_properties": ["id", "name", "type", "status", "note"],
+      "generated_properties": ["recorded_on"]
+    },
+    {
+      "key": "zones",
+      "path": "data/zones/zones.geojson",
+      "format": "geojson",
+      "geometry_types": ["Polygon"],
+      "required": true,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "note", "recorded_on", "source_files", "processing", "acres_computed"],
+      "authored_properties": ["id", "name", "type", "status", "note"],
+      "generated_properties": ["recorded_on", "source_files", "processing", "acres_computed"]
+    },
+    {
+      "key": "intersections",
+      "path": "data/intersections/intersections.geojson",
+      "format": "geojson",
+      "geometry_types": ["Point"],
+      "required": false,
+      "ids": true,
+      "required_properties": ["id", "name", "type", "features"],
+      "optional_properties": ["status", "note", "recorded_on", "map_offset_from_building_m", "snap_adjustment_m"],
+      "authored_properties": ["id", "name", "type", "features", "status", "note"],
+      "generated_properties": ["recorded_on", "map_offset_from_building_m", "snap_adjustment_m"]
+    }
+  ]
+}

@@ -3,7 +3,7 @@
   "source_dir": "Raw gaia gpx 8.5.26",
   "warnings": [
     "Owner confirmed that main-loop, main-loop-ext, and barbershop-trail share the same clearing node.",
-    "Owner confirmed that the Barbershop Trail remains a dead end for now; a Shooting Range landmark is offset 5 m north of it.",
+    "Owner confirmed that the Barbershop Trail remains a dead end for now; The Barbershop landmark is offset 5 m north of it.",
     "Owner confirmed that the driveway geometry remains unchanged while Front Field Zone keeps at least 2 m clearance.",
     "Owner confirmed that main-loop extends to a clean driveway intersection.",
     "Placeholder names remain: Main Loop Ext, Field Connector, and Main Loop Route.",
@@ -263,16 +263,16 @@
   ],
   "derived_points": [
     {
-      "id": "shooting-range",
-      "name": "Shooting Range",
+      "id": "the-barbershop",
+      "name": "The Barbershop",
       "feature": "barbershop-trail",
       "endpoint": "end",
       "offset_m": {"north": 5.0},
       "target": "landmarks/landmarks.geojson",
       "properties": {
-        "type": "shooting range",
+        "type": "landmark",
         "status": "provisional; derived from trail endpoint",
-        "note": "Approximate shooting-range location, placed 5 m north of the current Barbershop Trail dead end."
+        "note": "Approximate landmark location, placed 5 m north of the current Barbershop Trail dead end."
       }
     }
   ],

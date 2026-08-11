@@ -1,0 +1,69 @@
+:root {
+  --shared-surface-dark: rgba(20, 35, 29, 0.95);
+  --shared-surface-light: #f3f0e8;
+  --shared-text-on-dark: #ffffff;
+  --shared-text-deep: #183129;
+  --shared-text-muted: #61776f;
+  --shared-accent: #3c7160;
+  --shared-accent-dark: #214d40;
+  --shared-accent-deep: #173a2f;
+}
+
+.route-details-popout {
+  position: absolute;
+  z-index: 20;
+  width: min(350px, calc(100vw - 44px));
+  padding: 17px;
+  border: 1px solid rgba(41, 70, 60, 0.3);
+  border-radius: 13px;
+  color: var(--shared-text-deep);
+  background: rgba(253, 252, 247, 0.98);
+  box-shadow: 0 16px 40px rgba(28, 50, 42, 0.25);
+}
+.route-details-popout[hidden] { display: none; }
+.route-details-popout h3 { margin: 0 34px 10px 0; font-size: 1.05rem; }
+.route-details-close {
+  position: absolute;
+  top: 7px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: #29463c;
+  background: transparent;
+  font-size: 25px;
+  line-height: 1;
+  cursor: pointer;
+}
+.route-details-close:hover,
+.route-details-close:focus-visible { background: rgba(60, 113, 96, 0.12); }
+.route-elevation-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.route-elevation-baseline { stroke: rgba(41, 70, 60, 0.24); stroke-width: 1; }
+.route-elevation-area { fill: rgba(60, 113, 96, 0.13); }
+.route-elevation-line {
+  fill: none;
+  stroke: var(--shared-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.route-elevation-label { fill: var(--shared-text-muted); font-size: 10px; font-weight: 700; }
+.route-elevation-unavailable { margin: 14px 0; color: var(--shared-text-muted); font-size: 0.8rem; }
+.route-elevation-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 5px;
+}
+.route-elevation-stats span {
+  display: grid;
+  gap: 2px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(60, 113, 96, 0.08);
+}
+.route-elevation-stats small { color: var(--shared-text-muted); font-size: 0.68rem; }
+.route-elevation-stats strong { font-size: 0.9rem; }
+.route-elevation-note { margin: 10px 0; color: var(--shared-text-muted); font-size: 0.72rem; line-height: 1.4; }

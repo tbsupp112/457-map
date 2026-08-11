@@ -2,20 +2,148 @@
 
 (function exposeRouteDetails() {
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+  // Route summaries switch at 0.10 mile. Live landmark and guidance text use
+  // a separate 0.15-mile threshold in app.js so the two policies stay explicit.
+  const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 
-  function formatDistance(lengthFeet) {
+  function formatDistance(
+    lengthFeet,
+    {
+      approximate = false,
+      hereThresholdFeet = null,
+      milesThresholdFeet = ROUTE_MILES_THRESHOLD_FEET,
+    } = {},
+  ) {
     if (!Number.isFinite(Number(lengthFeet))) return "";
     const feet = Number(lengthFeet);
+    if (Number.isFinite(hereThresholdFeet) && feet < hereThresholdFeet) {
+      return "you're here";
+    }
     const miles = feet / 5280;
-    return miles < 0.15
-      ? `${Math.round(feet).toLocaleString()} ft`
-      : `${miles.toFixed(2)} mi`;
+    const prefix = approximate ? "about " : "";
+    if (feet >= milesThresholdFeet) return `${prefix}${miles.toFixed(2)} mi`;
+    const increment = approximate ? (feet < 300 ? 10 : 25) : 1;
+    const displayedFeet = Math.round(feet / increment) * increment;
+    return `${prefix}${displayedFeet.toLocaleString()} ft`;
   }
 
   function distanceLabel(route) {
     const distance = formatDistance(route.length_ft);
     if (!distance) return "";
     return route.shape === "out-and-back" ? `${distance} round trip` : distance;
+  }
+
+  function deriveRouteMetrics(route, segmentFeaturesById) {
+    const segments = route.segments.map((id) => segmentFeaturesById.get(id));
+    if (segments.some((segment) => !segment)) return { ...route };
+    const directions = route.segment_directions || route.segments.map(() => "forward");
+    const segmentLengths = segments.map(segmentLengthFeet);
+    if (segmentLengths.some((length) => !Number.isFinite(length) || length <= 0)) {
+      return { ...route };
+    }
+
+    const outAndBack = route.shape === "out-and-back";
+    const outboundLength = segmentLengths.reduce((total, length) => total + length, 0);
+    const prepared = {
+      ...route,
+      length_ft: Math.round(outboundLength * (outAndBack ? 2 : 1)),
+    };
+    const profile = buildRouteElevationProfile(segments, directions, segmentLengths, outAndBack);
+    if (profile) prepared.elevation_profile_ft = profile;
+    const elevationTotals = buildRouteElevationTotals(segments, directions, outAndBack);
+    if (elevationTotals) {
+      prepared.elevation_gain_ft = elevationTotals.gain;
+      prepared.elevation_loss_ft = elevationTotals.loss;
+    }
+    return prepared;
+  }
+
+  function segmentLengthFeet(feature) {
+    const recordedMeters = Number(feature.properties?.length_m);
+    if (Number.isFinite(recordedMeters) && recordedMeters > 0) {
+      return recordedMeters * 3.28084;
+    }
+    const coordinates = feature.geometry?.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length < 2) return NaN;
+    return coordinates.slice(1).reduce(
+      (total, coordinate, index) =>
+        total + coordinateDistanceFeet(coordinates[index], coordinate),
+      0,
+    );
+  }
+
+  function coordinateDistanceFeet([firstLon, firstLat], [secondLon, secondLat]) {
+    const radians = Math.PI / 180;
+    const latitude1 = firstLat * radians;
+    const latitude2 = secondLat * radians;
+    const deltaLatitude = (secondLat - firstLat) * radians;
+    const deltaLongitude = (secondLon - firstLon) * radians;
+    const haversine =
+      Math.sin(deltaLatitude / 2) ** 2 +
+      Math.cos(latitude1) * Math.cos(latitude2) * Math.sin(deltaLongitude / 2) ** 2;
+    return (
+      6371000 *
+      2 *
+      Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine)) *
+      3.28084
+    );
+  }
+
+  function buildRouteElevationProfile(segments, directions, lengths, outAndBack) {
+    const outbound = [];
+    let offset = 0;
+    for (let index = 0; index < segments.length; index += 1) {
+      const rawProfile = segments[index].properties?.elevation_profile_ft;
+      if (
+        !Array.isArray(rawProfile) ||
+        rawProfile.length < 2 ||
+        rawProfile.some((elevation) => !Number.isFinite(Number(elevation)))
+      ) {
+        return null;
+      }
+      const elevations = directions[index] === "reverse"
+        ? [...rawProfile].reverse()
+        : rawProfile;
+      const step = lengths[index] / (elevations.length - 1);
+      elevations.forEach((elevation, pointIndex) => {
+        if (outbound.length > 0 && pointIndex === 0) return;
+        outbound.push([
+          Number((offset + pointIndex * step).toFixed(1)),
+          Number(Number(elevation).toFixed(1)),
+        ]);
+      });
+      offset += lengths[index];
+    }
+    if (!outAndBack) return outbound;
+    const returning = outbound
+      .slice(0, -1)
+      .reverse()
+      .map(([distance, elevation]) => [
+        Number((offset + (offset - distance)).toFixed(1)),
+        elevation,
+      ]);
+    return [...outbound, ...returning];
+  }
+
+  function buildRouteElevationTotals(segments, directions, outAndBack) {
+    let outboundGain = 0;
+    let outboundLoss = 0;
+    for (let index = 0; index < segments.length; index += 1) {
+      const gain = Number(segments[index].properties?.elevation_gain_ft);
+      const loss = Number(segments[index].properties?.elevation_loss_ft);
+      if (!Number.isFinite(gain) || !Number.isFinite(loss)) return null;
+      if (directions[index] === "reverse") {
+        outboundGain += loss;
+        outboundLoss += gain;
+      } else {
+        outboundGain += gain;
+        outboundLoss += loss;
+      }
+    }
+    return {
+      gain: Math.round(outboundGain + (outAndBack ? outboundLoss : 0)),
+      loss: Math.round(outboundLoss + (outAndBack ? outboundGain : 0)),
+    };
   }
 
   function createSvgElement(name, attributes = {}) {
@@ -112,16 +240,24 @@
 
     const stats = document.createElement("div");
     stats.className = "route-elevation-stats";
-    const gain = document.createElement("span");
-    const loss = document.createElement("span");
-    gain.innerHTML = `<small>Total gain</small><strong>+${Math.round(Number(route.elevation_gain_ft) || 0).toLocaleString()} ft</strong>`;
-    loss.innerHTML = `<small>Total loss</small><strong>\u2212${Math.round(Number(route.elevation_loss_ft) || 0).toLocaleString()} ft</strong>`;
-    stats.append(gain, loss);
+    const gainValue = Number(route.elevation_gain_ft);
+    const lossValue = Number(route.elevation_loss_ft);
+    if (Number.isFinite(gainValue)) {
+      const gain = document.createElement("span");
+      gain.innerHTML = `<small>Total gain</small><strong>+${Math.round(gainValue).toLocaleString()} ft</strong>`;
+      stats.append(gain);
+    }
+    if (Number.isFinite(lossValue)) {
+      const loss = document.createElement("span");
+      loss.innerHTML = `<small>Total loss</small><strong>\u2212${Math.round(lossValue).toLocaleString()} ft</strong>`;
+      stats.append(loss);
+    }
 
     const note = document.createElement("p");
     note.className = "route-elevation-note";
     note.textContent = "Approximate profile from phone GPS; the distance and totals cover the complete round trip.";
-    details.append(heading, closeButton, createElevationGraphic(route), stats, note);
+    details.append(heading, closeButton, createElevationGraphic(route));
+    if (stats.childElementCount > 0) details.append(stats, note);
 
     if (includeMapLink) {
       const mapLink = document.createElement("a");
@@ -134,5 +270,10 @@
     return { details, closeButton };
   }
 
-  window.RouteDetails = Object.freeze({ createPanel, distanceLabel, formatDistance });
+  window.RouteDetails = Object.freeze({
+    createPanel,
+    deriveRouteMetrics,
+    distanceLabel,
+    formatDistance,
+  });
 })();

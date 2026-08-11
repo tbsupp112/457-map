@@ -107,18 +107,6 @@ def occupied_cell_spread(points: Sequence[XY], center: XY, cell_size: float = 2.
     return radii[min(len(radii) - 1, max(0, math.ceil(len(radii) * 0.68) - 1))]
 
 
-def principal_axis(points: Sequence[XY]) -> XY:
-    center = mean_point(points)
-    dx = [point[0] - center[0] for point in points]
-    dy = [point[1] - center[1] for point in points]
-    xx = statistics.fmean(value * value for value in dx)
-    yy = statistics.fmean(value * value for value in dy)
-    xy = statistics.fmean(a * b for a, b in zip(dx, dy))
-    angle = 0.5 * math.atan2(2 * xy, xx - yy)
-    axis = math.cos(angle), math.sin(angle)
-    return axis if axis[1] >= 0 else (-axis[0], -axis[1])
-
-
 def smooth(points: Sequence[XY], passes: int = 1) -> list[XY]:
     result = list(points)
     for _ in range(passes):

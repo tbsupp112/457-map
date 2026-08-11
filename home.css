@@ -1,8 +1,8 @@
 :root {
   color-scheme: light;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #183129;
-  background: #f3f0e8;
+  color: var(--shared-text-deep);
+  background: var(--shared-surface-light);
 }
 
 * { box-sizing: border-box; }
@@ -67,8 +67,8 @@ body {
   filter: drop-shadow(0 13px 16px rgba(28, 50, 42, 0.18));
 }
 .parcel-icon path {
-  fill: #3c7160;
-  stroke: #214d40;
+  fill: var(--shared-accent);
+  stroke: var(--shared-accent-dark);
   stroke-linejoin: round;
   stroke-width: 4;
 }
@@ -96,7 +96,7 @@ body {
   place-items: center;
   padding: 11px;
   border-radius: 14px;
-  background: #ffffff;
+  background: var(--shared-text-on-dark);
   box-shadow: 0 7px 18px rgba(28, 50, 42, 0.13);
 }
 .home-qr img {
@@ -106,7 +106,7 @@ body {
 }
 .home-qr p { margin: 0; }
 .home-qr-image + p { margin-top: 3px; font-size: 0.84rem; font-weight: 750; }
-.home-qr-url { color: #61776f; font-size: 0.69rem; }
+.home-qr-url { color: var(--shared-text-muted); font-size: 0.69rem; }
 
 .home-routes {
   grid-area: routes;
@@ -131,7 +131,7 @@ body {
 .route-card:hover,
 .route-card:focus-visible,
 .route-card[aria-expanded="true"] {
-  border-color: #3c7160;
+  border-color: var(--shared-accent);
   background: rgba(255, 255, 255, 0.56);
 }
 .route-card:focus-visible { outline: 3px solid #b36c2d; outline-offset: 2px; }
@@ -141,79 +141,23 @@ body {
 .route-card-description { color: #456158; }
 
 .route-details-popout {
-  position: absolute;
-  z-index: 20;
   top: calc(100% + 10px);
   right: 0;
-  width: min(350px, calc(100vw - 44px));
-  padding: 17px;
-  border: 1px solid rgba(41, 70, 60, 0.3);
-  border-radius: 13px;
-  color: #183129;
-  background: rgba(253, 252, 247, 0.98);
-  box-shadow: 0 16px 40px rgba(28, 50, 42, 0.25);
 }
-.route-details-popout[hidden] { display: none; }
-.route-details-popout h3 { margin: 0 34px 10px 0; font-size: 1.05rem; }
-.route-details-close {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  color: #29463c;
-  background: transparent;
-  font-size: 25px;
-  line-height: 1;
-  cursor: pointer;
-}
-.route-details-close:hover,
-.route-details-close:focus-visible { background: rgba(60, 113, 96, 0.12); }
-.route-elevation-chart { width: 100%; height: auto; display: block; overflow: visible; }
-.route-elevation-baseline { stroke: rgba(41, 70, 60, 0.24); stroke-width: 1; }
-.route-elevation-area { fill: rgba(60, 113, 96, 0.13); }
-.route-elevation-line {
-  fill: none;
-  stroke: #3c7160;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.route-elevation-label { fill: #61776f; font-size: 10px; font-weight: 700; }
-.route-elevation-unavailable { margin: 14px 0; color: #61776f; font-size: 0.8rem; }
-.route-elevation-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 5px;
-}
-.route-elevation-stats span {
-  display: grid;
-  gap: 2px;
-  padding: 8px 9px;
-  border-radius: 8px;
-  background: rgba(60, 113, 96, 0.08);
-}
-.route-elevation-stats small { color: #61776f; font-size: 0.68rem; }
-.route-elevation-stats strong { font-size: 0.9rem; }
-.route-elevation-note { margin: 10px 0; color: #61776f; font-size: 0.72rem; line-height: 1.4; }
 .route-map-link {
   display: inline-flex;
   min-height: 38px;
   align-items: center;
   padding: 7px 11px;
   border-radius: 7px;
-  color: #ffffff;
-  background: #3c7160;
+  color: var(--shared-text-on-dark);
+  background: var(--shared-accent);
   font-size: 0.78rem;
   font-weight: 750;
   text-decoration: none;
 }
 .route-map-link:hover,
-.route-map-link:focus-visible { background: #214d40; }
+.route-map-link:focus-visible { background: var(--shared-accent-dark); }
 
 @media (max-width: 600px) {
   .home-main { justify-content: flex-start; }

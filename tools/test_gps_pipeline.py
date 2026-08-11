@@ -238,9 +238,9 @@ class IntakeIntegrationTests(unittest.TestCase):
                 cursor += 1
         self.assertEqual(cursor, len(original_driveway), "The driveway shape may only gain a join vertex")
 
-        shooting_range = coordinates("shooting-range")
+        the_barbershop = coordinates("the-barbershop")
         self.assertLess(
-            abs(distance(to_xy(*shooting_range), to_xy(*barbershop[-1])) - 5.0),
+            abs(distance(to_xy(*the_barbershop), to_xy(*barbershop[-1])) - 5.0),
             0.02,
         )
         route = next(route for route in result.candidate_routes if route["id"] == "main-loop-route")

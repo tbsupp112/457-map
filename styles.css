@@ -1,7 +1,7 @@
 :root {
   color-scheme: light;
-  --chrome-surface: rgba(20, 35, 29, 0.95);
-  --chrome-text: #ffffff;
+  --chrome-surface: var(--shared-surface-dark);
+  --chrome-text: var(--shared-text-on-dark);
   --chrome-muted: #c7d6cf;
   --chrome-border: 1px solid rgba(255, 255, 255, 0.28);
   --chrome-radius: 13px;
@@ -111,7 +111,7 @@ button { font: inherit; }
   padding: 0;
   border: 0;
   border-radius: 8px;
-  color: #173a2f;
+  color: var(--shared-accent-deep);
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
   cursor: pointer;
@@ -119,7 +119,7 @@ button { font: inherit; }
   touch-action: manipulation;
 }
 
-.map-control:hover { background: #ffffff; color: #0b2b21; }
+.map-control:hover { background: var(--shared-text-on-dark); color: #0b2b21; }
 .map-control:focus-visible, .info-close:focus-visible {
   outline: 3px solid var(--owned);
   outline-offset: 2px;
@@ -262,7 +262,7 @@ button { font: inherit; }
   width: var(--control-size);
   height: var(--control-size);
   padding: 0;
-  color: #173a2f;
+  color: var(--shared-accent-deep);
 }
 
 .leaflet-control-layers-expanded .leaflet-control-layers-toggle {
@@ -277,7 +277,7 @@ button { font: inherit; }
   padding: 6px 10px 6px 6px;
   border-radius: 5px;
   color: #333333;
-  background: #ffffff;
+  background: var(--shared-text-on-dark);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.32);
 }
 
@@ -301,7 +301,7 @@ button { font: inherit; }
   padding: 6px 9px;
   border: 1px solid #b9c1bd;
   border-radius: 5px;
-  color: #173a2f;
+  color: var(--shared-accent-deep);
   background: #f5f7f6;
   font-size: 12px;
   font-weight: 650;
@@ -311,7 +311,7 @@ button { font: inherit; }
 .layer-reset-button:hover,
 .layer-reset-button:focus-visible {
   border-color: #648177;
-  background: #ffffff;
+  background: var(--shared-text-on-dark);
 }
 
 .leaflet-control-attribution {
@@ -431,69 +431,10 @@ button { font: inherit; }
 
 .route-details-trigger:hover,
 .route-details-trigger:focus-visible {
-  color: #ffffff;
+  color: var(--shared-text-on-dark);
   outline: 2px solid #5ee6bd;
   outline-offset: 3px;
 }
-
-.route-details-popout {
-  position: absolute;
-  z-index: 20;
-  width: min(350px, calc(100vw - 44px));
-  padding: 17px;
-  border: 1px solid rgba(41, 70, 60, 0.3);
-  border-radius: 13px;
-  color: #183129;
-  background: rgba(253, 252, 247, 0.98);
-  box-shadow: 0 16px 40px rgba(28, 50, 42, 0.25);
-}
-.route-details-popout[hidden] { display: none; }
-.route-details-popout h3 { margin: 0 34px 10px 0; font-size: 1.05rem; }
-.route-details-close {
-  position: absolute;
-  top: 7px;
-  right: 8px;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  color: #29463c;
-  background: transparent;
-  font-size: 25px;
-  line-height: 1;
-  cursor: pointer;
-}
-.route-details-close:hover,
-.route-details-close:focus-visible { background: rgba(60, 113, 96, 0.12); }
-.route-elevation-chart { width: 100%; height: auto; display: block; overflow: visible; }
-.route-elevation-baseline { stroke: rgba(41, 70, 60, 0.24); stroke-width: 1; }
-.route-elevation-area { fill: rgba(60, 113, 96, 0.13); }
-.route-elevation-line {
-  fill: none;
-  stroke: #3c7160;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-.route-elevation-label { fill: #61776f; font-size: 10px; font-weight: 700; }
-.route-elevation-unavailable { margin: 14px 0; color: #61776f; font-size: 0.8rem; }
-.route-elevation-stats {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  margin-top: 5px;
-}
-.route-elevation-stats span {
-  display: grid;
-  gap: 2px;
-  padding: 8px 9px;
-  border-radius: 8px;
-  background: rgba(60, 113, 96, 0.08);
-}
-.route-elevation-stats small { color: #61776f; font-size: 0.68rem; }
-.route-elevation-stats strong { font-size: 0.9rem; }
-.route-elevation-note { margin: 10px 0; color: #61776f; font-size: 0.72rem; line-height: 1.4; }
 
 .route-details-popout--map {
   position: fixed;
@@ -565,7 +506,7 @@ button { font: inherit; }
 .guidance-target-highlight span {
   position: absolute;
   inset: 3px;
-  border: 2px solid #ffffff;
+  border: 2px solid var(--shared-text-on-dark);
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0, 185, 73, 0.9), 0 0 8px 3px rgba(0, 185, 73, 0.62);
   animation: guidance-target-pulse 1.35s ease-in-out infinite;
@@ -592,7 +533,7 @@ button { font: inherit; }
   padding: 6px 10px;
   border: 1px solid #8aa49a;
   border-radius: 999px;
-  color: #173a2f;
+  color: var(--shared-accent-deep);
   background: #f3f8f6;
   font-size: 0.76rem;
   font-weight: 750;
@@ -601,7 +542,7 @@ button { font: inherit; }
 
 .guide-me-button:hover,
 .guide-me-button:focus-visible {
-  border-color: #3c7160;
+  border-color: var(--shared-accent);
   outline: 2px solid #5ee6bd;
   outline-offset: 1px;
 }
@@ -658,14 +599,14 @@ button { font: inherit; }
   height: 9px;
   border: 2px solid #10231d;
   border-radius: 50%;
-  background: #ffffff;
+  background: var(--shared-text-on-dark);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.75);
 }
 
 .location-dot {
   width: 18px;
   height: 18px;
-  border: 3px solid #ffffff;
+  border: 3px solid var(--shared-text-on-dark);
   border-radius: 50%;
   background: var(--location);
   box-shadow: 0 0 0 2px rgba(26, 80, 145, 0.78), 0 2px 5px rgba(0, 0, 0, 0.45);
@@ -691,7 +632,7 @@ button { font: inherit; }
   padding: 5px 9px;
   border: 1px solid rgba(255, 255, 255, 0.88);
   border-radius: 7px;
-  color: #ffffff;
+  color: var(--shared-text-on-dark);
   background: rgba(126, 14, 32, 0.94);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.34);
   font-size: 0.8rem;

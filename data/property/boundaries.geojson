@@ -10,6 +10,8 @@
   {
    "type": "Feature",
    "properties": {
+    "id": "main-parcel",
+    "role": "main-parcel",
     "name": "Main Parcel",
     "acres_computed": 18.17,
     "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
@@ -75,6 +77,8 @@
   {
    "type": "Feature",
    "properties": {
+    "id": "sliver",
+    "role": "sliver",
     "name": "Sliver",
     "acres_computed": 0.79,
     "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",

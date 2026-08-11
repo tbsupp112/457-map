@@ -58,7 +58,42 @@ from gps_lib import (
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 CANDIDATES = DATA / "_candidates"
-INTERSECTIONS_TARGET = "intersections/intersections.geojson"
+DATA_MANIFEST_PATH = DATA / "manifest.json"
+
+
+def load_data_sources() -> dict[str, dict[str, Any]]:
+    try:
+        manifest = json.loads(DATA_MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"Could not read shared data manifest {DATA_MANIFEST_PATH}: {error}") from error
+    sources = manifest.get("sources")
+    if not isinstance(sources, list):
+        raise RuntimeError("Shared data manifest needs a sources array")
+    by_key = {source.get("key"): source for source in sources if isinstance(source, dict)}
+    if None in by_key or len(by_key) != len(sources):
+        raise RuntimeError("Shared data manifest source keys must be present and unique")
+    return by_key
+
+
+DATA_SOURCES = load_data_sources()
+
+
+def data_target(source_key: str) -> str:
+    try:
+        path = PurePosixPath(DATA_SOURCES[source_key]["path"])
+    except (KeyError, TypeError) as error:
+        raise RuntimeError(f"Shared data manifest has no usable {source_key!r} source") from error
+    if not path.parts or path.parts[0] != "data":
+        raise RuntimeError(f"Shared data manifest path must begin with data/: {path}")
+    return PurePosixPath(*path.parts[1:]).as_posix()
+
+
+INTERSECTIONS_TARGET = data_target("intersections")
+ROUTES_TARGET = data_target("routes")
+ALLOWED_DATA_TARGETS = frozenset(
+    data_target(key) for key, source in DATA_SOURCES.items()
+    if source.get("format") in {"geojson", "route-collection"}
+)
 ALLOWED_JOB_TYPES = {"point", "path", "zone"}
 COMPUTED_FIELDS = {
     "length_m",
@@ -70,6 +105,12 @@ COMPUTED_FIELDS = {
     "processing",
     "source_files",
     "recorded_on",
+}
+ROUTE_GENERATED_FIELDS = {
+    "length_ft",
+    "elevation_gain_ft",
+    "elevation_loss_ft",
+    "elevation_profile_ft",
 }
 
 
@@ -123,7 +164,10 @@ def safe_target(value: str) -> str:
     candidate = (CANDIDATES / Path(*relative.parts)).resolve()
     if CANDIDATES.resolve() not in candidate.parents:
         raise ValueError(f"Target escapes data/_candidates: {value}")
-    return relative.as_posix()
+    normalized = relative.as_posix()
+    if normalized not in ALLOWED_DATA_TARGETS:
+        raise ValueError(f"Target is not declared in data/manifest.json: {value}")
+    return normalized
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -152,9 +196,12 @@ def load_manifest(path: Path) -> dict[str, Any]:
 def load_live_catalog() -> tuple[dict[str, WorkingFeature], dict[str, dict[str, Any]]]:
     catalog: dict[str, WorkingFeature] = {}
     collections: dict[str, dict[str, Any]] = {}
-    for path in sorted(DATA.rglob("*.geojson")):
-        if CANDIDATES in path.parents:
-            continue
+    geojson_targets = sorted(
+        data_target(key) for key, source in DATA_SOURCES.items()
+        if source.get("format") == "geojson"
+    )
+    for target in geojson_targets:
+        path = DATA / Path(*PurePosixPath(target).parts)
         relative = path.relative_to(DATA).as_posix()
         try:
             collection = json.loads(path.read_text(encoding="utf-8"))
@@ -1101,8 +1148,8 @@ def process_manifest(manifest_path: Path) -> PipelineResult:
         path = CANDIDATES / Path(*PurePosixPath(target).parts)
         candidate_contents[path] = json_text(candidate_collection(target, features, live_collections))
     if route_candidates:
-        route_path = CANDIDATES / "trails" / "routes.json"
-        live_routes_path = DATA / "trails" / "routes.json"
+        route_path = CANDIDATES / Path(*PurePosixPath(ROUTES_TARGET).parts)
+        live_routes_path = DATA / Path(*PurePosixPath(ROUTES_TARGET).parts)
         live_routes = json.loads(live_routes_path.read_text(encoding="utf-8")) if live_routes_path.exists() else {}
         candidate_contents[route_path] = json_text(
             {"_comment": live_routes.get("_comment", []), "routes": route_candidates}
@@ -1199,10 +1246,13 @@ def merge_routes(live: dict[str, Any], candidates: list[dict[str, Any]]) -> dict
     routes = list(result.get("routes", []))
     indexes = {route.get("id"): index for index, route in enumerate(routes)}
     for candidate in candidates:
-        if candidate["id"] in indexes:
-            routes[indexes[candidate["id"]]] = candidate
+        authored_candidate = {
+            key: value for key, value in candidate.items() if key not in ROUTE_GENERATED_FIELDS
+        }
+        if authored_candidate["id"] in indexes:
+            routes[indexes[authored_candidate["id"]]] = authored_candidate
         else:
-            routes.append(candidate)
+            routes.append(authored_candidate)
     result["routes"] = routes
     return result
 
@@ -1255,14 +1305,14 @@ def prepare_promotion(result: PipelineResult, backup: bool) -> tuple[dict[Path, 
             backup_path = CANDIDATES / "backups" / result.manifest["intake_date"] / Path(*PurePosixPath(target).parts)
             writes[backup_path] = live_path.read_text(encoding="utf-8")
     if result.candidate_routes:
-        live_path = DATA / "trails" / "routes.json"
+        live_path = DATA / Path(*PurePosixPath(ROUTES_TARGET).parts)
         live_routes = json.loads(live_path.read_text(encoding="utf-8")) if live_path.exists() else {"routes": []}
         writes[live_path] = json_text(merge_routes(live_routes, result.candidate_routes))
         summary.append(
             f"trails/routes.json: merge route id(s) {', '.join(route['id'] for route in result.candidate_routes)}"
         )
         if backup and live_path.exists():
-            writes[CANDIDATES / "backups" / result.manifest["intake_date"] / "trails" / "routes.json"] = live_path.read_text(encoding="utf-8")
+            writes[CANDIDATES / "backups" / result.manifest["intake_date"] / Path(*PurePosixPath(ROUTES_TARGET).parts)] = live_path.read_text(encoding="utf-8")
     return writes, summary
 
 

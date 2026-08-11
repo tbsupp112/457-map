@@ -27,6 +27,15 @@ For each testable update, Codex should end its response with the same publishing
 
 If a local change is not worth publishing for live testing, Codex should say so instead of presenting an upload package.
 
+## Pre-publish checklist
+
+- Bump every versioned local CSS and JavaScript reference together when any versioned asset changes.
+- Confirm the change set contains no raw GPX, `data/_candidates/`, or `__pycache__/` files.
+- Confirm no temporary diagnostic page is included.
+- Update `data/README.md` whenever a data convention changes.
+- Run `tools/validate_data.py` cleanly once that validator is present, plus the relevant automated tests.
+- Leave applicable `BACKLOG.md` items in place until the published site is confirmed on phone and desktop.
+
 ## Roll back a problem
 
 If a newly merged change causes an error:

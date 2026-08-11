@@ -2,9 +2,35 @@
 
 Processed map data is organized by the type of feature shown in the layer picker. Coordinates use GeoJSON order: longitude, latitude (`EPSG:4326`). All phone-GPS-derived features are provisional orientation data, not survey data.
 
+## Shared manifest and map audiences
+
+`manifest.json` is the shared inventory used by the map and the Python intake tool. It declares each published data source, path, format, geometry type, required/optional status, id policy, and property names. Map styling, pane order, labels, defaults, and audience presentation remain in `app.js`; those browser-only concerns do not belong in the data manifest.
+
+The map supports `visitor` and `owner` presentation audiences, with `visitor` as the first-load default and `?view=owner` as an opt-in remembered on that device. Every current layer is assigned to both audiences and keeps the same visibility default, so the two views are intentionally identical today. Audiences are a presentation convenience, **not a security boundary**: files committed here are publicly downloadable, and anyone can select either view. Data that must remain private must not be added to this repository.
+
+Required source assignment: parcel boundaries, the powerline corridor, roads, trails, buildings, and zones. Optional source assignment: corner markers, non-building landmarks, route definitions, and intersections. A missing required source produces one quiet map notice while other sources continue loading; an optional 404 is silent. Malformed content is logged separately from a network failure.
+
+## Feature-property schema
+
+The machine-readable version of this schema is in `manifest.json`. **Authored** properties are the fields an owner may intentionally edit. **Generated** properties come from the GPX intake or geometry calculations and should be regenerated instead of hand-corrected. Optional properties may be omitted; the map must omit or replace the corresponding text rather than display `undefined`.
+
+- **Parcel boundaries:** required `name`, `role`; optional authored `id`, `accuracy`, `note`, `popup_description`; generated `acres_computed`. Boundary ids are not required or validated because parcel behavior keys off `role`.
+- **Corner markers:** required/authored `label`, `parcel`; no generated properties and no required id.
+- **Powerline corridor:** required/authored `name`, `ownership`, `access`; optional authored `accuracy`; no required id.
+- **Roads:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `provisional`; generated `recorded_on`, `source_files`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`.
+- **Trail segments:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`, `source_files`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`.
+- **Routes:** required/authored `id`, `name`, `segments`, `segment_directions`, `shape`, `difficulty`; optional authored `description`, `status`. Length, gain/loss, and the full profile are derived in the browser from member segments and must not be cached in `routes.json`.
+- **Buildings:** required/authored `id`, `name`, `type`; optional authored `status`; generated `recorded_on`, `source_files`, `processing`.
+- **Other landmarks:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`.
+- **Zones:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`, `source_files`, `processing`, `acres_computed`.
+- **Intersections:** required/authored `id`, `name`, `type`, `features`; optional authored `status`, `note`; generated `recorded_on`, `map_offset_from_building_m`, `snap_adjustment_m`.
+
+Ids must be present and unique across roads, trails, zones, buildings, landmarks, intersections, and routes. Boundary and corner records are intentionally excluded. Segment elevation profiles are arrays of elevation samples in feet; the segment's `length_m` spaces those samples along its centerline. Some older, currently unrouted segments have no elevation profile yet. A route using any elevation-less segment still loads and shows its derived distance, while its elevation panel reports that a profile is unavailable.
+
 ## Property
 
 - `property/boundaries.geojson` — Main Parcel and Sliver polygons.
+- Parcel `id` and `role` values are stable internal identifiers used by interaction code; `name`, descriptions, and other visitor-facing text may be edited without changing either identifier.
 - `property/corners.geojson` — optional named boundary corners.
 - `property/powerline-corridor.geojson` — approximate unowned access corridor between the parcels.
 
@@ -25,7 +51,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 ### Routes and segments
 
 - An `out-and-back` route's displayed length counts its member segments twice, once in each direction.
-- Route elevation profiles are sampled from the recorded GPX elevations. `elevation_gain_ft` and `elevation_loss_ft` describe the complete visitor route; for an out-and-back, both include the return trip.
+- Segment elevation profiles are sampled from recorded GPX elevations. The browser assembles each route profile in segment order and derives complete-route gain/loss from the segment totals; for an out-and-back, the profile and totals include the return trip.
 - A **segment** is one continuous, actually walked piece of tread. Segments are the only trail data that carries geometry, each has a stable id in `trails/walking-trails.geojson`, and connectors and spurs are segments like any other.
 - A **route** is a visitor-facing walk such as an Inner Loop or an out-and-back. It is an ordered list of mapped trail or road feature ids with descriptive attributes in `trails/routes.json`; routes deliberately have no geometry of their own.
 - Routes reference segments, never the other way around. A segment may belong to more than one route, while an unassigned connector stays mapped without needing to be presented as a destination.
@@ -38,7 +64,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 ## Landmarks
 
 - `landmarks/buildings.geojson` — central point locations for Home and Pavilion.
-- `landmarks/landmarks.geojson` — non-building destinations such as the provisional Shooting Range location.
+- `landmarks/landmarks.geojson` — non-building destinations such as the provisional landmark The Barbershop.
 - Each occupied two-meter spatial cell from the walked building extent counts once. This prevents time spent standing in one location from biasing the result.
 - Future natural landmarks and miscellaneous landmarks should use separate GeoJSON files in this folder. Empty placeholder files are intentionally avoided.
 

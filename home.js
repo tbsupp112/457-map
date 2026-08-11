@@ -56,13 +56,45 @@ function createRouteEntry(route) {
   return entry;
 }
 
-fetch("data/trails/routes.json")
-  .then((response) => {
-    if (!response.ok) throw new Error(`Could not load routes: ${response.status}`);
-    return response.json();
-  })
-  .then((data) => {
-    const routes = Array.isArray(data.routes) ? data.routes : [];
+async function loadHomeRoutes() {
+  if (typeof window.RouteDetails?.deriveRouteMetrics !== "function") {
+    throw new Error("Shared route details are unavailable.");
+  }
+  const manifestResponse = await fetch("data/manifest.json");
+  if (!manifestResponse.ok) {
+    throw new Error(`Could not load the data manifest: ${manifestResponse.status}`);
+  }
+  const manifest = await manifestResponse.json();
+  const sources = new Map(
+    (manifest.sources || []).map((source) => [source.key, source.path]),
+  );
+  const requiredKeys = ["routes", "roads", "trails"];
+  if (requiredKeys.some((key) => !sources.has(key))) {
+    throw new Error("The data manifest is missing a route source.");
+  }
+  const responses = await Promise.all(
+    requiredKeys.map((key) => fetch(sources.get(key))),
+  );
+  responses.forEach((response, index) => {
+    if (!response.ok) {
+      throw new Error(`Could not load ${requiredKeys[index]}: ${response.status}`);
+    }
+  });
+  const [routeData, roadData, trailData] = await Promise.all(
+    responses.map((response) => response.json()),
+  );
+  const segmentFeaturesById = new Map(
+    [...(roadData.features || []), ...(trailData.features || [])]
+      .filter((feature) => feature.properties?.id)
+      .map((feature) => [feature.properties.id, feature]),
+  );
+  return (routeData.routes || []).map((route) =>
+    window.RouteDetails.deriveRouteMetrics(route, segmentFeaturesById),
+  );
+}
+
+loadHomeRoutes()
+  .then((routes) => {
     if (routes.length === 0) return;
     const section = document.getElementById("home-routes");
     const list = document.getElementById("home-route-list");

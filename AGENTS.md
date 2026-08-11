@@ -7,3 +7,4 @@
 - Use a short-lived `update/YYYY-MM-DD-description` branch for each logical change set once this folder is a Git working copy.
 - Keep requested work in `BACKLOG.md` until the owner confirms it on the published site, except for changes with essentially no meaningful failure risk.
 - Follow `PUBLISHING.md` for review, rollback, stable-release, and backup procedures.
+- Never use or describe the property's former sensitive landmark terminology; the landmark is named `The Barbershop` throughout this repository.

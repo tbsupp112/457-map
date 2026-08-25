@@ -1,6 +1,6 @@
 {
   "intake_date": "2026-08-04",
-  "source_dir": "Unprocessed GPS Files",
+  "source_dir": "../_local/Unprocessed GPS Files",
   "warnings": [
     "This worked regression example requires the original August 4 raw GPX folder, which is intentionally not committed.",
     "Single-pass paths and the new arc-length centerline may differ from the historical principal-axis output; review QA rather than forcing byte equality."
@@ -38,7 +38,7 @@
       "name": "Mountain Drive",
       "type": "path",
       "inputs": ["New_rd_down.gpx", "New_Road_up.gpx"],
-      "target": "roads/dirt-roads.geojson",
+      "target": "roads/mountain-drive.geojson",
       "properties": {"type": "dirt road", "status": "work in progress", "provisional": true},
       "options": {"spacing": 6.0, "smooth_passes": 1, "simplify_tolerance": 1.68, "split_passes": false}
     },

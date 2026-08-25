@@ -4,6 +4,10 @@ A phone-friendly landing page and orientation map showing the approximate 457 Pr
 
 > **Approximate boundary — not a survey.** This map is for orientation only and must not be used for legal, timber, or neighbor-boundary decisions.
 
+## Landmark guidance
+
+Phone compass guidance is functional, including iPhone `deviceorientation` input through `webkitCompassHeading`. The earlier concern that orientation events were not arriving was incorrect: the original guidance tint was simply too faint, especially when the phone pointed far from the target. The current cue uses a stronger full-turn tint ramp plus explicit left, right, turn-around, and on-course text. Its final daylight usability still requires confirmation on the property.
+
 ## Project layout
 
 - `index.html` — responsive landing page

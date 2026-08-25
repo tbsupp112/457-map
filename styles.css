@@ -12,26 +12,31 @@
   --owned-dark: #102f29;
   --location: #2f8cff;
   --guidance-hue: 163;
-  --guidance-saturation-0: 74;
-  --guidance-saturation-30: 52;
-  --guidance-saturation-60: 30;
-  --guidance-saturation-110: 10;
-  --guidance-lightness-0: 64;
-  --guidance-lightness-30: 60;
-  --guidance-lightness-60: 54;
-  --guidance-lightness-110: 48;
-  --guidance-opacity-0: 0.30;
-  --guidance-opacity-30: 0.23;
-  --guidance-opacity-60: 0.15;
-  --guidance-opacity-110: 0.07;
-  --guidance-width-0: 44;
-  --guidance-width-30: 55;
-  --guidance-width-60: 66;
-  --guidance-width-110: 76;
-  --guidance-blur-0: 4;
-  --guidance-blur-30: 8;
-  --guidance-blur-60: 13;
-  --guidance-blur-110: 19;
+  --guidance-saturation-0: 82;
+  --guidance-saturation-30: 72;
+  --guidance-saturation-60: 60;
+  --guidance-saturation-110: 46;
+  --guidance-saturation-180: 34;
+  --guidance-lightness-0: 66;
+  --guidance-lightness-30: 64;
+  --guidance-lightness-60: 61;
+  --guidance-lightness-110: 57;
+  --guidance-lightness-180: 54;
+  --guidance-opacity-0: 0.48;
+  --guidance-opacity-30: 0.43;
+  --guidance-opacity-60: 0.36;
+  --guidance-opacity-110: 0.29;
+  --guidance-opacity-180: 0.24;
+  --guidance-width-0: 42;
+  --guidance-width-30: 52;
+  --guidance-width-60: 62;
+  --guidance-width-110: 72;
+  --guidance-width-180: 82;
+  --guidance-blur-0: 3;
+  --guidance-blur-30: 5;
+  --guidance-blur-60: 7;
+  --guidance-blur-110: 9;
+  --guidance-blur-180: 11;
   --control-size: 44px;
   --control-right: calc(12px + env(safe-area-inset-right));
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -444,6 +449,17 @@ button { font: inherit; }
   transform: translate(-50%, -50%);
 }
 
+@media (min-width: 721px) {
+  .route-details-popout--map {
+    top: auto;
+    bottom: max(24px, env(safe-area-inset-bottom));
+    width: min(560px, calc(100vw - 180px));
+    max-height: calc(100vh - 96px);
+    overflow-y: auto;
+    transform: translateX(-50%);
+  }
+}
+
 .leaflet-container a.leaflet-popup-close-button {
   top: 7px;
   right: 8px;
@@ -505,7 +521,7 @@ button { font: inherit; }
 
 .guidance-target-highlight span {
   position: absolute;
-  inset: 3px;
+  inset: 1px;
   border: 2px solid var(--shared-text-on-dark);
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0, 185, 73, 0.9), 0 0 8px 3px rgba(0, 185, 73, 0.62);
@@ -584,9 +600,9 @@ button { font: inherit; }
 }
 
 .guidance-pill button span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+  text-align: left;
+  white-space: normal;
 }
 
 .guidance-pill button:focus-visible {

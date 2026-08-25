@@ -8,7 +8,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 The map supports `visitor` and `owner` presentation audiences, with `visitor` as the first-load default and `?view=owner` as an opt-in remembered on that device. Every current layer is assigned to both audiences and keeps the same visibility default, so the two views are intentionally identical today. Audiences are a presentation convenience, **not a security boundary**: files committed here are publicly downloadable, and anyone can select either view. Data that must remain private must not be added to this repository.
 
-Required source assignment: parcel boundaries, the powerline corridor, roads, trails, buildings, and zones. Optional source assignment: corner markers, non-building landmarks, route definitions, and intersections. A missing required source produces one quiet map notice while other sources continue loading; an optional 404 is silent. Malformed content is logged separately from a network failure.
+Required source assignment: parcel boundaries, the powerline corridor, both road files, trails, buildings, and zones. Optional source assignment: corner markers, non-building landmarks, route definitions, and intersections. A missing required source produces one quiet map notice while other sources continue loading; an optional 404 is silent. Malformed content is logged separately from a network failure.
 
 ## Feature-property schema
 
@@ -37,7 +37,9 @@ Ids must be present and unique across roads, trails, zones, buildings, landmarks
 ## Roads
 
 - Mountain Drive's south endpoint is extended to a shared vertex on the otherwise unchanged Driveway centerline, closing the small mapped gap between the two road recordings.
-- `roads/dirt-roads.geojson` — dirt roads, separate from walking trails.
+- `roads/mountain-drive.geojson` — Mountain Drive's independent road centerline and generated measurements.
+- `roads/driveway.geojson` — the independently labeled Driveway centerline and generated measurements.
+- Both files render together in the `Dirt roads` layer, but they remain separate paths. Mountain Drive alone is the member segment of `mountain-drive-route`; Driveway is not silently merged into that route.
 - Mountain Drive combines `New_rd_down.gpx` and `New_Road_up.gpx`. Each pass contributes equally within six-meter distance bands so the noisier pass does not dominate. Status: work in progress; replace when better GPS data is available.
 
 ## Trails
@@ -81,7 +83,7 @@ Ids must be present and unique across roads, trails, zones, buildings, landmarks
 
 ## Reprocessing
 
-`tools/process_gps.py` is a manifest-driven intake command. It reads one JSON manifest from `tools/intakes/`, validates its inputs and declared joins, and writes deterministic review files only under `data/_candidates/`. A normal intake run never changes live map data.
+`tools/process_gps.py` is a manifest-driven intake command. It reads one JSON manifest from `tools/intakes/`, validates its inputs and declared joins, and writes deterministic review files only under the sibling `_local/_candidates/` folder outside this publishable web folder. Raw source folders also live under that sibling `_local/` folder. A normal intake run never changes live map data.
 
 Example staging command:
 
@@ -89,7 +91,7 @@ Example staging command:
 python tools/process_gps.py tools/intakes/2026-08-05-loop-and-driveway.json
 ```
 
-Review the console report and generated `data/_candidates/QA-YYYY-MM-DD.md`, compare each processed line with its raw track, and resolve every consolidated warning before promotion. The command reports raw and processed lengths, pass detection, speed-gate drops, elevation, station spread, closure, self-intersections, joins, route membership, and nearby mapped features.
+Review the console report and generated sibling `_local/_candidates/QA-YYYY-MM-DD.md`, compare each processed line with its raw track, and resolve every consolidated warning before promotion. The command reports raw and processed lengths, pass detection, speed-gate drops, elevation, station spread, closure, self-intersections, joins, route membership, and nearby mapped features.
 
 Promotion is always separate and explicit:
 
@@ -99,4 +101,4 @@ python tools/process_gps.py tools/intakes/2026-08-05-loop-and-driveway.json --pr
 
 The command first prints an id-by-id diff and asks for confirmation. Promotion merges by stable feature id, preserves untouched live features byte-for-byte, and can place pre-promotion copies under the ignored candidate backup folder. `--yes` is available only with `--promote` and counts as the explicit confirmation for that invocation.
 
-Raw GPX folders, generated candidates, and Python cache files are excluded by `.gitignore`; they are local intake material rather than published map assets. The August 4 manifest is retained as the first worked intake record, but its original raw folder is not present in this working copy, so that historical regression can run only after those files are restored locally. It also predates the owner's later manual Front Field boundary refinement and must not be used to overwrite that edit.
+Raw GPX folders, generated candidates, pre-promotion backups, and Python caches stay under the sibling `_local/` folder; they are local intake material rather than published map assets. The tools set Python's no-bytecode mode, and `python tools/run_tests.py` is the standard cache-free regression command. The August 4 manifest is retained as the first worked intake record, but its original raw folder must be restored under sibling `_local/Unprocessed GPS Files/` before that historical regression can run. It also predates the owner's later manual Front Field boundary refinement and must not be used to overwrite that edit.

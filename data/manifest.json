@@ -48,9 +48,23 @@
       "generated_properties": []
     },
     {
-      "key": "roads",
-      "path": "data/roads/dirt-roads.geojson",
+      "key": "mountainDrive",
+      "path": "data/roads/mountain-drive.geojson",
       "format": "geojson",
+      "feature_type": "road",
+      "geometry_types": ["LineString"],
+      "required": true,
+      "ids": true,
+      "required_properties": ["id", "name", "type"],
+      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
+      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+    },
+    {
+      "key": "driveway",
+      "path": "data/roads/driveway.geojson",
+      "format": "geojson",
+      "feature_type": "road",
       "geometry_types": ["LineString"],
       "required": true,
       "ids": true,
@@ -63,6 +77,7 @@
       "key": "trails",
       "path": "data/trails/walking-trails.geojson",
       "format": "geojson",
+      "feature_type": "trail",
       "geometry_types": ["LineString"],
       "required": true,
       "ids": true,

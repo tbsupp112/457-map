@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+sys.dont_write_bytecode = True
+
 
 ROOT = Path(__file__).resolve().parents[1]
 FEET_PER_METER = 3.28084
@@ -200,6 +202,26 @@ def profiles_match(first: Any, second: Any) -> bool:
 def validate_repository(root: Path = ROOT) -> ValidationReport:
     root = root.resolve()
     report = ValidationReport()
+    forbidden_publish_paths = [
+        root / "Raw gaia gpx 8.5.26",
+        root / "Unprocessed GPS Files",
+        root / "data" / "_candidates",
+        root / "compass-test.html",
+    ]
+    for path in forbidden_publish_paths:
+        if path.exists():
+            report.error(
+                f"Local-only item remains in the publish folder: {path.relative_to(root)}"
+            )
+    for path in root.rglob("__pycache__"):
+        if path.is_dir():
+            report.error(
+                f"Python cache directory remains in the publish folder: {path.relative_to(root)}"
+            )
+    for path in root.rglob("*.gpx"):
+        if path.is_file():
+            report.error(f"Raw GPX remains in the publish folder: {path.relative_to(root)}")
+
     manifest = read_json(root / "data" / "manifest.json", report)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("sources"), list):
         if not report.errors:
@@ -324,7 +346,7 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
             if geometry_type == "Point" and coordinate_pairs:
                 pin_name = properties.get("id") or properties.get("label") or location
                 pins.append((str(pin_name), coordinate_pairs[0]))
-            if key in {"roads", "trails"} and isinstance(properties.get("id"), str):
+            if source.get("feature_type") in {"road", "trail"} and isinstance(properties.get("id"), str):
                 segments_by_id[properties["id"]] = record
 
     boundaries = data_by_key.get("boundaries", {}).get("features", [])

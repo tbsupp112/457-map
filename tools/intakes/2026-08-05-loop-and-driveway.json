@@ -1,6 +1,6 @@
 {
   "intake_date": "2026-08-05",
-  "source_dir": "Raw gaia gpx 8.5.26",
+  "source_dir": "../_local/Raw gaia gpx 8.5.26",
   "warnings": [
     "Owner confirmed that main-loop, main-loop-ext, and barbershop-trail share the same clearing node.",
     "Owner confirmed that the Barbershop Trail remains a dead end for now; The Barbershop landmark is offset 5 m north of it.",
@@ -105,7 +105,7 @@
       "name": "Driveway",
       "type": "path",
       "inputs": ["driveway.gpx", "driveway (1).gpx"],
-      "target": "roads/dirt-roads.geojson",
+      "target": "roads/driveway.geojson",
       "recorded_on": "2026-08-05",
       "properties": {
         "type": "dirt road",

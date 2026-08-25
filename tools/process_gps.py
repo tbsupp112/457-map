@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
+sys.dont_write_bytecode = True
+
 from gps_lib import (
     CenterlineResult,
     XY,
@@ -56,8 +58,9 @@ from gps_lib import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+LOCAL = ROOT.parent / "_local"
 DATA = ROOT / "data"
-CANDIDATES = DATA / "_candidates"
+CANDIDATES = LOCAL / "_candidates"
 DATA_MANIFEST_PATH = DATA / "manifest.json"
 
 
@@ -163,7 +166,7 @@ def safe_target(value: str) -> str:
         raise ValueError(f"Unsafe data target: {value}")
     candidate = (CANDIDATES / Path(*relative.parts)).resolve()
     if CANDIDATES.resolve() not in candidate.parents:
-        raise ValueError(f"Target escapes data/_candidates: {value}")
+        raise ValueError(f"Target escapes the sibling _local/_candidates directory: {value}")
     normalized = relative.as_posix()
     if normalized not in ALLOWED_DATA_TARGETS:
         raise ValueError(f"Target is not declared in data/manifest.json: {value}")
@@ -1058,8 +1061,9 @@ def process_manifest(manifest_path: Path) -> PipelineResult:
     manifest = load_manifest(manifest_path)
     manifest["_manifest_name"] = manifest_path.name
     source_root = (ROOT / manifest.get("source_dir", ".")).resolve()
-    if ROOT.resolve() not in source_root.parents and source_root != ROOT.resolve():
-        raise ValueError("source_dir must remain inside the project working folder")
+    local_root = LOCAL.resolve()
+    if local_root not in source_root.parents and source_root != local_root:
+        raise ValueError("source_dir must remain inside the sibling _local folder")
     live_catalog, live_collections = load_live_catalog()
     catalog = {feature_id: copy.deepcopy(value) for feature_id, value in live_catalog.items()}
     reports = []
@@ -1336,7 +1340,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("manifest", type=Path, help="Path to an intake manifest JSON")
     parser.add_argument("--promote", action="store_true", help="Merge staged candidates into live data after confirmation")
     parser.add_argument("--yes", action="store_true", help="Treat this command invocation as explicit promotion confirmation")
-    parser.add_argument("--backup", action="store_true", help="Write pre-promotion target copies under data/_candidates/backups")
+    parser.add_argument("--backup", action="store_true", help="Write pre-promotion target copies under sibling _local/_candidates/backups")
     return parser.parse_args(argv)
 
 

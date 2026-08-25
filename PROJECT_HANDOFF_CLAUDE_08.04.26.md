@@ -107,7 +107,8 @@ data/
     corners.geojson
     powerline-corridor.geojson
   roads/
-    dirt-roads.geojson
+    mountain-drive.geojson
+    driveway.geojson
   trails/
     walking-trails.geojson
   landmarks/
@@ -140,11 +141,16 @@ data/
 - Derived from Warren County zoning-document corner coordinates supplied by the owner and validated earlier: ring closure, orientation, self-intersection, acreage, and corridor gap checks passed.
 - They are still orientation-grade approximate boundaries, not a survey. Do not re-derive or casually edit these coordinates.
 
-**Mountain Drive** (`data/roads/dirt-roads.geojson`)
+**Mountain Drive** (`data/roads/mountain-drive.geojson`)
 
 - A provisional dirt road being built/continued along an old route.
 - Created from one uphill and one downhill phone-GPS pass; the current line is useful but should be replaced when better coverage exists.
 - The route is intentionally a road layer rather than walking-trail layer.
+
+**Driveway** (`data/roads/driveway.geojson`)
+
+- The Driveway is a separately labeled dirt-road path and source file.
+- It renders in the same Dirt roads layer as Mountain Drive but is not a member of Mountain Drive Route.
 
 **Pavilion Side Trail and Garden Cut Through** (`data/trails/walking-trails.geojson`)
 
@@ -170,7 +176,7 @@ data/
 
 ## 5. GPS intake and processing workflow
 
-The owner keeps original phone GPS files separately and may place a temporary `Unprocessed GPS Files` folder in the project for an intake. Raw source files are not meant for the public website and should not be committed/uploaded. The repeatable processor is `tools/process_gps.py`.
+The owner keeps original phone GPS files under the sibling `_local/` folder outside the publishable web folder. Historical August 4 inputs go in `_local/Unprocessed GPS Files/`; the current August 5 set is in `_local/Raw gaia gpx 8.5.26/`. Raw source files are not meant for the public website and should not be committed/uploaded. The repeatable processor is `tools/process_gps.py`, and its review output goes to sibling `_local/_candidates/`.
 
 For the first intake it consumed these GPX sources:
 
@@ -188,7 +194,7 @@ Processing principles implemented in the Python script:
 - Zones: untangle small self-crossings, remove low-area jitter, keep provisional status.
 - Topology: when owner-confirmed features meet, shared coordinates are created and data records document small snapping/offset decisions. Significant changes should be discussed with the owner.
 
-The raw GPX folder has been removed from the current project after processing because the owner maintains an external raw backup. To re-run the processor, the same named source files must temporarily exist in `Unprocessed GPS Files`. If new GPS is substantially better than current data, a Codex spec should say whether it replaces or supplements the feature and how existing confirmed intersections should be retained/recomputed.
+Raw GPX and generated candidate files are outside the publishable web folder in sibling `_local/`. To re-run the August 4 processor, the same named source files must exist in `_local/Unprocessed GPS Files/`. If new GPS is substantially better than current data, a Codex spec should say whether it replaces or supplements the feature and how existing confirmed intersections should be retained/recomputed.
 
 Recommended owner input format for future mapping additions: feature name, intended type (road/trail/building/natural landmark/misc landmark/zone/intersection), raw GPX or coordinates, number of passes/direction if relevant, confirmed real-world joins, public/private visibility, and any accuracy caveats. The owner can give normal GPS coordinates; Codex can normalize them.
 
@@ -231,6 +237,7 @@ Important implementation details in `app.js`:
 - onX export and county tax-parcel GIS routes were dropped; the validated corner-coordinate geometry is the project’s map source.
 - NYS aerial imagery and OpenTopoMap are already functional and confirmed by the owner.
 - Mobile live location has been confirmed in Safari after permission was granted. VPN/location issues on laptop were expected and are not a map defect.
+- iPhone compass guidance is functional: `deviceorientation` supplies usable `webkitCompassHeading` values. The earlier concern that orientation input was broken was a visibility misdiagnosis caused by the original very faint wrong-direction tint. Field confirmation is still required for the stronger full-turn ramp and turn text.
 - QR code should eventually encode the final plain GitHub Pages URL directly. Use a static SVG/high-resolution image, not a redirect/expiring QR provider. Printing is later; no urgent QR work is needed today.
 - Future optional per-sign QR visit logging can use distinct URL/sign IDs plus a small Google Apps Script endpoint to a private Google Sheet. It needs a visible privacy notice, retention decision, bot/link-preview filtering, and no secret in the public page. It should not collect precise location without explicit permission. This is long-term only.
 - A visitor-added observation point/note feature is later. Local-only storage is easy but device-local; sharing/sending requires a deliberate privacy/backend decision.
@@ -283,7 +290,7 @@ Useful external reference files outside the web-map folder:
 - `C:\Users\houghtond\Documents\Crap for AI Reference\Map_pin_icon_green.svg.webp` — original supplied green building-pin asset, copied into the project as `assets/icons/building-pin.webp`.
 - `C:\Users\houghtond\Documents\Crap for AI Reference\756045768_1042188731850203_1622697849043464107_n.jpg` — optional property visual reference; use only if it genuinely helps a design/landmark discussion.
 
-Raw GPX tracks are retained by the owner elsewhere and are not currently in the project. Ask the owner to attach them only for a new mapping intake or a review of GPS processing.
+Raw GPX tracks are retained outside the publishable web folder under sibling `_local/`. Use them only for a new mapping intake or a review of GPS processing.
 
 ## 11. Questions Claude may raise, and how to handle them
 

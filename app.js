@@ -19,6 +19,9 @@ const GUIDANCE_UNAVAILABLE_HOLD_MS = 4000;
 const GUIDANCE_IOS_HINT_DELAY_MS = 1800;
 const GUIDANCE_SMOOTHING_TIME_MS = 250;
 const GUIDANCE_VISUAL_INTERVAL_MS = 100;
+const GUIDANCE_MAX_ERROR_DEG = 180;
+const GUIDANCE_LOCKED_ERROR_DEG = 8;
+const GUIDANCE_TURN_AROUND_ERROR_DEG = 150;
 const LAYER_CONTROL_COLLAPSE_DELAY_MS = 280;
 const ROAD_HIT_TOLERANCE_PX = 5;
 const ROAD_INTERACTION_WEIGHT_PX = 15;
@@ -55,10 +58,15 @@ let releaseProgrammaticFocus = null;
 const routesBySegmentId = new Map();
 const routesById = new Map();
 const focusableFeaturesById = new Map();
+const baseFeatureStyles = new WeakMap();
 let hasRouteDefinitions = false;
 let requestedFeatureFocused = false;
 let selectedFeatureLayers = [];
+let hoveredFeatureLayers = [];
+let hoveredFeatureEventLayers = new Set();
+let featureHoverClearTimer = null;
 let openMapRouteDetails = null;
+let hidingPopupForRouteDetails = false;
 const roadVisualLayersById = new Map();
 
 const offPropertyTracker = {
@@ -92,6 +100,7 @@ const guidanceTracker = {
   lastHeadingAt: 0,
   lastVisualUpdateAt: 0,
   targetBearing: null,
+  headingError: null,
   headingTimeout: null,
   tintStartTimer: null,
   tintHideTimer: null,
@@ -190,14 +199,18 @@ const LAYER_DEFINITIONS = [
     label: "Dirt roads",
     group: "20-routes",
     order: 50,
-    sources: ["roads", "trails", "routes"],
+    sources: ["mountainDrive", "driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: {
       kind: "composite",
       panes: [
         { key: "roads", name: "roads-pane", order: 50 },
-        { key: "roadInteractions", name: "road-interactions-pane", order: 55 },
+        // The interaction paths must sit above the full-map trail canvas or
+        // that canvas intercepts road pointer events. They remain below every
+        // landmark and pin pane, and their nearly transparent stroke changes
+        // no visible layer ordering.
+        { key: "roadInteractions", name: "road-interactions-pane", order: 67 },
       ],
       haloStyle: { color: "#473522", weight: 0, opacity: 0, lineCap: "round", lineJoin: "round" },
       style: { color: "#d89a4a", weight: 3, opacity: 0.98, lineCap: "round", lineJoin: "round" },
@@ -211,7 +224,7 @@ const LAYER_DEFINITIONS = [
     label: "Walking trails",
     group: "20-routes",
     order: 60,
-    sources: ["roads", "trails", "routes"],
+    sources: ["mountainDrive", "driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: { kind: "geojson", panes: [{ key: "trails", name: "trails-pane", order: 60 }], style: trailStyle },
@@ -223,7 +236,7 @@ const LAYER_DEFINITIONS = [
     label: null,
     group: "data",
     order: 65,
-    sources: ["roads", "trails", "routes"],
+    sources: ["mountainDrive", "driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: { kind: "data", panes: [] },
@@ -451,8 +464,8 @@ const buildingIcon = L.icon({
 const guidanceTargetIcon = L.divIcon({
   className: "guidance-target-highlight",
   html: '<span aria-hidden="true"></span>',
-  iconSize: [30, 30],
-  iconAnchor: [15, 28],
+  iconSize: [20, 20],
+  iconAnchor: [10, 10],
 });
 
 const landmarksLayer = L.geoJSON(null, {
@@ -603,10 +616,13 @@ let locationMarker = null;
 let offPropertyTooltipTimer = null;
 
 map.getContainer().addEventListener("click", handleMapPopupActionClick, true);
+map.getContainer().addEventListener("mouseleave", clearFeatureHoverHighlight);
+window.addEventListener("blur", clearFeatureHoverHighlight);
 guidanceDismiss.addEventListener("click", stopGuidance);
 map.on("popupclose", () => {
+  if (hidingPopupForRouteDetails) return;
   clearSelectedFeatureHighlight();
-  closeMapRouteDetails();
+  closeMapRouteDetails({ restorePopup: false, restoreFocus: false });
 });
 
 loadLayerRegistry();
@@ -619,7 +635,7 @@ infoOverlay.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!infoOverlay.hidden) closeInfo();
-  closeMapRouteDetails();
+  closeMapRouteDetails({ restorePopup: false });
 });
 
 locateButton.addEventListener("click", () => {
@@ -1149,18 +1165,30 @@ function finishInitialViewWithoutBoundary() {
   tryFocusRequestedFeature();
 }
 
-function applyRoadsData({ roads, trails, routes }) {
+function combineFeatureCollections(title, ...collections) {
+  return {
+    type: "FeatureCollection",
+    properties: { title },
+    features: collections
+      .filter(Boolean)
+      .flatMap((collection) => collection.features || []),
+  };
+}
+
+function applyRoadsData({ mountainDrive, driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
   );
-  if (!roads) return;
+  if (roads.features.length === 0) return;
   roadHalo.addData(roads);
   roadsLayer.addData(roads);
   roadInteractionLayer.addData(roads);
 }
 
-function applyTrailsData({ roads, trails, routes }) {
+function applyTrailsData({ mountainDrive, driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
@@ -1168,7 +1196,8 @@ function applyTrailsData({ roads, trails, routes }) {
   if (trails) trailsLayer.addData(trails);
 }
 
-function applyRouteDefinitionData({ roads, trails, routes }) {
+function applyRouteDefinitionData({ mountainDrive, driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
@@ -1611,6 +1640,7 @@ function routeDifficultyPresentation(value) {
 
 function bindMapFeature(layer, feature, detail, options = {}) {
   registerFocusableFeature(feature, options.visualLayer || layer, options.focusOverlay);
+  rememberBaseFeatureStyle(options.visualLayer || layer);
   const hasFinePointer = window.matchMedia(
     "(any-hover: hover) and (any-pointer: fine)",
   ).matches;
@@ -1619,21 +1649,24 @@ function bindMapFeature(layer, feature, detail, options = {}) {
       sticky: true,
       direction: "top",
     });
-    installFeatureHoverFeedback(options.visualLayer || layer, layer);
+    installFeatureHoverFeedback(
+      () => featureSelectionLayers(layer, options),
+      layer,
+    );
   }
 
   layer.on("click", (event) => {
     if (!hasFinePointer) layer.closeTooltip();
     window.clearTimeout(pendingFeaturePopupTimer);
-    if (performance.now() < suppressFeaturePopupsUntil) return;
+    pendingFeaturePopupTimer = null;
+    if (featurePopupsAreSuppressed()) return;
 
     const openPopup = () => {
       pendingFeaturePopupTimer = null;
-      if (performance.now() < suppressFeaturePopupsUntil) return;
+      if (featurePopupsAreSuppressed()) return;
+      closeMapRouteDetails({ restorePopup: false, restoreFocus: false });
       map.closePopup();
-      if (!hasFinePointer) {
-        setSelectedFeatureLayers(featureSelectionLayers(layer, options));
-      }
+      setSelectedFeatureLayers(featureSelectionLayers(layer, options));
       L.popup()
         .setLatLng(event.latlng)
         .setContent(buildMapFeaturePopup(feature, detail, options))
@@ -1650,23 +1683,33 @@ function bindMapFeature(layer, feature, detail, options = {}) {
   });
 }
 
-function installFeatureHoverFeedback(layer, eventLayer = layer) {
-  if (!layer || typeof layer.setStyle !== "function") return;
-  const baseStyle = {};
+function rememberBaseFeatureStyle(layer) {
+  if (!layer || typeof layer.setStyle !== "function" || baseFeatureStyles.has(layer)) {
+    return;
+  }
+  const style = {};
   ["color", "weight", "opacity", "fillOpacity"].forEach((key) => {
-    if (layer.options[key] !== undefined) baseStyle[key] = layer.options[key];
+    if (layer.options[key] !== undefined) style[key] = layer.options[key];
   });
+  baseFeatureStyles.set(layer, style);
+}
+
+function installFeatureHoverFeedback(resolveLayers, eventLayer) {
+  if (!eventLayer || typeof eventLayer.on !== "function") return;
   eventLayer.on("mouseover", () => {
-    const hoverStyle = {
-      weight: (Number(baseStyle.weight) || 0) + 2,
-      opacity: 1,
-    };
-    if (baseStyle.fillOpacity !== undefined) {
-      hoverStyle.fillOpacity = Math.min(1, Number(baseStyle.fillOpacity) + 0.08);
-    }
-    layer.setStyle(hoverStyle);
+    window.clearTimeout(featureHoverClearTimer);
+    featureHoverClearTimer = null;
+    hoveredFeatureEventLayers.add(eventLayer);
+    setHoveredFeatureLayers(resolveLayers());
   });
-  eventLayer.on("mouseout", () => layer.setStyle(baseStyle));
+  eventLayer.on("mouseout", () => {
+    hoveredFeatureEventLayers.delete(eventLayer);
+    window.clearTimeout(featureHoverClearTimer);
+    featureHoverClearTimer = window.setTimeout(() => {
+      featureHoverClearTimer = null;
+      if (hoveredFeatureEventLayers.size === 0) clearFeatureHoverHighlight();
+    }, 0);
+  });
 }
 
 function featureSelectionLayers(layer, options = {}) {
@@ -1681,30 +1724,75 @@ function featureSelectionLayers(layer, options = {}) {
 }
 
 function clearSelectedFeatureHighlight() {
-  selectedFeatureLayers.forEach(({ layer, style }) => layer.setStyle(style));
+  const previousLayers = selectedFeatureLayers;
   selectedFeatureLayers = [];
+  previousLayers.forEach(applyFeatureHighlightState);
 }
 
 function setSelectedFeatureLayers(layers) {
+  const previousLayers = selectedFeatureLayers;
   clearSelectedFeatureHighlight();
-  const uniqueLayers = [...new Set(layers)].filter(
+  selectedFeatureLayers = [...new Set(layers)].filter(
     (layer) => layer && typeof layer.setStyle === "function",
   );
-  selectedFeatureLayers = uniqueLayers.map((layer) => {
-    const style = {};
-    ["color", "weight", "opacity", "fillOpacity"].forEach((key) => {
-      if (layer.options[key] !== undefined) style[key] = layer.options[key];
-    });
-    const selectedStyle = {
-      weight: (Number(style.weight) || 0) + 2,
-      opacity: 1,
-    };
-    if (style.fillOpacity !== undefined) {
-      selectedStyle.fillOpacity = Math.min(1, Number(style.fillOpacity) + 0.08);
+  [...new Set([...previousLayers, ...selectedFeatureLayers])]
+    .forEach(applyFeatureHighlightState);
+}
+
+function setHoveredFeatureLayers(layers) {
+  const previousLayers = hoveredFeatureLayers;
+  hoveredFeatureLayers = [...new Set(layers)].filter(
+    (layer) => layer && typeof layer.setStyle === "function",
+  );
+  [...new Set([...previousLayers, ...hoveredFeatureLayers])]
+    .forEach(applyFeatureHighlightState);
+}
+
+function clearFeatureHoverHighlight() {
+  window.clearTimeout(featureHoverClearTimer);
+  featureHoverClearTimer = null;
+  hoveredFeatureEventLayers = new Set();
+  const previousLayers = hoveredFeatureLayers;
+  hoveredFeatureLayers = [];
+  previousLayers.forEach(applyFeatureHighlightState);
+}
+
+function applyFeatureHighlightState(layer) {
+  rememberBaseFeatureStyle(layer);
+  const baseStyle = baseFeatureStyles.get(layer) || {};
+  const isSelected = selectedFeatureLayers.includes(layer);
+  const isHovered = hoveredFeatureLayers.includes(layer);
+  const emphasis = isSelected ? 3 : isHovered ? 1 : 0;
+  const style = { ...baseStyle };
+  if (emphasis > 0) {
+    style.weight = (Number(baseStyle.weight) || 0) + emphasis;
+    style.opacity = 1;
+    if (baseStyle.fillOpacity !== undefined) {
+      style.fillOpacity = Math.min(
+        1,
+        Number(baseStyle.fillOpacity) + (isSelected ? 0.1 : 0.04),
+      );
     }
-    layer.setStyle(selectedStyle);
-    return { layer, style };
-  });
+  }
+  layer.setStyle(style);
+}
+
+function featurePopupsAreSuppressed() {
+  const now = performance.now();
+  const remaining = suppressFeaturePopupsUntil - now;
+  if (
+    !Number.isFinite(suppressFeaturePopupsUntil) ||
+    remaining > RAPID_DOUBLE_TAP_MS + 50
+  ) {
+    console.warn("Feature popup suppression exceeded its bounded double-tap window; resetting it.");
+    suppressFeaturePopupsUntil = 0;
+    return false;
+  }
+  if (remaining <= 0) {
+    suppressFeaturePopupsUntil = 0;
+    return false;
+  }
+  return true;
 }
 
 function formatLandmarkDistance(distanceMeters, bearing) {
@@ -1799,25 +1887,50 @@ function handleRouteDetailsClick(event) {
   const route = routesById.get(button.dataset.routeId);
   if (!route || !window.RouteDetails) return;
 
-  closeMapRouteDetails();
+  closeMapRouteDetails({ restorePopup: false, restoreFocus: false });
+  const sourcePopup = typeof map.getPopup === "function" ? map.getPopup() : map._popup;
   const { details, closeButton } = window.RouteDetails.createPanel(route, {
     className: "route-details-popout--map",
   });
   closeButton.addEventListener("click", () => {
-    closeMapRouteDetails();
-    button.focus();
+    closeMapRouteDetails({ restorePopup: true });
   });
   document.body.append(details);
   details.hidden = false;
   button.setAttribute("aria-expanded", "true");
-  openMapRouteDetails = { button, details };
+  openMapRouteDetails = { button, details, routeId: route.id, sourcePopup };
+  if (sourcePopup) {
+    hidingPopupForRouteDetails = true;
+    try {
+      map.closePopup(sourcePopup);
+    } finally {
+      hidingPopupForRouteDetails = false;
+    }
+  }
+  closeButton.focus();
 }
 
-function closeMapRouteDetails() {
+function closeMapRouteDetails({ restorePopup = false, restoreFocus = true } = {}) {
   if (!openMapRouteDetails) return;
-  openMapRouteDetails.button.setAttribute("aria-expanded", "false");
-  openMapRouteDetails.details.remove();
+  const currentDetails = openMapRouteDetails;
   openMapRouteDetails = null;
+  currentDetails.button.setAttribute("aria-expanded", "false");
+  currentDetails.details.remove();
+
+  if (restorePopup && currentDetails.sourcePopup) {
+    currentDetails.sourcePopup.openOn(map);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => {
+        const restoredButton = [...map.getContainer().querySelectorAll(".route-details-trigger")]
+          .find((candidate) => candidate.dataset.routeId === currentDetails.routeId);
+        restoredButton?.focus();
+      });
+    }
+    return;
+  }
+
+  clearSelectedFeatureHighlight();
+  if (restoreFocus && currentDetails.button.isConnected) currentDetails.button.focus();
 }
 
 async function startGuidance(targetId) {
@@ -1882,8 +1995,9 @@ async function startGuidance(targetId) {
   guidanceTracker.smoothedCos = null;
   guidanceTracker.lastHeadingAt = 0;
   guidanceTracker.lastVisualUpdateAt = 0;
+  guidanceTracker.headingError = null;
   updateGuidancePill();
-  renderGuidanceTint(110, { centered: true });
+  renderGuidanceTint(GUIDANCE_MAX_ERROR_DEG, { centered: true });
   attachOrientationListeners(guidanceTracker.isIosPermissionPath);
   logGuidanceDiagnostic("start");
   if (latestPosition) {
@@ -2025,22 +2139,27 @@ function pauseGuidanceForLocation() {
   if (!guidanceTracker.isActive) return;
   guidanceTracker.isWaitingForLocation = true;
   guidanceTracker.targetBearing = null;
-  renderGuidanceTint(110, { centered: true });
+  renderGuidanceTint(GUIDANCE_MAX_ERROR_DEG, { centered: true });
   updateGuidancePill();
 }
 
 function renderGuidanceTint(error, { centered = false } = {}) {
   const ramp = readGuidanceRamp();
-  const magnitude = Math.min(Math.abs(error), 110);
+  const signedError = normalizeBearingError(error);
+  const magnitude = Math.min(Math.abs(signedError), GUIDANCE_MAX_ERROR_DEG);
   const style = interpolateGuidanceRamp(magnitude, ramp);
-  const offset = centered ? 0 : Math.max(-1, Math.min(1, error / 90)) * 46;
+  const offset = centered ? 0 : Math.max(-1, Math.min(1, signedError / 90)) * 46;
+  guidanceTracker.headingError = centered ? null : signedError;
   guidanceTint.style.setProperty("--guidance-offset", `${offset}vw`);
   guidanceTint.style.setProperty("--guidance-saturation", `${style.saturation}%`);
   guidanceTint.style.setProperty("--guidance-lightness", `${style.lightness}%`);
   guidanceTint.style.setProperty("--guidance-opacity", style.opacity);
   guidanceTint.style.setProperty("--guidance-width", `${style.width}vw`);
   guidanceTint.style.setProperty("--guidance-blur", `${style.blur}px`);
-  guidanceTint.classList.toggle("guidance-tint--locked", magnitude <= 8);
+  guidanceTint.classList.toggle(
+    "guidance-tint--locked",
+    !centered && magnitude <= GUIDANCE_LOCKED_ERROR_DEG,
+  );
 
   if (!guidanceTint.classList.contains("guidance-tint--active")) {
     guidanceTint.classList.add("guidance-tint--starting");
@@ -2051,6 +2170,7 @@ function renderGuidanceTint(error, { centered = false } = {}) {
       guidanceTracker.tintStartTimer = null;
     }, 440);
   }
+  if (guidanceTracker.isActive && !centered) updateGuidancePill();
 }
 
 function readGuidanceRamp() {
@@ -2061,6 +2181,7 @@ function readGuidanceRamp() {
     { error: 30, saturation: value("--guidance-saturation-30"), lightness: value("--guidance-lightness-30"), opacity: value("--guidance-opacity-30"), width: value("--guidance-width-30"), blur: value("--guidance-blur-30") },
     { error: 60, saturation: value("--guidance-saturation-60"), lightness: value("--guidance-lightness-60"), opacity: value("--guidance-opacity-60"), width: value("--guidance-width-60"), blur: value("--guidance-blur-60") },
     { error: 110, saturation: value("--guidance-saturation-110"), lightness: value("--guidance-lightness-110"), opacity: value("--guidance-opacity-110"), width: value("--guidance-width-110"), blur: value("--guidance-blur-110") },
+    { error: 180, saturation: value("--guidance-saturation-180"), lightness: value("--guidance-lightness-180"), opacity: value("--guidance-opacity-180"), width: value("--guidance-width-180"), blur: value("--guidance-blur-180") },
   ];
 }
 
@@ -2097,9 +2218,20 @@ function updateGuidancePill() {
     return;
   }
   const distance = distanceBetweenLatLngs(latestPosition.latlng, guidanceTracker.target.latlng);
+  const turnInstruction = guidanceTurnInstruction(guidanceTracker.headingError);
   setGuidancePill(
-    `Guiding to ${guidanceTracker.target.name} \u00b7 ${formatLiveDistance(distance * 3.28084, 15)}`,
+    `Guiding to ${guidanceTracker.target.name} \u00b7 ${formatLiveDistance(distance * 3.28084, 15)}` +
+      (turnInstruction ? ` \u00b7 ${turnInstruction}` : ""),
   );
+}
+
+function guidanceTurnInstruction(error) {
+  if (!Number.isFinite(error)) return "";
+  const signedError = normalizeBearingError(error);
+  const magnitude = Math.abs(signedError);
+  if (magnitude <= GUIDANCE_LOCKED_ERROR_DEG) return "on course";
+  if (magnitude >= GUIDANCE_TURN_AROUND_ERROR_DEG) return "turn around";
+  return signedError > 0 ? "turn right" : "turn left";
 }
 
 function handleGuidanceHeadingTimeout() {
@@ -2154,6 +2286,7 @@ function stopGuidance() {
   guidanceTracker.isActive = false;
   guidanceTracker.isWaitingForLocation = false;
   guidanceTracker.targetBearing = null;
+  guidanceTracker.headingError = null;
   guidanceTracker.smoothedSin = null;
   guidanceTracker.smoothedCos = null;
   guidanceTint.classList.remove(

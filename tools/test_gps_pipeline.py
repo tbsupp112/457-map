@@ -11,6 +11,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest import mock
 
+sys.dont_write_bytecode = True
+
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
@@ -30,7 +32,9 @@ from gps_lib import (  # noqa: E402
     to_xy,
 )
 from process_gps import (  # noqa: E402
+    CANDIDATES,
     DATA,
+    LOCAL,
     load_manifest,
     merge_geojson_preserving_features,
     prepare_promotion,
@@ -52,10 +56,9 @@ def live_hashes() -> dict[str, str]:
 
 
 def candidate_hashes() -> dict[str, str]:
-    candidate_root = DATA / "_candidates"
     return {
-        str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
-        for path in sorted(candidate_root.rglob("*"))
+        str(path.relative_to(CANDIDATES)): hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(CANDIDATES.rglob("*"))
         if path.is_file()
     }
 
@@ -114,7 +117,7 @@ class MergeSafetyTests(unittest.TestCase):
         before = live_hashes()
         invalid_manifest = {
             "intake_date": "2026-08-05",
-            "source_dir": "Raw gaia gpx 8.5.26",
+            "source_dir": "../_local/Raw gaia gpx 8.5.26",
             "jobs": [{
                 "id": "bad",
                 "name": "Bad",
@@ -139,7 +142,7 @@ class IntakeIntegrationTests(unittest.TestCase):
     manifest = TOOLS / "intakes" / "2026-08-05-loop-and-driveway.json"
 
     def test_candidate_generation_is_deterministic_and_does_not_touch_live_data(self) -> None:
-        source = ROOT / "Raw gaia gpx 8.5.26"
+        source = LOCAL / "Raw gaia gpx 8.5.26"
         if not source.exists():
             self.skipTest("The local 8/5 raw GPX intake is not present")
         before = live_hashes()
@@ -149,7 +152,7 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertEqual(live_hashes(), before)
 
     def test_promotion_preview_targets_only_declared_live_files(self) -> None:
-        source = ROOT / "Raw gaia gpx 8.5.26"
+        source = LOCAL / "Raw gaia gpx 8.5.26"
         if not source.exists():
             self.skipTest("The local 8/5 raw GPX intake is not present")
         result = process_manifest(self.manifest)
@@ -157,10 +160,10 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertTrue(summary)
         self.assertTrue(writes)
         self.assertTrue(all(DATA in path.parents for path in writes))
-        self.assertTrue(all("_candidates" not in path.parts for path in writes))
+        self.assertTrue(all(CANDIDATES not in path.parents for path in writes))
 
     def test_reprocessing_promoted_intake_is_idempotent(self) -> None:
-        source = ROOT / "Raw gaia gpx 8.5.26"
+        source = LOCAL / "Raw gaia gpx 8.5.26"
         if not source.exists():
             self.skipTest("The local 8/5 raw GPX intake is not present")
         result = process_manifest(self.manifest)
@@ -173,7 +176,7 @@ class IntakeIntegrationTests(unittest.TestCase):
             )
 
     def test_missing_input_and_unknown_join_fail_without_partial_writes(self) -> None:
-        source = ROOT / "Raw gaia gpx 8.5.26"
+        source = LOCAL / "Raw gaia gpx 8.5.26"
         if not source.exists():
             self.skipTest("The local 8/5 raw GPX intake is not present")
         before_live = live_hashes()
@@ -204,7 +207,7 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertEqual(candidate_hashes(), before_candidates)
 
     def test_declared_topology_clearances_and_local_zone_edit_are_exact(self) -> None:
-        source = ROOT / "Raw gaia gpx 8.5.26"
+        source = LOCAL / "Raw gaia gpx 8.5.26"
         if not source.exists():
             self.skipTest("The local 8/5 raw GPX intake is not present")
         result = process_manifest(self.manifest)
@@ -305,8 +308,6 @@ class IntakeIntegrationTests(unittest.TestCase):
 
         pin_points = []
         for path in sorted(DATA.rglob("*.geojson")):
-            if "_candidates" in path.parts:
-                continue
             for item in json.loads(path.read_text(encoding="utf-8")).get("features", []):
                 if item.get("geometry", {}).get("type") == "Point":
                     pin_points.append((item["properties"].get("id"), to_xy(*item["geometry"]["coordinates"])))

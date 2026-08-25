@@ -1,0 +1,91 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "title": "Driveway"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "driveway",
+        "name": "Driveway",
+        "type": "dirt road",
+        "status": "provisional",
+        "note": "Driveway road centerline from two opposite-direction passes.",
+        "source_files": [
+          "driveway.gpx",
+          "driveway (1).gpx"
+        ],
+        "recorded_on": "2026-08-05",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 5 m stations. A matching vertex was inserted for join `main-loop-driveway`. A matching vertex was inserted for join `mountain-drive-driveway`.",
+        "length_m": 141.1,
+        "length_ft": 463,
+        "elevation_gain_ft": 25,
+        "elevation_loss_ft": 53,
+        "elevation_profile_ft": [
+          860.9,
+          861.4,
+          861.7,
+          862.2,
+          862.5,
+          863.1,
+          863.0,
+          862.0,
+          858.7,
+          854.3,
+          849.7,
+          846.5,
+          843.8,
+          841.0,
+          837.4,
+          833.2
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.835256,
+            43.358663
+          ],
+          [
+            -73.8353216,
+            43.3588026
+          ],
+          [
+            -73.8354391,
+            43.3589369
+          ],
+          [
+            -73.835443,
+            43.3589414
+          ],
+          [
+            -73.8357439,
+            43.3590867
+          ],
+          [
+            -73.8359212,
+            43.3591277
+          ],
+          [
+            -73.8359377,
+            43.3591315
+          ],
+          [
+            -73.8360187,
+            43.3590946
+          ],
+          [
+            -73.8362225,
+            43.3587791
+          ],
+          [
+            -73.836337,
+            43.3586816
+          ]
+        ]
+      }
+    }
+  ]
+}

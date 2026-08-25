@@ -30,10 +30,10 @@ If a local change is not worth publishing for live testing, Codex should say so 
 ## Pre-publish checklist
 
 - Bump every versioned local CSS and JavaScript reference together when any versioned asset changes.
-- Confirm the change set contains no raw GPX, `data/_candidates/`, or `__pycache__/` files.
+- Confirm the publish folder contains no raw GPX, `_candidates/`, `__pycache__/`, or temporary diagnostic files; those local-only materials belong in sibling `_local/`.
 - Confirm no temporary diagnostic page is included.
 - Update `data/README.md` whenever a data convention changes.
-- Run `tools/validate_data.py` cleanly once that validator is present, plus the relevant automated tests.
+- Run `python tools/validate_data.py` and `python tools/run_tests.py`; both disable Python bytecode output and must finish cleanly.
 - Leave applicable `BACKLOG.md` items in place until the published site is confirmed on phone and desktop.
 
 ## Roll back a problem

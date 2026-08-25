@@ -9,6 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+sys.dont_write_bytecode = True
+
 
 TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
@@ -31,10 +33,12 @@ class ValidateDataTests(unittest.TestCase):
 
     def test_duplicate_id_fails_informatively(self) -> None:
         def mutate(root: Path) -> None:
-            path = root / "data" / "roads" / "dirt-roads.geojson"
-            data = json.loads(path.read_text(encoding="utf-8"))
-            data["features"][1]["properties"]["id"] = data["features"][0]["properties"]["id"]
-            path.write_text(json.dumps(data), encoding="utf-8")
+            mountain_path = root / "data" / "roads" / "mountain-drive.geojson"
+            driveway_path = root / "data" / "roads" / "driveway.geojson"
+            mountain = json.loads(mountain_path.read_text(encoding="utf-8"))
+            driveway = json.loads(driveway_path.read_text(encoding="utf-8"))
+            driveway["features"][0]["properties"]["id"] = mountain["features"][0]["properties"]["id"]
+            driveway_path.write_text(json.dumps(driveway), encoding="utf-8")
 
         errors = self.validate_broken_copy(mutate)
         self.assertTrue(any("Duplicate id" in error for error in errors), errors)
@@ -66,6 +70,13 @@ class ValidateDataTests(unittest.TestCase):
 
         errors = self.validate_broken_copy(mutate)
         self.assertTrue(any("exactly one 'main-parcel' role" in error for error in errors), errors)
+
+    def test_local_only_publish_artifact_fails_informatively(self) -> None:
+        def mutate(root: Path) -> None:
+            (root / "compass-test.html").write_text("temporary diagnostic", encoding="utf-8")
+
+        errors = self.validate_broken_copy(mutate)
+        self.assertTrue(any("Local-only item remains" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

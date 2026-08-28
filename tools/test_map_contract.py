@@ -53,7 +53,7 @@ class MapContractTests(unittest.TestCase):
         self.assertEqual("moderate", mountain_route["difficulty"])
         self.assertTrue(all("driveway" not in route["segments"] for route in routes))
 
-    def test_invisible_road_interactions_are_above_trails_and_below_landmarks(self) -> None:
+    def test_shared_svg_interactions_are_above_visual_canvases_and_below_markers(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")
 
         def pane_order(key: str) -> int:
@@ -64,8 +64,39 @@ class MapContractTests(unittest.TestCase):
             self.assertIsNotNone(match, f"Missing pane definition for {key}")
             return int(match.group(1))
 
-        self.assertGreater(pane_order("roadInteractions"), pane_order("trails"))
-        self.assertLess(pane_order("roadInteractions"), pane_order("naturalLandmarks"))
+        for visual_pane in ("zones", "corridor", "boundary", "roads", "trails"):
+            self.assertGreater(pane_order("interactions"), pane_order(visual_pane))
+        self.assertLess(pane_order("interactions"), pane_order("naturalLandmarks"))
+        self.assertIn("const interactionsRenderer = L.svg", app)
+        self.assertNotIn("roadInteractionsRenderer", app)
+        self.assertNotIn("intersectionsRenderer", app)
+        for layer_name in (
+            "corridorInteractionLayer",
+            "roadInteractionLayer",
+            "trailInteractionLayer",
+            "zonesInteractionLayer",
+            "boundaryInteractionLayer",
+        ):
+            self.assertRegex(
+                app,
+                rf"const {layer_name} = L\.geoJSON\(null, \{{[\s\S]*?"
+                rf"renderer: interactionsRenderer,",
+            )
+        for visual_layer in (
+            "corridorLayer",
+            "roadHalo",
+            "roadsLayer",
+            "trailsLayer",
+            "zonesLayer",
+            "boundaryHalo",
+            "boundaryLayer",
+        ):
+            self.assertRegex(
+                app,
+                rf"const {visual_layer} = L\.geoJSON\(null, \{{[\s\S]*?"
+                rf"interactive: false,",
+            )
+        self.assertIn("boundaryInteractionLayer.addData(buildBoundaryLines(boundaries))", app)
 
     def test_map_assets_share_one_cache_version(self) -> None:
         versions = []
@@ -75,6 +106,13 @@ class MapContractTests(unittest.TestCase):
             )
         self.assertTrue(versions)
         self.assertEqual(1, len(set(versions)))
+        cache_version = versions[0]
+        for name in ("app.js", "home.js"):
+            source = (ROOT / name).read_text(encoding="utf-8")
+            match = re.search(r'const DATA_CACHE_VERSION = "([0-9-]+)";', source)
+            self.assertIsNotNone(match, f"Missing data cache version in {name}")
+            self.assertEqual(cache_version, match.group(1))
+            self.assertIn('versionedDataUrl("data/manifest.json")', source)
 
     def test_guidance_visibility_contract_has_full_turn_range(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

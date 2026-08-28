@@ -1,0 +1,86 @@
+{
+  "type": "FeatureCollection",
+  "properties": {
+    "position_status": "placeholder"
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8352, 43.3598]
+      },
+      "properties": {
+        "id": "site-a",
+        "name": "Site A",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8346, 43.3607]
+      },
+      "properties": {
+        "id": "site-b",
+        "name": "Site B",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8339, 43.3602]
+      },
+      "properties": {
+        "id": "site-c",
+        "name": "Site C",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8343, 43.3587]
+      },
+      "properties": {
+        "id": "site-d",
+        "name": "Site D",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8355, 43.3585]
+      },
+      "properties": {
+        "id": "site-e",
+        "name": "Site E",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-73.8338, 43.359]
+      },
+      "properties": {
+        "id": "site-f",
+        "name": "Site F",
+        "status": "placeholder",
+        "note": "Fake position for interface testing."
+      }
+    }
+  ]
+}

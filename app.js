@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20260828-3";
+const DATA_CACHE_VERSION = "20260828-5";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -47,6 +47,9 @@ let activeAudience = MAP_AUDIENCES.includes(requestedAudience)
 let savedMapPreferences = getAudiencePreferences(mapPreferenceStore, activeAudience);
 const requestedFeatureId = new URLSearchParams(window.location.search)
   .get("feature")
+  ?.trim();
+const requestedMapFocus = new URLSearchParams(window.location.search)
+  .get("focus")
   ?.trim();
 let preferencesReady = false;
 let initialViewReady = false;
@@ -544,6 +547,7 @@ const zonesInteractionLayer = L.geoJSON(null, {
   onEachFeature(feature, layer) {
     bindMapFeature(layer, feature, feature.properties.note, {
       focusOverlay: zonesGroup,
+      standardPopupWidth: true,
       visualLayer: zoneVisualLayersById.get(feature.properties?.id),
     });
   },
@@ -580,7 +584,12 @@ const landmarksLayer = L.geoJSON(null, {
       feature,
       feature.properties.note ||
         `${feature.properties.type}; provisional center from walked extent.`,
-      { landmark: true, focusOverlay: landmarksLayer },
+      {
+        landmark: true,
+        pointPhoto: true,
+        standardPopupWidth: true,
+        focusOverlay: landmarksLayer,
+      },
     );
   },
 });
@@ -598,6 +607,8 @@ const intersectionsLayer = L.geoJSON(null, {
   onEachFeature(feature, layer) {
     bindMapFeature(layer, feature, feature.properties.note, {
       focusOverlay: intersectionsLayer,
+      pointPhoto: true,
+      standardPopupWidth: true,
     });
   },
 });
@@ -771,9 +782,12 @@ let locationMarker = null;
 let offPropertyTooltipTimer = null;
 
 map.getContainer().addEventListener("click", handleMapPopupActionClick, true);
+map.getContainer().addEventListener("load", handlePointPhotoLoad, true);
+map.getContainer().addEventListener("error", handlePointPhotoError, true);
 map.getContainer().addEventListener("mouseleave", clearFeatureHoverHighlight);
 window.addEventListener("blur", clearFeatureHoverHighlight);
 guidanceDismiss.addEventListener("click", stopGuidance);
+map.on("popupopen", preparePointPopupPhoto);
 map.on("popupclose", () => {
   if (hidingPopupForRouteDetails) return;
   clearSelectedFeatureHighlight();
@@ -781,6 +795,7 @@ map.on("popupclose", () => {
 });
 
 loadLayerRegistry();
+installGuidancePreviewControl();
 
 infoButton.addEventListener("click", openInfo);
 infoClose.addEventListener("click", closeInfo);
@@ -1179,11 +1194,14 @@ async function loadLayerRegistry() {
         showRequiredDataNotice();
       }
     }
-    tryFocusRequestedFeature();
   });
 
   await Promise.all(tasks);
   if (!initialViewReady) finishInitialViewWithoutBoundary();
+  window.requestAnimationFrame(() => {
+    map.invalidateSize({ pan: false });
+    tryFocusRequestedFeature();
+  });
 }
 
 function validateDataManifest(manifest) {
@@ -1304,7 +1322,14 @@ function applyBoundaryData({ boundaries, corridor }) {
   boundaryHalo.addData(boundaries);
   boundaryLayer.addData(boundaries);
   boundaryInteractionLayer.addData(buildBoundaryLines(boundaries));
-  if (hasSavedMapView(savedMapPreferences)) {
+  if (requestedMapFocus === "property") {
+    focusRequestedBounds(boundaryLayer.getBounds(), [boundaryGroup], {
+      paddingTopLeft: PROPERTY_BOUNDS_PADDING,
+      paddingBottomRight: PROPERTY_BOUNDS_PADDING,
+      maxZoom: 18,
+      zoomSnap: 0.5,
+    });
+  } else if (hasSavedMapView(savedMapPreferences)) {
     map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
   } else {
     map.fitBounds(boundaryLayer.getBounds(), {
@@ -1316,7 +1341,6 @@ function applyBoundaryData({ boundaries, corridor }) {
   preferencesReady = true;
   saveMapPreferences();
   initialViewReady = true;
-  tryFocusRequestedFeature();
 }
 
 function finishInitialViewWithoutBoundary() {
@@ -1325,7 +1349,6 @@ function finishInitialViewWithoutBoundary() {
   preferencesReady = true;
   initialViewReady = true;
   saveMapPreferences();
-  tryFocusRequestedFeature();
 }
 
 function combineFeatureCollections(title, ...collections) {
@@ -1441,22 +1464,28 @@ function layerFocusBounds(layer) {
   return null;
 }
 
-function fitFocusBounds(bounds) {
+function fitFocusBounds(bounds, options = {}) {
   if (!bounds?.isValid()) return false;
-  if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
-    map.setView(bounds.getCenter(), 19, { animate: false });
-  } else {
-    map.fitBounds(bounds, {
-      paddingTopLeft: [48, 58],
-      paddingBottomRight: [58, 58],
-      maxZoom: 18,
-      animate: false,
-    });
+  const previousZoomSnap = map.options.zoomSnap;
+  if (Number.isFinite(options.zoomSnap)) map.options.zoomSnap = options.zoomSnap;
+  try {
+    if (bounds.getNorthEast().equals(bounds.getSouthWest())) {
+      map.setView(bounds.getCenter(), 19, { animate: false });
+    } else {
+      map.fitBounds(bounds, {
+        paddingTopLeft: options.paddingTopLeft || [48, 58],
+        paddingBottomRight: options.paddingBottomRight || [58, 58],
+        maxZoom: options.maxZoom ?? 18,
+        animate: false,
+      });
+    }
+  } finally {
+    map.options.zoomSnap = previousZoomSnap;
   }
   return true;
 }
 
-function focusRequestedBounds(bounds, overlays = []) {
+function focusRequestedBounds(bounds, overlays = [], fitOptions = {}) {
   if (!bounds?.isValid()) return false;
   programmaticFocusViewActive = true;
   suppressPreferencePersistence = true;
@@ -1478,7 +1507,7 @@ function focusRequestedBounds(bounds, overlays = []) {
     overlays.forEach((overlay) => {
       if (overlay && !map.hasLayer(overlay)) map.addLayer(overlay);
     });
-    const focused = fitFocusBounds(bounds);
+    const focused = fitFocusBounds(bounds, fitOptions);
     if (!focused) {
       release(false);
       return false;
@@ -1561,7 +1590,7 @@ function buildTrailPopupOptions(feature) {
   const segmentName = feature.properties.name;
   const routes = routesForFeature(feature);
   const detail = "Provisional walking-trail centerline from repeated phone-GPS passes.";
-  if (routes.length === 0) return { detail };
+  if (routes.length === 0) return { detail, standardPopupWidth: true };
 
   return {
     title: routes.map((route) => route.name).join(" \u00b7 "),
@@ -1579,7 +1608,7 @@ function buildRoadPopupOptions(feature) {
     .map((value) => value.trim().replace(/[.\s]+$/, ""))
     .join(". ");
   const safeDetail = detail ? `${detail}.` : "Approximate dirt-road centerline.";
-  if (routes.length === 0) return { detail: safeDetail };
+  if (routes.length === 0) return { detail: safeDetail, standardPopupWidth: true };
   return {
     title: routes.map((route) => route.name).join(" \u00b7 "),
     secondary: `Road: ${properties.name || "Mapped road"}`,
@@ -1716,9 +1745,14 @@ function registerGuidanceTarget(feature, layer) {
 }
 
 function buildMapFeaturePopup(feature, detail, options = {}) {
-  const name = escapeHtml(options.title || feature.properties.name);
+  const title = options.title || feature.properties.name;
+  const name = escapeHtml(title);
   const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
-  let popupHtml = '<div class="map-popup-content">';
+  const popupClass = shouldUseStandardPopupWidth(title, detail, options)
+    ? "map-popup-content map-popup-content--standard"
+    : "map-popup-content";
+  let popupHtml = `<div class="${popupClass}">`;
+  popupHtml += buildPointPhotoHtml(feature, name, options);
   popupHtml += `<strong>${name}</strong>`;
   if (options.secondary) {
     popupHtml += `<span class="map-popup-secondary">${escapeHtml(options.secondary)}</span>`;
@@ -1747,6 +1781,73 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
       `${guidanceButtonLabel(target.id)}</button>`;
   }
   return `${popupHtml}</div>`;
+}
+
+function shouldUseStandardPopupWidth(title, detail, options = {}) {
+  if (!options.standardPopupWidth || options.routes?.length) return false;
+  if (options.pointPhoto) return true;
+  const titleLength = String(title || "").trim().length;
+  const detailLength = String(detail || "").trim().length;
+  return titleLength > 18 || detailLength > 60;
+}
+
+function buildPointPhotoHtml(feature, safeName, options) {
+  const featureId = String(feature?.properties?.id || "").trim().toLowerCase();
+  if (
+    !options.pointPhoto ||
+    feature?.geometry?.type !== "Point" ||
+    !/^[a-z0-9][a-z0-9_-]*$/.test(featureId)
+  ) {
+    return "";
+  }
+  const photoPath = `assets/points/${encodeURIComponent(featureId)}.jpg`;
+  return (
+    '<figure class="point-popup-photo">' +
+    `<img src="${escapeHtml(photoPath)}" alt="${safeName}" loading="lazy">` +
+    "</figure>"
+  );
+}
+
+function handlePointPhotoLoad(event) {
+  const photo = event.target.closest?.(".point-popup-photo img");
+  if (!photo) return;
+  const figure = photo.closest(".point-popup-photo");
+  if (figure.classList.contains("is-loaded")) return;
+  figure.classList.add("is-loaded");
+  syncPointPopupContent(figure.closest(".map-popup-content"));
+}
+
+function handlePointPhotoError(event) {
+  const photo = event.target.closest?.(".point-popup-photo img");
+  if (!photo) return;
+  const figure = photo.closest(".point-popup-photo");
+  const content = figure?.closest(".map-popup-content");
+  figure?.remove();
+  syncPointPopupContent(content);
+}
+
+function syncPointPopupContent(content) {
+  const popup = typeof map.getPopup === "function" ? map.getPopup() : map._popup;
+  if (popup && content) popup.setContent(content.outerHTML);
+}
+
+function preparePointPopupPhoto(event) {
+  window.requestAnimationFrame(() => settlePointPopupPhoto(event.popup));
+}
+
+function settlePointPopupPhoto(popup) {
+  const photo = popup?.getElement()?.querySelector(".point-popup-photo img");
+  if (!photo) return;
+  if (!photo.complete) {
+    photo.addEventListener("load", handlePointPhotoLoad, { once: true });
+    photo.addEventListener("error", handlePointPhotoError, { once: true });
+    if (!photo.complete) return;
+  }
+  if (photo.naturalWidth > 0) {
+    handlePointPhotoLoad({ target: photo });
+  } else {
+    handlePointPhotoError({ target: photo });
+  }
 }
 
 function buildRouteSummaryHtml(routes) {
@@ -2329,13 +2430,13 @@ function renderGuidanceTint(error, { centered = false } = {}) {
   const signedError = normalizeBearingError(error);
   const magnitude = Math.min(Math.abs(signedError), GUIDANCE_MAX_ERROR_DEG);
   const style = interpolateGuidanceRamp(magnitude, ramp);
-  const offset = centered ? 0 : Math.max(-1, Math.min(1, signedError / 90)) * 46;
+  const position = guidancePerimeterPosition(centered ? 0 : signedError);
   guidanceTracker.headingError = centered ? null : signedError;
-  guidanceTint.style.setProperty("--guidance-offset", `${offset}vw`);
+  guidanceTint.style.setProperty("--guidance-x", `${position.x}%`);
+  guidanceTint.style.setProperty("--guidance-y", `${position.y}%`);
   guidanceTint.style.setProperty("--guidance-saturation", `${style.saturation}%`);
   guidanceTint.style.setProperty("--guidance-lightness", `${style.lightness}%`);
   guidanceTint.style.setProperty("--guidance-opacity", style.opacity);
-  guidanceTint.style.setProperty("--guidance-width", `${style.width}vw`);
   guidanceTint.style.setProperty("--guidance-blur", `${style.blur}px`);
   guidanceTint.classList.toggle(
     "guidance-tint--locked",
@@ -2354,15 +2455,50 @@ function renderGuidanceTint(error, { centered = false } = {}) {
   if (guidanceTracker.isActive && !centered) updateGuidancePill();
 }
 
+function guidancePerimeterPosition(error) {
+  const radians = normalizeBearingError(error) * Math.PI / 180;
+  const perimeterRadius = 52;
+  return {
+    x: Number((50 + perimeterRadius * Math.sin(radians)).toFixed(2)),
+    y: Number((50 - perimeterRadius * Math.cos(radians)).toFixed(2)),
+  };
+}
+
+function previewGuidanceHeadingError(error) {
+  if (error === null || String(error).trim() === "") {
+    throw new TypeError("Guidance preview error must be a number from -180 to 180.");
+  }
+  const parsedError = Number(error);
+  if (!Number.isFinite(parsedError)) {
+    throw new TypeError("Guidance preview error must be a number from -180 to 180.");
+  }
+  const normalizedError = Math.max(-180, Math.min(180, parsedError));
+  renderGuidanceTint(normalizedError);
+  return { error: normalizedError, ...guidancePerimeterPosition(normalizedError) };
+}
+
+function installGuidancePreviewControl() {
+  window.previewGuidanceHeadingError = previewGuidanceHeadingError;
+  const requestedPreview = new URLSearchParams(window.location.search).get("guidanceError");
+  if (requestedPreview === null) return;
+  window.requestAnimationFrame(() => {
+    try {
+      previewGuidanceHeadingError(requestedPreview);
+    } catch (error) {
+      console.warn(error.message);
+    }
+  });
+}
+
 function readGuidanceRamp() {
   const styles = getComputedStyle(document.documentElement);
   const value = (name) => Number.parseFloat(styles.getPropertyValue(name));
   return [
-    { error: 0, saturation: value("--guidance-saturation-0"), lightness: value("--guidance-lightness-0"), opacity: value("--guidance-opacity-0"), width: value("--guidance-width-0"), blur: value("--guidance-blur-0") },
-    { error: 30, saturation: value("--guidance-saturation-30"), lightness: value("--guidance-lightness-30"), opacity: value("--guidance-opacity-30"), width: value("--guidance-width-30"), blur: value("--guidance-blur-30") },
-    { error: 60, saturation: value("--guidance-saturation-60"), lightness: value("--guidance-lightness-60"), opacity: value("--guidance-opacity-60"), width: value("--guidance-width-60"), blur: value("--guidance-blur-60") },
-    { error: 110, saturation: value("--guidance-saturation-110"), lightness: value("--guidance-lightness-110"), opacity: value("--guidance-opacity-110"), width: value("--guidance-width-110"), blur: value("--guidance-blur-110") },
-    { error: 180, saturation: value("--guidance-saturation-180"), lightness: value("--guidance-lightness-180"), opacity: value("--guidance-opacity-180"), width: value("--guidance-width-180"), blur: value("--guidance-blur-180") },
+    { error: 0, saturation: value("--guidance-saturation-0"), lightness: value("--guidance-lightness-0"), opacity: value("--guidance-opacity-0"), blur: value("--guidance-blur-0") },
+    { error: 30, saturation: value("--guidance-saturation-30"), lightness: value("--guidance-lightness-30"), opacity: value("--guidance-opacity-30"), blur: value("--guidance-blur-30") },
+    { error: 60, saturation: value("--guidance-saturation-60"), lightness: value("--guidance-lightness-60"), opacity: value("--guidance-opacity-60"), blur: value("--guidance-blur-60") },
+    { error: 110, saturation: value("--guidance-saturation-110"), lightness: value("--guidance-lightness-110"), opacity: value("--guidance-opacity-110"), blur: value("--guidance-blur-110") },
+    { error: 180, saturation: value("--guidance-saturation-180"), lightness: value("--guidance-lightness-180"), opacity: value("--guidance-opacity-180"), blur: value("--guidance-blur-180") },
   ];
 }
 
@@ -2382,7 +2518,6 @@ function interpolateGuidanceRamp(error, ramp) {
     saturation: mix("saturation"),
     lightness: mix("lightness"),
     opacity: mix("opacity"),
-    width: mix("width"),
     blur: mix("blur"),
   };
 }

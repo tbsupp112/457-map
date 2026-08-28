@@ -69,6 +69,7 @@ Ids must be present and unique across roads, trails, zones, buildings, landmarks
 - `landmarks/landmarks.geojson` — non-building destinations such as the provisional landmark The Barbershop.
 - Each occupied two-meter spatial cell from the walked building extent counts once. This prevents time spent standing in one location from biasing the result.
 - Future natural landmarks and miscellaneous landmarks should use separate GeoJSON files in this folder. Empty placeholder files are intentionally avoided.
+- Optional popup photos live in `../assets/points/`. Name one JPEG for the point feature's lowercase id, such as `pavilion.jpg` or `the-barbershop.jpg`; no manifest or data edit is needed. Keep photos roughly 1200 px wide or smaller and under 300 KB, and strip EXIF metadata—especially GPS coordinates—before adding them. Replacing a photo under the same filename may require a browser hard reload because point-photo URLs are deliberately not cache-versioned.
 
 ## Zones
 

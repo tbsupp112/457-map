@@ -145,6 +145,19 @@
       "optional_properties": ["status", "note", "recorded_on", "map_offset_from_building_m", "snap_adjustment_m"],
       "authored_properties": ["id", "name", "type", "features", "status", "note"],
       "generated_properties": ["recorded_on", "map_offset_from_building_m", "snap_adjustment_m"]
+    },
+    {
+      "key": "camSites",
+      "path": "data/cams/cam-sites.geojson",
+      "format": "geojson",
+      "feature_type": "cam-site",
+      "geometry_types": ["Point"],
+      "required": false,
+      "ids": true,
+      "required_properties": ["id", "name", "status"],
+      "optional_properties": ["note"],
+      "authored_properties": ["id", "name", "status", "note"],
+      "generated_properties": []
     }
   ]
 }

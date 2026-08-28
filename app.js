@@ -35,6 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
+const DATA_CACHE_VERSION = "20260828-3";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -68,6 +69,16 @@ let featureHoverClearTimer = null;
 let openMapRouteDetails = null;
 let hidingPopupForRouteDetails = false;
 const roadVisualLayersById = new Map();
+const trailVisualLayersById = new Map();
+const zoneVisualLayersById = new Map();
+const boundaryVisualLayersById = new Map();
+const corridorVisualLayersByName = new Map();
+const camSiteVisualLayersById = new Map();
+let camSitesVisualLayer = null;
+let camSitesInteractionLayer = null;
+let camDeploymentArrowsLayer = null;
+let camDraftArrowLayer = null;
+let camSitesGroup = null;
 
 const offPropertyTracker = {
   geometry: null,
@@ -155,8 +166,9 @@ const LAYER_DEFINITIONS = [
       kind: "geojson",
       panes: [{ key: "zones", name: "zones-pane", order: 20 }],
       style: { color: "#f0c85f", weight: 2, opacity: 0.95, dashArray: "2 7", fillColor: "#f5dda0", fillOpacity: 0.14 },
+      interactionStyle: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
     },
-    getLayer: () => zonesLayer,
+    getLayer: () => zonesGroup,
     applyData: applyZonesData,
   },
   {
@@ -171,8 +183,9 @@ const LAYER_DEFINITIONS = [
       kind: "geojson",
       panes: [{ key: "corridor", name: "corridor-pane", order: 30 }],
       style: { color: "#d5d9dc", weight: 3, opacity: 0.95, dashArray: "6 6", fillColor: "#e2e5e7", fillOpacity: 0.28 },
+      interactionStyle: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
     },
-    getLayer: () => corridorLayer,
+    getLayer: () => corridorGroup,
     applyData: applyCorridorData,
   },
   {
@@ -188,8 +201,7 @@ const LAYER_DEFINITIONS = [
       panes: [{ key: "boundary", name: "boundary-pane", order: 40 }],
       haloStyle: { color: "#102f29", weight: 8, opacity: 0.88, fillOpacity: 0, lineJoin: "round" },
       style: { color: "#5ee6bd", weight: 4, opacity: 1, fillColor: "#5ee6bd", fillOpacity: 0.03, lineJoin: "round" },
-      mainInteractionStyle: { color: "#000000", weight: 12, opacity: 0.001 },
-      sliverInteractionStyle: { stroke: false, fillColor: "#000000", fillOpacity: 0.001 },
+      interactionStyle: { color: "#ffffff", weight: 12, opacity: 0.001, fill: false, lineJoin: "round" },
     },
     getLayer: () => boundaryGroup,
     applyData: applyBoundaryData,
@@ -204,14 +216,7 @@ const LAYER_DEFINITIONS = [
     defaultVisible: { visitor: true, owner: true },
     render: {
       kind: "composite",
-      panes: [
-        { key: "roads", name: "roads-pane", order: 50 },
-        // The interaction paths must sit above the full-map trail canvas or
-        // that canvas intercepts road pointer events. They remain below every
-        // landmark and pin pane, and their nearly transparent stroke changes
-        // no visible layer ordering.
-        { key: "roadInteractions", name: "road-interactions-pane", order: 67 },
-      ],
+      panes: [{ key: "roads", name: "roads-pane", order: 50 }],
       haloStyle: { color: "#473522", weight: 0, opacity: 0, lineCap: "round", lineJoin: "round" },
       style: { color: "#d89a4a", weight: 3, opacity: 0.98, lineCap: "round", lineJoin: "round" },
       interactionStyle: { color: "#ffffff", weight: ROAD_INTERACTION_WEIGHT_PX, opacity: 0.001, lineCap: "round", lineJoin: "round" },
@@ -227,8 +232,13 @@ const LAYER_DEFINITIONS = [
     sources: ["mountainDrive", "driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
-    render: { kind: "geojson", panes: [{ key: "trails", name: "trails-pane", order: 60 }], style: trailStyle },
-    getLayer: () => trailsLayer,
+    render: {
+      kind: "geojson",
+      panes: [{ key: "trails", name: "trails-pane", order: 60 }],
+      style: trailStyle,
+      interactionStyle: { color: "#ffffff", weight: ROAD_INTERACTION_WEIGHT_PX, opacity: 0.001, lineCap: "round", lineJoin: "round" },
+    },
+    getLayer: () => trailsGroup,
     applyData: applyTrailsData,
   },
   {
@@ -244,6 +254,34 @@ const LAYER_DEFINITIONS = [
     applyData: applyRouteDefinitionData,
   },
   {
+    key: "camSites",
+    label: "Trail cam sites",
+    group: "45-cams",
+    order: 64,
+    sources: ["camSites"],
+    audiences: ["owner"],
+    defaultVisible: { owner: false },
+    render: {
+      kind: "geojson",
+      panes: [{ key: "camSites", name: "cam-sites-pane", order: 64 }],
+      markerStyle: {
+        radius: 7,
+        color: "#14231d",
+        weight: 2,
+        fillColor: "#ffd45f",
+        fillOpacity: 1,
+      },
+      interactionStyle: {
+        radius: 18,
+        stroke: false,
+        fillColor: "#000000",
+        fillOpacity: 0.001,
+      },
+    },
+    getLayer: () => camSitesGroup,
+    applyData: applyCamSitesData,
+  },
+  {
     key: "liveLocation",
     label: null,
     group: "runtime",
@@ -254,6 +292,24 @@ const LAYER_DEFINITIONS = [
     render: {
       kind: "runtime",
       panes: [{ key: "liveLocation", name: "live-location-pane", order: 66 }],
+    },
+    getLayer: () => null,
+    applyData() {},
+  },
+  {
+    key: "interactions",
+    label: null,
+    group: "runtime",
+    order: 67,
+    sources: [],
+    audiences: ALL_AUDIENCES,
+    defaultVisible: { visitor: true, owner: true },
+    render: {
+      kind: "runtime",
+      // One SVG pane sits above every full-viewport visual canvas and below
+      // the landmark and marker panes. Only its painted hit paths receive
+      // pointer events, so empty map areas continue to fall through.
+      panes: [{ key: "interactions", name: "interactions-pane", order: 67 }],
     },
     getLayer: () => null,
     applyData() {},
@@ -299,7 +355,8 @@ const LAYER_DEFINITIONS = [
     defaultVisible: { visitor: false, owner: false },
     render: {
       kind: "geojson",
-      panes: [{ key: "intersections", name: "intersections-pane", order: 90 }],
+      panes: [],
+      markerPane: "interactions",
       markerStyle: { radius: 5, color: "#ffffff", weight: 2, fillColor: "#8e4c9e", fillOpacity: 1 },
     },
     getLayer: () => intersectionsLayer,
@@ -308,6 +365,7 @@ const LAYER_DEFINITIONS = [
 ];
 
 const paneDefinitions = LAYER_DEFINITIONS
+  .filter((definition) => definition.audiences.includes(activeAudience))
   .flatMap((definition) => definition.render.panes)
   .sort((first, second) => first.order - second.order);
 const MAP_PANES = Object.freeze(
@@ -327,6 +385,9 @@ const CORRIDOR_RENDER_CONFIG = getLayerDefinition("corridor").render;
 const BOUNDARY_RENDER_CONFIG = getLayerDefinition("boundary").render;
 const ROAD_RENDER_CONFIG = getLayerDefinition("roads").render;
 const TRAIL_RENDER_CONFIG = getLayerDefinition("trails").render;
+const CAM_SITE_RENDER_CONFIG = activeAudience === "owner"
+  ? getLayerDefinition("camSites").render
+  : null;
 const LANDMARK_RENDER_CONFIG = getLayerDefinition("landmarks").render;
 const CORNER_RENDER_CONFIG = getLayerDefinition("corners").render;
 const INTERSECTION_RENDER_CONFIG = getLayerDefinition("intersections").render;
@@ -341,8 +402,8 @@ const roadsRenderer = L.canvas({
   pane: MAP_PANES.roads,
   tolerance: ROAD_HIT_TOLERANCE_PX,
 });
-const roadInteractionsRenderer = L.svg({
-  pane: MAP_PANES.roadInteractions,
+const interactionsRenderer = L.svg({
+  pane: MAP_PANES.interactions,
   padding: 0.5,
 });
 const trailsRenderer = L.canvas({
@@ -350,7 +411,9 @@ const trailsRenderer = L.canvas({
   tolerance: TRAIL_HIT_TOLERANCE_PX,
 });
 const zonesRenderer = L.canvas({ pane: MAP_PANES.zones });
-const intersectionsRenderer = L.canvas({ pane: MAP_PANES.intersections });
+const camSitesRenderer = activeAudience === "owner"
+  ? L.canvas({ pane: MAP_PANES.camSites })
+  : null;
 
 const nysAerial = L.tileLayer(
   "https://orthos.its.ny.gov/arcgis/rest/services/wms/2022/MapServer/tile/{z}/{y}/{x}",
@@ -384,20 +447,29 @@ const outsideMaskLayer = L.geoJSON(null, {
 const corridorLayer = L.geoJSON(null, {
   pane: MAP_PANES.corridor,
   renderer: corridorRenderer,
+  interactive: false,
   style: CORRIDOR_RENDER_CONFIG.style,
   onEachFeature(feature, layer) {
-    registerFocusableFeature(feature, layer, corridorLayer);
-    const message = "National Grid powerline cut — not our land, but access is allowed.";
-    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) {
-      layer.bindTooltip(message, { sticky: true, direction: "top" });
+    if (feature.properties?.name) {
+      corridorVisualLayersByName.set(feature.properties.name, layer);
     }
-    layer.bindPopup(() =>
-      buildMapFeaturePopup(feature, "Not our land, but access is allowed.", {
-        caveat: "Shaded extent is approximate; corridor edges are not surveyed here.",
-      }),
-    );
   },
 });
+const corridorInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.interactions,
+  renderer: interactionsRenderer,
+  style: CORRIDOR_RENDER_CONFIG.interactionStyle,
+  onEachFeature(feature, layer) {
+    const message = "National Grid powerline cut — not our land, but access is allowed.";
+    bindMapFeature(layer, feature, "Not our land, but access is allowed.", {
+      tooltip: message,
+      caveat: "Shaded extent is approximate; corridor edges are not surveyed here.",
+      focusOverlay: corridorGroup,
+      visualLayer: corridorVisualLayersByName.get(feature.properties?.name),
+    });
+  },
+});
+const corridorGroup = L.layerGroup([corridorLayer, corridorInteractionLayer]);
 
 // Intentionally retained as a zero-width tuning layer so a road halo can be
 // restored without changing the road data or interaction layer.
@@ -418,8 +490,8 @@ const roadsLayer = L.geoJSON(null, {
   },
 });
 const roadInteractionLayer = L.geoJSON(null, {
-  pane: MAP_PANES.roadInteractions,
-  renderer: roadInteractionsRenderer,
+  pane: MAP_PANES.interactions,
+  renderer: interactionsRenderer,
   style: ROAD_RENDER_CONFIG.interactionStyle,
   onEachFeature(feature, layer) {
     const popupOptions = buildRoadPopupOptions(feature);
@@ -435,22 +507,48 @@ const roadsGroup = L.layerGroup([roadHalo, roadsLayer, roadInteractionLayer]);
 const trailsLayer = L.geoJSON(null, {
   pane: MAP_PANES.trails,
   renderer: trailsRenderer,
+  interactive: false,
   style: TRAIL_RENDER_CONFIG.style,
   onEachFeature(feature, layer) {
-    const popupOptions = buildTrailPopupOptions(feature);
-    popupOptions.focusOverlay = trailsLayer;
-    bindMapFeature(layer, feature, popupOptions.detail, popupOptions);
+    if (feature.properties?.id) trailVisualLayersById.set(feature.properties.id, layer);
   },
 });
+const trailInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.interactions,
+  renderer: interactionsRenderer,
+  style: TRAIL_RENDER_CONFIG.interactionStyle,
+  onEachFeature(feature, layer) {
+    const popupOptions = buildTrailPopupOptions(feature);
+    bindMapFeature(layer, feature, popupOptions.detail, {
+      ...popupOptions,
+      focusOverlay: trailsGroup,
+      visualLayer: trailVisualLayersById.get(feature.properties?.id),
+    });
+  },
+});
+const trailsGroup = L.layerGroup([trailsLayer, trailInteractionLayer]);
 
 const zonesLayer = L.geoJSON(null, {
   pane: MAP_PANES.zones,
   renderer: zonesRenderer,
+  interactive: false,
   style: ZONE_RENDER_CONFIG.style,
   onEachFeature(feature, layer) {
-    bindMapFeature(layer, feature, feature.properties.note, { focusOverlay: zonesLayer });
+    if (feature.properties?.id) zoneVisualLayersById.set(feature.properties.id, layer);
   },
 });
+const zonesInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.interactions,
+  renderer: interactionsRenderer,
+  style: ZONE_RENDER_CONFIG.interactionStyle,
+  onEachFeature(feature, layer) {
+    bindMapFeature(layer, feature, feature.properties.note, {
+      focusOverlay: zonesGroup,
+      visualLayer: zoneVisualLayersById.get(feature.properties?.id),
+    });
+  },
+});
+const zonesGroup = L.layerGroup([zonesLayer, zonesInteractionLayer]);
 
 const buildingIcon = L.icon({
   iconUrl: "assets/icons/building-pin.webp",
@@ -488,12 +586,12 @@ const landmarksLayer = L.geoJSON(null, {
 });
 
 const intersectionsLayer = L.geoJSON(null, {
-  pane: MAP_PANES.intersections,
-  renderer: intersectionsRenderer,
+  pane: MAP_PANES[INTERSECTION_RENDER_CONFIG.markerPane],
+  renderer: interactionsRenderer,
   pointToLayer(feature, latlng) {
     return L.circleMarker(latlng, {
-      pane: MAP_PANES.intersections,
-      renderer: intersectionsRenderer,
+      pane: MAP_PANES[INTERSECTION_RENDER_CONFIG.markerPane],
+      renderer: interactionsRenderer,
       ...INTERSECTION_RENDER_CONFIG.markerStyle,
     });
   },
@@ -503,6 +601,58 @@ const intersectionsLayer = L.geoJSON(null, {
     });
   },
 });
+
+if (activeAudience === "owner") {
+  camDeploymentArrowsLayer = L.layerGroup();
+  camDraftArrowLayer = L.layerGroup();
+  camSitesVisualLayer = L.geoJSON(null, {
+    pane: MAP_PANES.camSites,
+    renderer: camSitesRenderer,
+    interactive: false,
+    pointToLayer(feature, latlng) {
+      return L.circleMarker(latlng, {
+        pane: MAP_PANES.camSites,
+        renderer: camSitesRenderer,
+        interactive: false,
+        ...CAM_SITE_RENDER_CONFIG.markerStyle,
+      });
+    },
+    onEachFeature(feature, layer) {
+      if (feature.properties?.id) {
+        camSiteVisualLayersById.set(feature.properties.id, layer);
+      }
+    },
+  });
+  camSitesInteractionLayer = L.geoJSON(null, {
+    pane: MAP_PANES.interactions,
+    renderer: interactionsRenderer,
+    pointToLayer(feature, latlng) {
+      return L.circleMarker(latlng, {
+        pane: MAP_PANES.interactions,
+        renderer: interactionsRenderer,
+        ...CAM_SITE_RENDER_CONFIG.interactionStyle,
+      });
+    },
+    onEachFeature(feature, layer) {
+      bindMapFeature(
+        layer,
+        feature,
+        () => window.CamCapture?.formatSiteDetail(feature),
+        {
+          focusOverlay: camSitesGroup,
+          visualLayer: camSiteVisualLayersById.get(feature.properties?.id),
+          onActivate: (event) => window.CamCapture?.handleSiteActivation(feature, event),
+        },
+      );
+    },
+  });
+  camSitesGroup = L.layerGroup([
+    camDeploymentArrowsLayer,
+    camDraftArrowLayer,
+    camSitesVisualLayer,
+    camSitesInteractionLayer,
+  ]);
+}
 
 const boundaryHalo = L.geoJSON(null, {
   pane: MAP_PANES.boundary,
@@ -516,38 +666,30 @@ const boundaryLayer = L.geoJSON(null, {
   renderer: boundaryRenderer,
   interactive: false,
   style: BOUNDARY_RENDER_CONFIG.style,
-});
-
-const mainBoundaryInteractionLayer = L.geoJSON(null, {
-  pane: MAP_PANES.boundary,
-  renderer: boundaryRenderer,
-  style: BOUNDARY_RENDER_CONFIG.mainInteractionStyle,
   onEachFeature(feature, layer) {
-    registerFocusableFeature(feature, layer, mainBoundaryInteractionLayer);
-    const description = feature.properties.popup_description || feature.properties.note;
-    layer.bindPopup(() => buildMapFeaturePopup(feature, description));
+    if (feature.properties?.id) {
+      boundaryVisualLayersById.set(feature.properties.id, layer);
+    }
   },
 });
 
-const sliverInteractionLayer = L.geoJSON(null, {
-  pane: MAP_PANES.boundary,
-  renderer: boundaryRenderer,
-  filter(feature) {
-    return feature.properties.role === "sliver";
-  },
-  style: BOUNDARY_RENDER_CONFIG.sliverInteractionStyle,
+const boundaryInteractionLayer = L.geoJSON(null, {
+  pane: MAP_PANES.interactions,
+  renderer: interactionsRenderer,
+  style: BOUNDARY_RENDER_CONFIG.interactionStyle,
   onEachFeature(feature, layer) {
-    registerFocusableFeature(feature, layer, sliverInteractionLayer);
-    const description = feature.properties.popup_description || feature.properties.note;
-    layer.bindPopup(() => buildMapFeaturePopup(feature, description));
+    const description = feature.properties.note || feature.properties.popup_description;
+    bindMapFeature(layer, feature, description, {
+      focusOverlay: boundaryGroup,
+      visualLayer: boundaryVisualLayersById.get(feature.properties?.id),
+    });
   },
 });
 
 const boundaryGroup = L.layerGroup([
   boundaryHalo,
   boundaryLayer,
-  mainBoundaryInteractionLayer,
-  sliverInteractionLayer,
+  boundaryInteractionLayer,
 ]);
 
 const cornersLayer = L.geoJSON(null, {
@@ -588,6 +730,19 @@ const layerControl = L.control
 
 installLayerResetButton(layerControl);
 const clearLayerControlHoverDelay = installLayerControlHoverDelay(layerControl);
+
+if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
+  window.CamCapture.initialize({
+    map,
+    sitesLayer: camSitesGroup,
+    deploymentArrowsLayer: camDeploymentArrowsLayer,
+    draftArrowLayer: camDraftArrowLayer,
+    pane: MAP_PANES.camSites,
+    renderer: camSitesRenderer,
+    calculateTrueBearing,
+    clearSelection: clearSelectedFeatureHighlight,
+  });
+}
 
 map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEvent);
 map.on("movestart zoomstart", handleMapViewChangeStart);
@@ -988,7 +1143,7 @@ let hasShownRequiredDataNotice = false;
 async function loadLayerRegistry() {
   let manifest;
   try {
-    const response = await fetch("data/manifest.json");
+    const response = await fetch(versionedDataUrl("data/manifest.json"));
     if (!response.ok) throw new Error(`network response ${response.status}`);
     manifest = await response.json();
     validateDataManifest(manifest);
@@ -1011,7 +1166,7 @@ async function loadLayerRegistry() {
     return sourcePromises.get(key);
   };
 
-  const tasks = LAYER_DEFINITIONS.map(async (definition) => {
+  const tasks = getAudienceLayerDefinitions().map(async (definition) => {
     const sourceEntries = await Promise.all(
       definition.sources.map(async (key) => [key, await loadSourceByKey(key)]),
     );
@@ -1054,7 +1209,7 @@ function validateDataManifest(manifest) {
 
 async function loadManifestSource(source) {
   try {
-    const response = await fetch(source.path);
+    const response = await fetch(versionedDataUrl(source.path));
     if (!response.ok) {
       if (!source.required && response.status === 404) return null;
       throw new Error(`network response ${response.status}`);
@@ -1077,6 +1232,11 @@ async function loadManifestSource(source) {
     if (source.required) showRequiredDataNotice();
     return null;
   }
+}
+
+function versionedDataUrl(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}v=${DATA_CACHE_VERSION}`;
 }
 
 function validateManifestSourceData(source, data) {
@@ -1121,11 +1281,15 @@ function applyOutsideMaskData({ boundaries, corridor }) {
 }
 
 function applyZonesData({ zones }) {
-  if (zones) zonesLayer.addData(zones);
+  if (!zones) return;
+  zonesLayer.addData(zones);
+  zonesInteractionLayer.addData(zones);
 }
 
 function applyCorridorData({ corridor }) {
-  if (corridor) corridorLayer.addData(corridor);
+  if (!corridor) return;
+  corridorLayer.addData(corridor);
+  corridorInteractionLayer.addData(corridor);
 }
 
 function applyBoundaryData({ boundaries, corridor }) {
@@ -1139,8 +1303,7 @@ function applyBoundaryData({ boundaries, corridor }) {
   }
   boundaryHalo.addData(boundaries);
   boundaryLayer.addData(boundaries);
-  mainBoundaryInteractionLayer.addData(buildMainBoundaryLine(boundaries));
-  sliverInteractionLayer.addData(boundaries);
+  boundaryInteractionLayer.addData(buildBoundaryLines(boundaries));
   if (hasSavedMapView(savedMapPreferences)) {
     map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
   } else {
@@ -1193,7 +1356,10 @@ function applyTrailsData({ mountainDrive, driveway, trails, routes }) {
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
   );
-  if (trails) trailsLayer.addData(trails);
+  if (trails) {
+    trailsLayer.addData(trails);
+    trailInteractionLayer.addData(trails);
+  }
 }
 
 function applyRouteDefinitionData({ mountainDrive, driveway, trails, routes }) {
@@ -1215,6 +1381,13 @@ function applyCornersData({ corners }) {
 
 function applyIntersectionsData({ intersections }) {
   if (intersections) intersectionsLayer.addData(intersections);
+}
+
+function applyCamSitesData({ camSites }) {
+  if (!camSites || !camSitesVisualLayer || !camSitesInteractionLayer) return;
+  camSitesVisualLayer.addData(camSites);
+  camSitesInteractionLayer.addData(camSites);
+  window.CamCapture?.setSites(camSites.features || []);
 }
 
 function configureMapRoutes(featureCollections, routes) {
@@ -1415,24 +1588,23 @@ function buildRoadPopupOptions(feature) {
   };
 }
 
-function buildMainBoundaryLine(boundaryData) {
-  const mainParcel = boundaryData.features.find(
-    (feature) => feature.properties.role === "main-parcel",
-  );
-  if (!mainParcel) return { type: "FeatureCollection", features: [] };
-
+function buildBoundaryLines(boundaryData) {
   return {
     type: "FeatureCollection",
-    features: [
-      {
+    features: (boundaryData.features || []).map((feature) => {
+      const geometry = feature.geometry || {};
+      const isMultiPolygon = geometry.type === "MultiPolygon";
+      return {
         type: "Feature",
-        properties: mainParcel.properties,
+        properties: feature.properties,
         geometry: {
-          type: "LineString",
-          coordinates: mainParcel.geometry.coordinates[0],
+          type: isMultiPolygon ? "MultiLineString" : "LineString",
+          coordinates: isMultiPolygon
+            ? (geometry.coordinates || []).map((polygon) => polygon[0])
+            : geometry.coordinates?.[0] || [],
         },
-      },
-    ],
+      };
+    }),
   };
 }
 
@@ -1645,10 +1817,13 @@ function bindMapFeature(layer, feature, detail, options = {}) {
     "(any-hover: hover) and (any-pointer: fine)",
   ).matches;
   if (hasFinePointer) {
-    layer.bindTooltip(escapeHtml(options.title || feature.properties.name), {
-      sticky: true,
-      direction: "top",
-    });
+    layer.bindTooltip(
+      escapeHtml(options.tooltip || options.title || feature.properties.name),
+      {
+        sticky: true,
+        direction: "top",
+      },
+    );
     installFeatureHoverFeedback(
       () => featureSelectionLayers(layer, options),
       layer,
@@ -1661,22 +1836,28 @@ function bindMapFeature(layer, feature, detail, options = {}) {
     pendingFeaturePopupTimer = null;
     if (featurePopupsAreSuppressed()) return;
 
-    const openPopup = () => {
+    const activateFeature = () => {
       pendingFeaturePopupTimer = null;
       if (featurePopupsAreSuppressed()) return;
+      if (typeof options.onActivate === "function" && options.onActivate(event)) {
+        setSelectedFeatureLayers(featureSelectionLayers(layer, options));
+        return;
+      }
+      if (window.CamCapture?.isCapturing()) return;
       closeMapRouteDetails({ restorePopup: false, restoreFocus: false });
       map.closePopup();
       setSelectedFeatureLayers(featureSelectionLayers(layer, options));
+      const resolvedDetail = typeof detail === "function" ? detail(feature) : detail;
       L.popup()
         .setLatLng(event.latlng)
-        .setContent(buildMapFeaturePopup(feature, detail, options))
+        .setContent(buildMapFeaturePopup(feature, resolvedDetail, options))
         .openOn(map);
     };
     if (hasFinePointer) {
-      openPopup();
+      activateFeature();
     } else {
       pendingFeaturePopupTimer = window.setTimeout(
-        openPopup,
+        activateFeature,
         RAPID_DOUBLE_TAP_MS + 20,
       );
     }

@@ -28,6 +28,8 @@ class ValidateDataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=ROOT) as temporary_directory:
             temporary_root = Path(temporary_directory)
             shutil.copytree(ROOT / "data", temporary_root / "data")
+            shutil.copy2(ROOT / "app.js", temporary_root / "app.js")
+            shutil.copy2(ROOT / "home.js", temporary_root / "home.js")
             mutate(temporary_root)
             return validate_repository(temporary_root).errors
 
@@ -77,6 +79,58 @@ class ValidateDataTests(unittest.TestCase):
 
         errors = self.validate_broken_copy(mutate)
         self.assertTrue(any("Local-only item remains" in error for error in errors), errors)
+
+    def test_manifest_source_reference_mismatches_fail_informatively(self) -> None:
+        def mutate_missing_reference(root: Path) -> None:
+            path = root / "home.js"
+            source = path.read_text(encoding="utf-8")
+            path.write_text(
+                source.replace('"mountainDrive"', '"missingRoadSource"', 1),
+                encoding="utf-8",
+            )
+
+        missing_errors = self.validate_broken_copy(mutate_missing_reference)
+        self.assertTrue(
+            any(
+                "home.js references missing manifest source key 'missingRoadSource'" in error
+                for error in missing_errors
+            ),
+            missing_errors,
+        )
+
+        def mutate_unused_source(root: Path) -> None:
+            path = root / "data" / "manifest.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            extra_source = dict(manifest["sources"][0])
+            extra_source["key"] = "unusedBoundaries"
+            extra_source["required"] = False
+            manifest["sources"].append(extra_source)
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+
+        unused_errors = self.validate_broken_copy(mutate_unused_source)
+        self.assertTrue(
+            any(
+                "Manifest source key 'unusedBoundaries' is not referenced" in error
+                for error in unused_errors
+            ),
+            unused_errors,
+        )
+
+    def test_non_placeholder_cam_site_positions_fail_informatively(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / "data" / "cams" / "cam-sites.geojson"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["properties"]["position_status"] = "real"
+            path.write_text(json.dumps(data), encoding="utf-8")
+
+        errors = self.validate_broken_copy(mutate)
+        self.assertTrue(
+            any(
+                "position_status must remain 'placeholder'" in error
+                for error in errors
+            ),
+            errors,
+        )
 
 
 if __name__ == "__main__":

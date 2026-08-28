@@ -46,6 +46,45 @@ def read_json(path: Path, report: ValidationReport, *, required: bool = True) ->
         return None
 
 
+def validate_manifest_source_references(
+    root: Path, source_keys: set[str], report: ValidationReport
+) -> None:
+    reference_patterns = {
+        "app.js": re.compile(r"\bsources\s*:\s*\[([^\]]*)\]", re.DOTALL),
+        "home.js": re.compile(
+            r"\bconst\s+requiredKeys\s*=\s*\[([^\]]*)\]", re.DOTALL
+        ),
+    }
+    string_literal = re.compile(r'["\']([^"\']+)["\']')
+    references_by_file: dict[str, set[str]] = {}
+
+    for filename, pattern in reference_patterns.items():
+        path = root / filename
+        try:
+            source = path.read_text(encoding="utf-8")
+        except OSError as error:
+            report.error(f"Could not read manifest source references from {filename}: {error}")
+            continue
+        arrays = pattern.findall(source)
+        if not arrays:
+            report.error(f"Could not find static manifest source references in {filename}")
+            continue
+        references = {
+            match.group(1)
+            for array_source in arrays
+            for match in string_literal.finditer(array_source)
+        }
+        references_by_file[filename] = references
+        for key in sorted(references - source_keys):
+            report.error(f"{filename} references missing manifest source key {key!r}")
+
+    referenced_keys = set().union(*references_by_file.values()) if references_by_file else set()
+    for key in sorted(source_keys - referenced_keys):
+        report.error(
+            f"Manifest source key {key!r} is not referenced by app.js or home.js"
+        )
+
+
 def property_is_present(properties: dict[str, Any], key: str) -> bool:
     value = properties.get(key)
     return value is not None and value != ""
@@ -348,6 +387,16 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
                 pins.append((str(pin_name), coordinate_pairs[0]))
             if source.get("feature_type") in {"road", "trail"} and isinstance(properties.get("id"), str):
                 segments_by_id[properties["id"]] = record
+
+    validate_manifest_source_references(root, source_keys, report)
+
+    cam_sites = data_by_key.get("camSites")
+    if cam_sites is not None:
+        position_status = cam_sites.get("properties", {}).get("position_status")
+        if position_status != "placeholder":
+            report.error(
+                "data/cams/cam-sites.geojson position_status must remain 'placeholder' in the public repository"
+            )
 
     boundaries = data_by_key.get("boundaries", {}).get("features", [])
     role_counts: dict[str, int] = {}

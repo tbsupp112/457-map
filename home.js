@@ -1,6 +1,12 @@
 "use strict";
 
+const DATA_CACHE_VERSION = "20260828-3";
 let openRouteDetails = null;
+
+function versionedDataUrl(path) {
+  const separator = path.includes("?") ? "&" : "?";
+  return `${path}${separator}v=${DATA_CACHE_VERSION}`;
+}
 
 function closeRouteDetails({ restoreFocus = false } = {}) {
   if (!openRouteDetails) return;
@@ -60,7 +66,7 @@ async function loadHomeRoutes() {
   if (typeof window.RouteDetails?.deriveRouteMetrics !== "function") {
     throw new Error("Shared route details are unavailable.");
   }
-  const manifestResponse = await fetch("data/manifest.json");
+  const manifestResponse = await fetch(versionedDataUrl("data/manifest.json"));
   if (!manifestResponse.ok) {
     throw new Error(`Could not load the data manifest: ${manifestResponse.status}`);
   }
@@ -68,23 +74,27 @@ async function loadHomeRoutes() {
   const sources = new Map(
     (manifest.sources || []).map((source) => [source.key, source.path]),
   );
-  const requiredKeys = ["routes", "roads", "trails"];
+  const requiredKeys = ["routes", "mountainDrive", "driveway", "trails"];
   if (requiredKeys.some((key) => !sources.has(key))) {
     throw new Error("The data manifest is missing a route source.");
   }
   const responses = await Promise.all(
-    requiredKeys.map((key) => fetch(sources.get(key))),
+    requiredKeys.map((key) => fetch(versionedDataUrl(sources.get(key)))),
   );
   responses.forEach((response, index) => {
     if (!response.ok) {
       throw new Error(`Could not load ${requiredKeys[index]}: ${response.status}`);
     }
   });
-  const [routeData, roadData, trailData] = await Promise.all(
+  const [routeData, mountainDriveData, drivewayData, trailData] = await Promise.all(
     responses.map((response) => response.json()),
   );
   const segmentFeaturesById = new Map(
-    [...(roadData.features || []), ...(trailData.features || [])]
+    [
+      ...(mountainDriveData.features || []),
+      ...(drivewayData.features || []),
+      ...(trailData.features || []),
+    ]
       .filter((feature) => feature.properties?.id)
       .map((feature) => [feature.properties.id, feature]),
   );
@@ -103,7 +113,7 @@ loadHomeRoutes()
     });
     section.hidden = list.childElementCount === 0;
   })
-  .catch((error) => console.info("Walking routes are unavailable.", error));
+  .catch((error) => console.error("Walking routes are unavailable.", error));
 
 document.addEventListener("click", (event) => {
   if (openRouteDetails && !openRouteDetails.entry.contains(event.target)) closeRouteDetails();

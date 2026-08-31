@@ -24,11 +24,16 @@ from gps_lib import (  # noqa: E402
     distance,
     elevation_gain,
     elevation_loss,
+    consolidate_closed_laps,
     line_length,
     median_elevation_profile,
+    outset_ring,
     read_gpx,
+    ring_area,
     segment_intersection,
+    self_intersection_count,
     split_out_and_back,
+    straighten_line,
     to_xy,
 )
 from process_gps import (  # noqa: E402
@@ -98,6 +103,24 @@ class GeometryTests(unittest.TestCase):
         self.assertEqual(len(result.legs), 4)
         self.assertTrue(all(line_length([sample.xy for sample in leg]) >= 29.0 for leg in result.legs))
 
+    def test_straight_line_and_repeated_ring_options_preserve_intended_shapes(self) -> None:
+        fitted = straighten_line([(0, 1), (10, -1), (20, 2), (30, 0)])
+        self.assertEqual(len(fitted), 2)
+        self.assertGreater(line_length(fitted), 29)
+
+        square = [(0, 0), (20, 0), (20, 20), (0, 20)]
+        expanded = outset_ring(square, 2)
+        self.assertAlmostEqual(ring_area(expanded), 576, delta=0.1)
+        self.assertEqual(self_intersection_count(expanded, closed=True), 0)
+
+        repeated = square + [square[0]] + [(1, 0), (21, 0), (21, 20), (1, 20), (1, 0)]
+        ring, boundaries, _ = consolidate_closed_laps(
+            repeated, 2, spacing=5, smooth_passes=0, simplify_tolerance=0.1, pass_match_cap=5
+        )
+        self.assertEqual(boundaries, [4])
+        self.assertEqual(self_intersection_count(ring, closed=True), 0)
+        self.assertAlmostEqual(ring_area(ring), 400, delta=35)
+
 
 class MergeSafetyTests(unittest.TestCase):
     def test_merge_replaces_by_id_without_reformatting_untouched_feature(self) -> None:
@@ -163,10 +186,11 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertTrue(all(CANDIDATES not in path.parents for path in writes))
 
     def test_reprocessing_promoted_intake_is_idempotent(self) -> None:
-        source = LOCAL / "Raw gaia gpx 8.5.26"
+        current_manifest = TOOLS / "intakes" / "2026-08-31-gps-update.json"
+        source = LOCAL / "Raw gaia gpx through 8.31.26"
         if not source.exists():
-            self.skipTest("The local 8/5 raw GPX intake is not present")
-        result = process_manifest(self.manifest)
+            self.skipTest("The local current raw GPX intake is not present")
+        result = process_manifest(current_manifest)
         writes, _ = prepare_promotion(result, backup=False)
         for path, content in writes.items():
             self.assertEqual(
@@ -319,6 +343,32 @@ class IntakeIntegrationTests(unittest.TestCase):
                 if point_id != candidate["properties"]["id"]
             )
             self.assertGreaterEqual(nearest, 3.0)
+
+
+class August31IntakeIntegrationTests(unittest.TestCase):
+    manifest = TOOLS / "intakes" / "2026-08-31-gps-update.json"
+
+    def test_special_processing_and_track_counts_match_the_field_notes(self) -> None:
+        source = LOCAL / "Raw gaia gpx through 8.31.26"
+        if not source.exists():
+            self.skipTest("The local 8/31 raw GPX intake is not present")
+        result = process_manifest(self.manifest)
+
+        line = result.catalog["line"].feature
+        self.assertEqual(len(line["geometry"]["coordinates"]), 2)
+        self.assertEqual(line["properties"]["source_track_count"], 2)
+
+        yard = result.catalog["yard-area"].feature
+        yard_xy = [to_xy(*coordinate) for coordinate in yard["geometry"]["coordinates"][0][:-1]]
+        self.assertEqual(self_intersection_count(yard_xy, closed=True), 0)
+        self.assertGreater(yard["properties"]["acres_computed"], 0.28)
+        self.assertLess(yard["properties"]["acres_computed"], 0.33)
+
+        driveway = result.catalog["driveway"].feature
+        connector = result.catalog["field-connector"].feature
+        self.assertEqual(driveway["properties"]["source_track_count"], 4)
+        self.assertEqual(connector["properties"]["source_track_count"], 2)
+        self.assertIn("removed 2 point(s) from the final 10 seconds", result.qa_text)
 
 
 if __name__ == "__main__":

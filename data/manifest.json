@@ -56,9 +56,9 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
       "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
-      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
     },
     {
       "key": "driveway",
@@ -69,9 +69,9 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
       "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
-      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
     },
     {
       "key": "trails",
@@ -82,9 +82,9 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "optional_properties": ["status", "note", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
       "authored_properties": ["id", "name", "type", "status", "note"],
-      "generated_properties": ["recorded_on", "source_files", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
+      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
     },
     {
       "key": "routes",
@@ -106,9 +106,9 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "recorded_on", "source_files", "processing"],
-      "authored_properties": ["id", "name", "type", "status"],
-      "generated_properties": ["recorded_on", "source_files", "processing"]
+      "optional_properties": ["status", "note", "recorded_on", "source_files", "source_track_count", "processing"],
+      "authored_properties": ["id", "name", "type", "status", "note"],
+      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing"]
     },
     {
       "key": "landmarks",
@@ -130,9 +130,9 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "recorded_on", "source_files", "processing", "acres_computed"],
+      "optional_properties": ["status", "note", "recorded_on", "source_files", "source_track_count", "processing", "acres_computed"],
       "authored_properties": ["id", "name", "type", "status", "note"],
-      "generated_properties": ["recorded_on", "source_files", "processing", "acres_computed"]
+      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "acres_computed"]
     },
     {
       "key": "intersections",

@@ -37,7 +37,7 @@ class MapFramingPhotoContractTests(unittest.TestCase):
         self.assertIn('const requestedMapFocus = new URLSearchParams', self.app)
         property_branch = re.search(
             r'if \(requestedMapFocus === "property"\) \{([\s\S]*?)'
-            r'\} else if \(hasSavedMapView',
+            r'\} else if \(!hasExplicitMapFocus',
             self.app,
         )
         self.assertIsNotNone(property_branch)
@@ -63,7 +63,8 @@ class MapFramingPhotoContractTests(unittest.TestCase):
         self.assertIsNotNone(route_focus)
         block = route_focus.group(1)
         self.assertIn("route.segments", block)
-        self.assertIn("members.length !== route.segments.length", block)
+        self.assertIn("missingSegmentIds", block)
+        self.assertIn("console.warn", block)
         self.assertIn("members.forEach", block)
         self.assertIn("bounds.extend(memberBounds)", block)
         self.assertIn("focusRequestedBounds(bounds", block)
@@ -100,19 +101,21 @@ class MapFramingPhotoContractTests(unittest.TestCase):
             r"assets/points/[^\n]+DATA_CACHE_VERSION",
         )
         self.assertIn('figure.classList.add("is-loaded")', self.app)
-        self.assertIn("figure?.remove()", self.app)
-        self.assertIn("popup.setContent(content.outerHTML)", self.app)
+        self.assertIn('photo.closest(".point-popup-photo")?.remove()', self.app)
+        self.assertNotIn("syncPointPopupContent", self.app)
+        self.assertNotIn("popup.setContent(content.outerHTML)", self.app)
         self.assertIn('map.on("popupopen", preparePointPopupPhoto)', self.app)
         self.assertIn("window.requestAnimationFrame(() => settlePointPopupPhoto(event.popup))", self.app)
-        self.assertIn('photo.addEventListener("load", handlePointPhotoLoad, { once: true })', self.app)
-        self.assertIn('photo.addEventListener("error", handlePointPhotoError, { once: true })', self.app)
+        self.assertIn('() => handlePointPhotoLoad(photo, popup)', self.app)
+        self.assertIn('() => handlePointPhotoError(photo, popup)', self.app)
+        self.assertIn("pointPhotoBelongsToPopup(photo, popup)", self.app)
         self.assertIn("if (!photo.complete) return;", self.app)
         self.assertRegex(self.styles, r"\.point-popup-photo\s*\{[\s\S]*?aspect-ratio:\s*4 / 3;")
         self.assertRegex(self.styles, r"\.point-popup-photo\s*\{[\s\S]*?visibility:\s*hidden;")
         self.assertRegex(self.styles, r"\.point-popup-photo\.is-loaded\s*\{[\s\S]*?visibility:\s*visible;")
         self.assertRegex(self.styles, r"\.point-popup-photo img\s*\{[\s\S]*?object-fit:\s*cover;")
         self.assertTrue((ROOT / "assets" / "points" / "README.txt").is_file())
-        for phrase in ("assets/points", "1200 px", "300 KB", "strip EXIF", "hard reload"):
+        for phrase in ("assets/points", "1200 px", "300 KB", "strip all EXIF", "hard reload"):
             self.assertIn(phrase, self.data_readme)
 
     def test_ordinary_popup_width_is_responsive_and_content_aware(self) -> None:

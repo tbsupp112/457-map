@@ -169,14 +169,14 @@
           "driveway"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Main Loop was smoothly extended to the unchanged driveway centerline. Declared extend join moved/extended the end side by 4.9 m; source and target now share [-73.8354391, 43.3589369]."
+        "recorded_on": "2026-08-31",
+        "note": "Main Loop endpoint snapped to the updated Driveway centerline. Declared snap join moved/extended the end side by 0.6 m; source and target now share [-73.8354327, 43.35894]."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -73.8354391,
-          43.3589369
+          -73.8354327,
+          43.35894
         ]
       }
     },
@@ -213,14 +213,14 @@
           "driveway"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Mountain Drive was smoothly extended to the existing driveway centerline. Declared extend join moved/extended the start side by 8.2 m; source and target now share [-73.8359212, 43.3591277]."
+        "recorded_on": "2026-08-31",
+        "note": "Mountain Drive endpoint snapped to the updated Driveway centerline. Declared snap join moved/extended the start side by 2.2 m; source and target now share [-73.8359401, 43.3591414]."
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
-          -73.8359212,
-          43.3591277
+          -73.8359401,
+          43.3591414
         ]
       }
     }

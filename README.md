@@ -20,7 +20,7 @@ Phone compass guidance is functional, including iPhone `deviceorientation` input
 - `AGENTS.md` — durable safety rules for Codex and other coding agents
 - `data/` — human-organized GeoJSON layers for property, roads, trails, landmarks, zones, and intersections; see `data/README.md`
 - `assets/icons/` — reusable map marker images, currently the green building pin
-- `tools/process_gps.py` — repeatable conversion of the August 4 raw GPX survey into provisional feature layers
+- `tools/process_gps.py` — repeatable manifest-driven conversion of local raw GPX into provisional feature layers
 - `vendor/leaflet/` — pinned local copy of the Leaflet map library
 
 Every mapped feature type remains separate from the page and from unrelated layers, so trails, roads, landmarks, zones, intersections, and property data can be maintained independently.

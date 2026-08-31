@@ -69,7 +69,11 @@ class MapContractTests(unittest.TestCase):
         self.assertLess(pane_order("interactions"), pane_order("naturalLandmarks"))
         self.assertIn("const interactionsRenderer = L.svg", app)
         self.assertNotIn("roadInteractionsRenderer", app)
-        self.assertNotIn("intersectionsRenderer", app)
+        self.assertRegex(
+            app,
+            r"const intersectionsRenderer = L\.svg\(\{\s*"
+            r"pane: MAP_PANES\.intersections,",
+        )
         for layer_name in (
             "corridorInteractionLayer",
             "roadInteractionLayer",

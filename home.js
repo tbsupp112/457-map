@@ -1,6 +1,6 @@
 "use strict";
 
-const DATA_CACHE_VERSION = "20260828-5";
+const DATA_CACHE_VERSION = "20260831-1";
 let openRouteDetails = null;
 
 function versionedDataUrl(path) {

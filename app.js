@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20260828-5";
+const DATA_CACHE_VERSION = "20260831-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -51,6 +51,7 @@ const requestedFeatureId = new URLSearchParams(window.location.search)
 const requestedMapFocus = new URLSearchParams(window.location.search)
   .get("focus")
   ?.trim();
+const hasExplicitMapFocus = requestedMapFocus === "property" || Boolean(requestedFeatureId);
 let preferencesReady = false;
 let initialViewReady = false;
 let pendingFeaturePopupTimer = null;
@@ -329,9 +330,9 @@ const LAYER_DEFINITIONS = [
       kind: "merged-geojson",
       panes: [
         { key: "naturalLandmarks", name: "natural-landmarks-pane", order: 70 },
-        { key: "buildings", name: "buildings-pane", order: 100 },
+        { key: "buildings", name: "buildings-pane", order: 71 },
       ],
-      markerPane: "buildings",
+      markerPanes: { building: "buildings", landmark: "naturalLandmarks" },
     },
     getLayer: () => landmarksLayer,
     applyData: applyLandmarkData,
@@ -344,7 +345,7 @@ const LAYER_DEFINITIONS = [
     sources: ["corners"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: false, owner: false },
-    render: { kind: "geojson", panes: [{ key: "corners", name: "corners-pane", order: 80 }], markerPane: "corners" },
+    render: { kind: "geojson", panes: [{ key: "corners", name: "corners-pane", order: 68 }], markerPane: "corners" },
     getLayer: () => cornersLayer,
     applyData: applyCornersData,
   },
@@ -358,8 +359,8 @@ const LAYER_DEFINITIONS = [
     defaultVisible: { visitor: false, owner: false },
     render: {
       kind: "geojson",
-      panes: [],
-      markerPane: "interactions",
+      panes: [{ key: "intersections", name: "intersections-pane", order: 69 }],
+      markerPane: "intersections",
       markerStyle: { radius: 5, color: "#ffffff", weight: 2, fillColor: "#8e4c9e", fillOpacity: 1 },
     },
     getLayer: () => intersectionsLayer,
@@ -407,6 +408,10 @@ const roadsRenderer = L.canvas({
 });
 const interactionsRenderer = L.svg({
   pane: MAP_PANES.interactions,
+  padding: 0.5,
+});
+const intersectionsRenderer = L.svg({
+  pane: MAP_PANES.intersections,
   padding: 0.5,
 });
 const trailsRenderer = L.canvas({
@@ -572,9 +577,11 @@ const guidanceTargetIcon = L.divIcon({
 
 const landmarksLayer = L.geoJSON(null, {
   pointToLayer(feature, latlng) {
+    const markerPane = LANDMARK_RENDER_CONFIG.markerPanes[feature.properties?.type]
+      || LANDMARK_RENDER_CONFIG.markerPanes.landmark;
     return L.marker(latlng, {
       icon: buildingIcon,
-      pane: MAP_PANES[LANDMARK_RENDER_CONFIG.markerPane],
+      pane: MAP_PANES[markerPane],
     });
   },
   onEachFeature(feature, layer) {
@@ -596,11 +603,11 @@ const landmarksLayer = L.geoJSON(null, {
 
 const intersectionsLayer = L.geoJSON(null, {
   pane: MAP_PANES[INTERSECTION_RENDER_CONFIG.markerPane],
-  renderer: interactionsRenderer,
+  renderer: intersectionsRenderer,
   pointToLayer(feature, latlng) {
     return L.circleMarker(latlng, {
       pane: MAP_PANES[INTERSECTION_RENDER_CONFIG.markerPane],
-      renderer: interactionsRenderer,
+      renderer: intersectionsRenderer,
       ...INTERSECTION_RENDER_CONFIG.markerStyle,
     });
   },
@@ -782,8 +789,6 @@ let locationMarker = null;
 let offPropertyTooltipTimer = null;
 
 map.getContainer().addEventListener("click", handleMapPopupActionClick, true);
-map.getContainer().addEventListener("load", handlePointPhotoLoad, true);
-map.getContainer().addEventListener("error", handlePointPhotoError, true);
 map.getContainer().addEventListener("mouseleave", clearFeatureHoverHighlight);
 window.addEventListener("blur", clearFeatureHoverHighlight);
 guidanceDismiss.addEventListener("click", stopGuidance);
@@ -1322,6 +1327,7 @@ function applyBoundaryData({ boundaries, corridor }) {
   boundaryHalo.addData(boundaries);
   boundaryLayer.addData(boundaries);
   boundaryInteractionLayer.addData(buildBoundaryLines(boundaries));
+  if (hasExplicitMapFocus) programmaticFocusViewActive = true;
   if (requestedMapFocus === "property") {
     focusRequestedBounds(boundaryLayer.getBounds(), [boundaryGroup], {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
@@ -1329,9 +1335,9 @@ function applyBoundaryData({ boundaries, corridor }) {
       maxZoom: 18,
       zoomSnap: 0.5,
     });
-  } else if (hasSavedMapView(savedMapPreferences)) {
+  } else if (!hasExplicitMapFocus && hasSavedMapView(savedMapPreferences)) {
     map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
-  } else {
+  } else if (!hasExplicitMapFocus) {
     map.fitBounds(boundaryLayer.getBounds(), {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
       paddingBottomRight: PROPERTY_BOUNDS_PADDING,
@@ -1527,10 +1533,19 @@ function tryFocusRequestedFeature() {
 
   const route = routesById.get(requestedFeatureId);
   if (route) {
+    const missingSegmentIds = route.segments.filter(
+      (segmentId) => !focusableFeaturesById.has(segmentId),
+    );
+    if (missingSegmentIds.length > 0) {
+      console.warn(
+        `Could not focus route "${route.id}": missing rendered segment layer(s): ` +
+          missingSegmentIds.join(", "),
+      );
+      return;
+    }
     const members = route.segments
       .map((segmentId) => focusableFeaturesById.get(segmentId))
       .filter(Boolean);
-    if (members.length !== route.segments.length) return;
     const bounds = L.latLngBounds([]);
     members.forEach(({ layer }) => {
       const memberBounds = layerFocusBounds(layer);
@@ -1556,7 +1571,10 @@ function tryFocusRequestedFeature() {
   }
 
   const match = focusableFeaturesById.get(requestedFeatureId);
-  if (!match) return;
+  if (!match) {
+    console.warn(`Could not focus requested map feature "${requestedFeatureId}".`);
+    return;
+  }
   const bounds = layerFocusBounds(match.layer);
   if (!focusRequestedBounds(bounds, [match.focusOverlay])) return;
   requestedFeatureFocused = true;
@@ -1808,27 +1826,20 @@ function buildPointPhotoHtml(feature, safeName, options) {
   );
 }
 
-function handlePointPhotoLoad(event) {
-  const photo = event.target.closest?.(".point-popup-photo img");
-  if (!photo) return;
+function handlePointPhotoLoad(photo, popup) {
+  if (!pointPhotoBelongsToPopup(photo, popup)) return;
   const figure = photo.closest(".point-popup-photo");
   if (figure.classList.contains("is-loaded")) return;
   figure.classList.add("is-loaded");
-  syncPointPopupContent(figure.closest(".map-popup-content"));
 }
 
-function handlePointPhotoError(event) {
-  const photo = event.target.closest?.(".point-popup-photo img");
-  if (!photo) return;
-  const figure = photo.closest(".point-popup-photo");
-  const content = figure?.closest(".map-popup-content");
-  figure?.remove();
-  syncPointPopupContent(content);
+function handlePointPhotoError(photo, popup) {
+  if (!pointPhotoBelongsToPopup(photo, popup)) return;
+  photo.closest(".point-popup-photo")?.remove();
 }
 
-function syncPointPopupContent(content) {
-  const popup = typeof map.getPopup === "function" ? map.getPopup() : map._popup;
-  if (popup && content) popup.setContent(content.outerHTML);
+function pointPhotoBelongsToPopup(photo, popup) {
+  return Boolean(photo && popup?.getElement()?.contains(photo));
 }
 
 function preparePointPopupPhoto(event) {
@@ -1839,14 +1850,14 @@ function settlePointPopupPhoto(popup) {
   const photo = popup?.getElement()?.querySelector(".point-popup-photo img");
   if (!photo) return;
   if (!photo.complete) {
-    photo.addEventListener("load", handlePointPhotoLoad, { once: true });
-    photo.addEventListener("error", handlePointPhotoError, { once: true });
+    photo.addEventListener("load", () => handlePointPhotoLoad(photo, popup), { once: true });
+    photo.addEventListener("error", () => handlePointPhotoError(photo, popup), { once: true });
     if (!photo.complete) return;
   }
   if (photo.naturalWidth > 0) {
-    handlePointPhotoLoad({ target: photo });
+    handlePointPhotoLoad(photo, popup);
   } else {
-    handlePointPhotoError({ target: photo });
+    handlePointPhotoError(photo, popup);
   }
 }
 

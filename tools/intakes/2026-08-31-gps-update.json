@@ -1,0 +1,314 @@
+{
+  "intake_date": "2026-08-31",
+  "source_dir": "../_local",
+  "warnings": [
+    "All inputs are phone GPS and remain provisional orientation data; raw GPX stays under sibling _local.",
+    "Line is provisionally interpreted as a walking trail named Line because the owner contrasted its straight shape with natural trails.",
+    "No unconfirmed topology was added for Line or Powerline Trail; their recorded endpoints remain free.",
+    "The Shed input drops its final 10 seconds as directed by its filename and owner note.",
+    "Yard Area consolidates two walked laps and then expands the perimeter outward 8 ft (2.438 m)."
+  ],
+  "jobs": [
+    {
+      "id": "cabin",
+      "name": "Cabin",
+      "type": "point",
+      "inputs": [
+        "Raw gaia gpx through 8.31.26/cabin-ext-point.gpx",
+        "Raw gaia gpx through 8.31.26/cabin-int-point.gpx"
+      ],
+      "target": "landmarks/buildings.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "building",
+        "status": "provisional",
+        "note": "Approximate center derived from walked exterior and interior wall traces."
+      },
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "driveway",
+      "name": "Driveway",
+      "type": "path",
+      "inputs": [
+        "Raw gaia gpx 8.5.26/driveway.gpx",
+        "Raw gaia gpx 8.5.26/driveway (1).gpx",
+        "Raw gaia gpx through 8.31.26/driveway.gpx",
+        "Raw gaia gpx through 8.31.26/driveway (1).gpx"
+      ],
+      "target": "roads/driveway.geojson",
+      "recorded_on": "2026-08-10",
+      "properties": {
+        "type": "dirt road",
+        "status": "provisional",
+        "note": "Driveway centerline consolidated from four phone-GPS tracks recorded August 5 and August 10."
+      },
+      "options": {
+        "spacing": 5.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 1.1,
+        "pass_match_cap": 12.0,
+        "max_speed_mph": 25.0,
+        "split_passes": false,
+        "trim_to": {
+          "input": "Raw gaia gpx 8.5.26/driveway (1).gpx",
+          "endpoint": "end",
+          "reference_input": "Raw gaia gpx 8.5.26/driveway.gpx",
+          "reference_endpoint": "end"
+        }
+      },
+      "expect": {
+        "length_range_m": [135, 150],
+        "legs": {
+          "Raw gaia gpx 8.5.26/driveway.gpx": 1,
+          "Raw gaia gpx 8.5.26/driveway (1).gpx": 1,
+          "Raw gaia gpx through 8.31.26/driveway.gpx": 1,
+          "Raw gaia gpx through 8.31.26/driveway (1).gpx": 1
+        },
+        "reversed_passes": 1,
+        "trim_removed_range_m": [12, 25]
+      }
+    },
+    {
+      "id": "field-connector",
+      "name": "Field Connector",
+      "type": "path",
+      "inputs": [
+        "Raw gaia gpx 8.5.26/connector.gpx",
+        "Raw gaia gpx through 8.31.26/field-connector-side-trail.gpx"
+      ],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Infrastructure connector updated from two phone-GPS tracks; placeholder name."
+      },
+      "options": {
+        "spacing": 2.5,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.7,
+        "min_leg_length": 15.0,
+        "pass_match_cap": 12.0,
+        "split_passes": true
+      },
+      "expect": {
+        "length_range_m": [24, 36],
+        "legs": {
+          "Raw gaia gpx 8.5.26/connector.gpx": 4,
+          "Raw gaia gpx through 8.31.26/field-connector-side-trail.gpx": 7
+        },
+        "reversed_passes": 7
+      }
+    },
+    {
+      "id": "gravel-shed",
+      "name": "Gravel Shed",
+      "type": "point",
+      "inputs": ["Raw gaia gpx through 8.31.26/gravel-shed-point-ext.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "building",
+        "status": "provisional",
+        "note": "Approximate center derived from the walked exterior."
+      },
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "line",
+      "name": "Line",
+      "type": "path",
+      "inputs": [
+        "Raw gaia gpx through 8.31.26/Line.gpx",
+        "Raw gaia gpx through 8.31.26/Line - 2.gpx"
+      ],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-25",
+      "properties": {
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Straight trail fitted from two opposite-direction phone-GPS tracks."
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 0,
+        "simplify_tolerance": 0.5,
+        "pass_match_cap": 15.0,
+        "split_passes": false,
+        "straighten": true
+      },
+      "expect": {
+        "closed": false,
+        "length_range_m": [85, 105],
+        "legs": {
+          "Raw gaia gpx through 8.31.26/Line.gpx": 1,
+          "Raw gaia gpx through 8.31.26/Line - 2.gpx": 1
+        },
+        "reversed_passes": 1
+      }
+    },
+    {
+      "id": "mystery-shack",
+      "name": "Mystery Shack",
+      "type": "point",
+      "inputs": ["Raw gaia gpx through 8.31.26/mystery-shack.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "recorded_on": "2026-08-11",
+      "properties": {
+        "type": "building",
+        "status": "rough / provisional",
+        "note": "Low-priority approximate center from a short exterior walk and entrance reading."
+      },
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "powerline-trail",
+      "name": "Powerline Trail",
+      "type": "path",
+      "inputs": ["Raw gaia gpx through 8.31.26/power-line-trail-north.gpx"],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-08-10",
+      "properties": {
+        "type": "walking trail",
+        "status": "rough / provisional",
+        "note": "Accessible trail through the powerline cut; largely off-property and based on one phone-GPS track."
+      },
+      "options": {
+        "spacing": 6.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 1.5,
+        "min_leg_length": 500.0,
+        "pass_match_cap": 25.0,
+        "segment_bridge_cap": 5.0,
+        "split_passes": true
+      },
+      "expect": {
+        "closed": false,
+        "length_range_m": [1150, 1230],
+        "legs": {"Raw gaia gpx through 8.31.26/power-line-trail-north.gpx": 2},
+        "reversed_passes": 1
+      }
+    },
+    {
+      "id": "shed",
+      "name": "Shed",
+      "type": "point",
+      "inputs": ["Raw gaia gpx through 8.31.26/shed-ext-point-delete-last-10s.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "building",
+        "status": "provisional",
+        "note": "Approximate center derived from the walked exterior after removing the final 10 seconds."
+      },
+      "options": {"cell_size": 2.0, "drop_last_seconds": 10}
+    },
+    {
+      "id": "wood-shed",
+      "name": "Wood Shed",
+      "type": "point",
+      "inputs": ["Raw gaia gpx through 8.31.26/wood-shed-ext-point.gpx"],
+      "target": "landmarks/buildings.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "building",
+        "status": "provisional",
+        "note": "Approximate center derived from the walked exterior."
+      },
+      "options": {"cell_size": 2.0}
+    },
+    {
+      "id": "yard-area",
+      "name": "Yard Area",
+      "type": "zone",
+      "inputs": ["Raw gaia gpx through 8.31.26/yard-area-region.gpx"],
+      "target": "zones/zones.geojson",
+      "recorded_on": "2026-08-28",
+      "properties": {
+        "type": "zone",
+        "status": "provisional",
+        "note": "Close yard around Home; consolidated from two laps and extended 8 ft beyond the walked perimeter."
+      },
+      "options": {
+        "closed_laps": 2,
+        "spacing": 3.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.5,
+        "pass_match_cap": 15.0,
+        "area_threshold": 5.0,
+        "outset_m": 2.4384
+      }
+    }
+  ],
+  "joins": [
+    {
+      "id": "main-loop-driveway",
+      "name": "Main Loop / Driveway",
+      "feature": "main-loop",
+      "endpoint": "end",
+      "target_feature": "driveway",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 15.0,
+      "emit_intersection": {
+        "id": "main-loop-driveway",
+        "name": "Main Loop / Driveway",
+        "note": "Main Loop endpoint snapped to the updated Driveway centerline."
+      }
+    },
+    {
+      "id": "mountain-drive-driveway",
+      "name": "Mountain Drive / Driveway",
+      "feature": "mountain-drive",
+      "endpoint": "start",
+      "target_feature": "driveway",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 15.0,
+      "emit_intersection": {
+        "id": "mountain-drive-driveway",
+        "name": "Mountain Drive / Driveway",
+        "note": "Mountain Drive endpoint snapped to the updated Driveway centerline."
+      }
+    },
+    {
+      "id": "field-connector-main-loop-ext",
+      "name": "Field Connector / Main Loop Ext",
+      "feature": "field-connector",
+      "endpoint": "end",
+      "target_feature": "main-loop-ext",
+      "target_kind": "line",
+      "action": "snap",
+      "emit_intersection": {
+        "id": "field-connector-main-loop-ext",
+        "name": "Field Connector / Main Loop Ext",
+        "note": "Updated connector endpoint snapped to Main Loop Ext."
+      }
+    },
+    {
+      "id": "field-connector-front-field-zone",
+      "name": "Field Connector / Front Field Zone",
+      "feature": "field-connector",
+      "endpoint": "start",
+      "target_feature": "front-field-zone",
+      "target_kind": "ring",
+      "action": "trim",
+      "emit_intersection": {
+        "id": "field-connector-front-field-zone",
+        "name": "Field Connector / Front Field Zone",
+        "note": "Updated connector overshoot trimmed at the existing zone edge."
+      }
+    },
+    {
+      "id": "driveway-front-field-zone-clearance",
+      "name": "Driveway / Front Field Zone Clearance",
+      "feature": "driveway",
+      "target_feature": "front-field-zone",
+      "target_kind": "ring",
+      "action": "clearance",
+      "minimum_clearance_m": 2.0
+    }
+  ],
+  "route_omissions": ["field-connector", "line", "powerline-trail", "driveway"]
+}

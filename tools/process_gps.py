@@ -10,6 +10,7 @@ import re
 import statistics
 import sys
 from dataclasses import dataclass, field
+from datetime import timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
@@ -24,6 +25,7 @@ from gps_lib import (
     closest_distance_between_lines,
     closest_point_on_line,
     closest_point_on_ring,
+    consolidate_closed_laps,
     distance,
     elevation_gain,
     elevation_loss,
@@ -41,6 +43,7 @@ from gps_lib import (
     move_endpoint_to_node,
     move_toward,
     occupied_cell_spread,
+    outset_ring,
     rdp,
     read_gpx,
     ring_area,
@@ -49,6 +52,7 @@ from gps_lib import (
     simplify_closed,
     smooth,
     spatially_weighted_center,
+    straighten_line,
     split_out_and_back,
     to_lonlat,
     to_xy,
@@ -107,6 +111,7 @@ COMPUTED_FIELDS = {
     "acres_computed",
     "processing",
     "source_files",
+    "source_track_count",
     "recorded_on",
 }
 ROUTE_GENERATED_FIELDS = {
@@ -298,6 +303,24 @@ def process_job(
         if not path.is_file():
             raise ValueError(f"Job {job['id']} is missing input file {filename}")
         parsed = read_gpx(path, float(options.get("max_speed_mph", 8.0)))
+        drop_last_seconds = float(options.get("drop_last_seconds", 0))
+        if drop_last_seconds:
+            timed_points = [point for segment in parsed.segments for point in segment if point.time]
+            if not timed_points:
+                raise ValueError(f"Job {job['id']} cannot drop recent points because {filename} has no timestamps")
+            cutoff = max(point.time for point in timed_points) - timedelta(seconds=drop_last_seconds)
+            before_count = sum(len(segment) for segment in parsed.segments)
+            parsed.segments = [
+                [point for point in segment if point.time is None or point.time <= cutoff]
+                for segment in parsed.segments
+            ]
+            parsed.segments = [segment for segment in parsed.segments if segment]
+            dropped_recent = before_count - sum(len(segment) for segment in parsed.segments)
+            if not parsed.segments:
+                raise ValueError(f"Job {job['id']} drop_last_seconds removed every point from {filename}")
+            report.file_lines.append(
+                f"- `{filename}`: removed {dropped_recent} point(s) from the final {drop_last_seconds:g} seconds."
+            )
         parsed_files[filename] = parsed
         report.file_lines.append(
             f"- `{filename}`: {len(parsed.raw_segment_points)} source segment(s); "
@@ -355,6 +378,7 @@ def process_job(
         spread = occupied_cell_spread(raw_xy, center, cell_size)
         computed = {
             "source_files": list(job["inputs"]),
+            "source_track_count": len(job["inputs"]),
             "recorded_on": job.get("recorded_on", intake_date),
             "processing": f"Position-weighted center; each occupied {cell_size:g} m cell counted once.",
         }
@@ -373,13 +397,40 @@ def process_job(
         raw_xy = [point.xy for point in track_points]
         before_crossings = self_intersection_count(raw_xy, closed=True)
         raw_area = ring_area(raw_xy)
-        ring = simplify_closed(raw_xy, float(options.get("area_threshold", 5.0)))
+        lap_count = int(options.get("closed_laps", 1))
+        if lap_count > 1:
+            ring, lap_boundaries, lap_result = consolidate_closed_laps(
+                raw_xy,
+                lap_count,
+                float(options.get("spacing", 3.0)),
+                int(options.get("smooth_passes", 1)),
+                float(options.get("simplify_tolerance", 0.8)),
+                float(options.get("pass_match_cap", 12.0)),
+            )
+            report.output_lines.append(
+                f"- Consolidated {lap_count} closed laps at source point boundary index(es) {lap_boundaries}; "
+                f"maximum station spread {max(lap_result.station_spreads, default=0.0):.1f} m."
+            )
+        else:
+            ring = raw_xy
+        ring = simplify_closed(ring, float(options.get("area_threshold", 5.0)))
+        outset_m = float(options.get("outset_m", 0))
+        if outset_m:
+            ring = outset_ring(ring, outset_m)
+            report.output_lines.append(f"- Expanded the processed perimeter outward by {outset_m:.3f} m.")
         area = ring_area(ring)
         acres = area / 4046.8564224
         computed = {
             "source_files": list(job["inputs"]),
+            "source_track_count": len(job["inputs"]),
             "recorded_on": job.get("recorded_on", intake_date),
-            "processing": "Walked perimeter; start/finish crossings untangled, low-area jitter removed, ring closed counter-clockwise.",
+            "processing": (
+                f"Median perimeter from {lap_count} walked laps; low-area jitter removed"
+                if lap_count > 1
+                else "Walked perimeter; start/finish crossings untangled, low-area jitter removed"
+            )
+            + (f"; expanded outward {outset_m:.3f} m" if outset_m else "")
+            + "; ring closed counter-clockwise.",
             "acres_computed": round(acres, 3),
         }
         properties = merge_computed_properties(job, computed, warnings)
@@ -389,7 +440,11 @@ def process_job(
             [
                 f"- Output vertices: {len(ring) + 1} including closure.",
                 f"- Area: {acres:.3f} acres; perimeter: {ring_perimeter(ring):.1f} m.",
-                f"- Closure: confirmed; crossings untangled: {before_crossings}; area discarded: {max(0.0, raw_area - area):.1f} m².",
+                (
+                    f"- Closure: confirmed; raw repeated-lap crossings: {before_crossings}; laps consolidated before polygon cleanup."
+                    if lap_count > 1
+                    else f"- Closure: confirmed; crossings untangled: {before_crossings}; area discarded: {max(0.0, raw_area - area):.1f} m²."
+                ),
                 f"- Self-intersections after processing: {self_intersection_count(ring, closed=True)}.",
             ]
         )
@@ -445,6 +500,8 @@ def process_job(
             float(options.get("pass_match_cap", 12.0)),
         )
         output_line = result.points
+        if options.get("straighten"):
+            output_line = straighten_line(output_line)
         length_m = line_length(output_line)
         length_ft = round(length_m * 3.28084)
         gain_m = statistics.median(leg_gains) if leg_gains else None
@@ -464,8 +521,11 @@ def process_job(
             if len(passes) == 1
             else f"Arc-length median centerline from {len(passes)} equally weighted passes; directions normalized; {spacing:g} m stations."
         )
+        if options.get("straighten"):
+            processing += " Orthogonal best-fit straight line; processed endpoint extents preserved."
         computed = {
             "source_files": list(job["inputs"]),
+            "source_track_count": len(job["inputs"]),
             "recorded_on": job.get("recorded_on", intake_date),
             "processing": processing,
             "length_m": round(length_m, 1),
@@ -889,10 +949,13 @@ def qa_proximity(
     def is_declared_connection(other: WorkingFeature) -> bool:
         return working.id in other.feature.get("properties", {}).get("features", [])
 
+    def is_placeholder(other: WorkingFeature) -> bool:
+        return other.feature.get("properties", {}).get("status") == "placeholder"
+
     distances = [
         (feature_distance(working.feature, other.feature), feature_id)
         for feature_id, other in live_catalog.items()
-        if feature_id != working.id and not is_declared_connection(other)
+        if feature_id != working.id and not is_declared_connection(other) and not is_placeholder(other)
     ]
     nearest_distance, nearest_id = min(distances, default=(math.inf, "none"))
     warnings = []
@@ -902,6 +965,7 @@ def qa_proximity(
             other.feature["geometry"]["type"] != "Point"
             or feature_id == working.id
             or is_declared_connection(other)
+            or is_placeholder(other)
         ):
             continue
         pin_distances.append((feature_distance(working.feature, other.feature), feature_id))

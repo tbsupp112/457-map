@@ -17,8 +17,9 @@
           "New_rd_down.gpx",
           "New_Road_up.gpx"
         ],
+        "source_track_count": 2,
         "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road. Join `mountain-drive-driveway` adjusted its endpoint to the declared connection.",
-        "length_m": 207.5,
+        "length_m": 206.2,
         "length_ft": 681,
         "elevation_gain_ft": 161,
         "elevation_loss_ft": 151,
@@ -78,8 +79,8 @@
         "type": "LineString",
         "coordinates": [
           [
-            -73.8359212,
-            43.3591277
+            -73.8359401,
+            43.3591414
           ],
           [
             -73.8359205,

@@ -732,6 +732,134 @@ def arc_length_centerline(
     return CenterlineResult(processed, spreads, reversed_flags)
 
 
+def straighten_line(points: Sequence[XY]) -> list[XY]:
+    """Fit one orthogonal-regression line while preserving endpoint extents."""
+    if len(points) < 2:
+        raise ValueError("A straight path needs at least two points")
+    center = mean_point(points)
+    xx = sum((point[0] - center[0]) ** 2 for point in points)
+    yy = sum((point[1] - center[1]) ** 2 for point in points)
+    xy = sum((point[0] - center[0]) * (point[1] - center[1]) for point in points)
+    angle = 0.5 * math.atan2(2 * xy, xx - yy)
+    axis = math.cos(angle), math.sin(angle)
+    if (points[-1][0] - points[0][0]) * axis[0] + (points[-1][1] - points[0][1]) * axis[1] < 0:
+        axis = -axis[0], -axis[1]
+
+    def project(point: XY) -> XY:
+        station = (point[0] - center[0]) * axis[0] + (point[1] - center[1]) * axis[1]
+        return center[0] + station * axis[0], center[1] + station * axis[1]
+
+    start, end = project(points[0]), project(points[-1])
+    if distance(start, end) < 0.01:
+        stations = [
+            (point[0] - center[0]) * axis[0] + (point[1] - center[1]) * axis[1]
+            for point in points
+        ]
+        start = center[0] + min(stations) * axis[0], center[1] + min(stations) * axis[1]
+        end = center[0] + max(stations) * axis[0], center[1] + max(stations) * axis[1]
+    return [start, end]
+
+
+def consolidate_closed_laps(
+    points: Sequence[XY],
+    lap_count: int,
+    spacing: float = 3.0,
+    smooth_passes: int = 1,
+    simplify_tolerance: float = 0.8,
+    pass_match_cap: float = 12.0,
+) -> tuple[list[XY], list[int], CenterlineResult]:
+    """Split repeated closed laps near their common start and median their perimeter."""
+    if lap_count < 2:
+        raise ValueError("Closed-lap consolidation needs at least two laps")
+    if len(points) < lap_count * 4:
+        raise ValueError("Closed-lap consolidation has too few points")
+
+    boundaries = [0]
+    expected_span = (len(points) - 1) / lap_count
+    for lap_index in range(1, lap_count):
+        expected = round(expected_span * lap_index)
+        half_window = max(2, round(expected_span * 0.25))
+        low = max(boundaries[-1] + 2, expected - half_window)
+        high = min(len(points) - 3, expected + half_window)
+        if low > high:
+            raise ValueError("Could not find a usable repeated-lap boundary")
+        boundaries.append(min(range(low, high + 1), key=lambda index: distance(points[0], points[index])))
+    boundaries.append(len(points) - 1)
+
+    laps = [
+        list(points[start : end + 1])
+        for start, end in zip(boundaries, boundaries[1:])
+    ]
+    result = arc_length_centerline(
+        laps,
+        spacing,
+        smooth_passes,
+        simplify_tolerance,
+        pass_match_cap,
+    )
+    ring = list(result.points)
+    if len(ring) > 2 and distance(ring[0], ring[-1]) <= max(spacing * 2, 5.0):
+        ring.pop()
+    if len(ring) < 3:
+        raise ValueError("Closed-lap consolidation did not produce a polygon")
+    return ring, boundaries[1:-1], result
+
+
+def outset_ring(points: Sequence[XY], amount: float) -> list[XY]:
+    """Offset a counter-clockwise polygon outward by an approximate fixed distance."""
+    if amount < 0:
+        raise ValueError("Ring outset must not be negative")
+    ring = list(points)
+    if amount == 0:
+        return ring
+    if len(ring) < 3:
+        raise ValueError("Ring outset needs at least three points")
+    if signed_ring_area(ring) < 0:
+        ring.reverse()
+
+    def outward(start: XY, end: XY) -> XY:
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length = math.hypot(dx, dy)
+        if length <= 1e-9:
+            raise ValueError("Ring outset encountered a zero-length edge")
+        return dy / length, -dx / length
+
+    def line_intersection(origin_a: XY, direction_a: XY, origin_b: XY, direction_b: XY) -> XY | None:
+        cross = direction_a[0] * direction_b[1] - direction_a[1] * direction_b[0]
+        if abs(cross) <= 1e-9:
+            return None
+        delta = origin_b[0] - origin_a[0], origin_b[1] - origin_a[1]
+        scale = (delta[0] * direction_b[1] - delta[1] * direction_b[0]) / cross
+        return origin_a[0] + scale * direction_a[0], origin_a[1] + scale * direction_a[1]
+
+    expanded = []
+    for index, point in enumerate(ring):
+        previous = ring[index - 1]
+        following = ring[(index + 1) % len(ring)]
+        previous_normal = outward(previous, point)
+        next_normal = outward(point, following)
+        previous_origin = point[0] + previous_normal[0] * amount, point[1] + previous_normal[1] * amount
+        next_origin = point[0] + next_normal[0] * amount, point[1] + next_normal[1] * amount
+        candidate = line_intersection(
+            previous_origin,
+            (point[0] - previous[0], point[1] - previous[1]),
+            next_origin,
+            (following[0] - point[0], following[1] - point[1]),
+        )
+        if candidate is None or distance(point, candidate) > amount * 4:
+            normal = previous_normal[0] + next_normal[0], previous_normal[1] + next_normal[1]
+            normal_length = math.hypot(*normal)
+            if normal_length <= 1e-9:
+                normal = next_normal
+                normal_length = 1.0
+            candidate = (
+                point[0] + normal[0] / normal_length * amount,
+                point[1] + normal[1] / normal_length * amount,
+            )
+        expanded.append(candidate)
+    return expanded
+
+
 def trim_track_endpoint_to_point(
     track: Sequence[TrackPoint], target: XY, endpoint: str
 ) -> tuple[list[TrackPoint], float]:

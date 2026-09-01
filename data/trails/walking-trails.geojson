@@ -15,6 +15,7 @@
         "source_files": [
           "Pavilion_side_trail.gpx"
         ],
+        "source_track_count": 1,
         "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. South endpoint placed 5 m northeast of the Pavilion point to separate the building and intersection symbols; north endpoint snapped 1.5 m to Mountain Drive. Join `pavilion-side-trail-main-loop` moved/extended its endpoint 11.6 m.",
         "length_m": 42.6
       },
@@ -55,6 +56,7 @@
         "source_files": [
           "Garden_cut_through.gpx"
         ],
+        "source_track_count": 1,
         "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. After the owner refined the Front Field Zone, the field end was trimmed at the first west-to-east crossing of the revised zone boundary. Join `garden-cut-through-main-loop` moved/extended its endpoint 5.0 m.",
         "length_m": 26.0
       },
@@ -95,6 +97,7 @@
         "source_files": [
           "barbershop-trail.gpx"
         ],
+        "source_track_count": 1,
         "recorded_on": "2026-08-05",
         "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 3.8 m to the shared Main Loop Clearing centroid.",
         "length_m": 56.2,
@@ -157,22 +160,24 @@
         "name": "Field Connector",
         "type": "walking trail",
         "status": "provisional",
-        "note": "Infrastructure connector between Main Loop Ext and Front Field Zone; placeholder name.",
+        "note": "Infrastructure connector updated from two phone-GPS tracks; placeholder name.",
         "source_files": [
-          "connector.gpx"
+          "Raw gaia gpx 8.5.26/connector.gpx",
+          "Raw gaia gpx through 8.31.26/field-connector-side-trail.gpx"
         ],
-        "recorded_on": "2026-08-05",
-        "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 2.5 m stations. Join `field-connector-main-loop-ext` adjusted its endpoint to the declared connection. Join `field-connector-front-field-zone` adjusted its endpoint to the declared connection.",
+        "source_track_count": 2,
+        "recorded_on": "2026-08-28",
+        "processing": "Arc-length median centerline from 11 equally weighted passes; directions normalized; 2.5 m stations. Join `field-connector-main-loop-ext` adjusted its endpoint to the declared connection. Join `field-connector-front-field-zone` adjusted its endpoint to the declared connection.",
         "length_m": 29.2,
         "length_ft": 95,
-        "elevation_gain_ft": 10,
-        "elevation_loss_ft": 7,
+        "elevation_gain_ft": 7,
+        "elevation_loss_ft": 10,
         "elevation_profile_ft": [
-          882.5,
-          891.4,
-          897.7,
-          901.1,
-          902.9
+          885.8,
+          886.6,
+          886.8,
+          887.0,
+          887.5
         ]
       },
       "geometry": {
@@ -212,9 +217,10 @@
         "source_files": [
           "main-loop.gpx"
         ],
+        "source_track_count": 1,
         "recorded_on": "2026-08-05",
         "processing": "Single-pass order-preserving smoothing and RDP simplification. Its start endpoint was extended 31.6 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `garden-cut-through-main-loop`. A matching vertex was inserted for join `pavilion-side-trail-main-loop`. Join `main-loop-driveway` adjusted its endpoint to the declared connection.",
-        "length_m": 149.4,
+        "length_m": 149.0,
         "length_ft": 529,
         "elevation_gain_ft": 51,
         "elevation_loss_ft": 67,
@@ -313,8 +319,8 @@
             43.358932
           ],
           [
-            -73.8354391,
-            43.3589369
+            -73.8354327,
+            43.35894
           ]
         ]
       }
@@ -330,6 +336,7 @@
         "source_files": [
           "main-loop-ext.gpx"
         ],
+        "source_track_count": 1,
         "recorded_on": "2026-08-05",
         "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 5.1 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`.",
         "length_m": 158.2,
@@ -436,6 +443,336 @@
           [
             -73.833583,
             43.358077
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "line",
+        "name": "Line",
+        "type": "walking trail",
+        "status": "provisional",
+        "note": "Straight trail fitted from two opposite-direction phone-GPS tracks.",
+        "source_files": [
+          "Raw gaia gpx through 8.31.26/Line.gpx",
+          "Raw gaia gpx through 8.31.26/Line - 2.gpx"
+        ],
+        "source_track_count": 2,
+        "recorded_on": "2026-08-25",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Orthogonal best-fit straight line; processed endpoint extents preserved.",
+        "length_m": 90.6,
+        "length_ft": 297,
+        "elevation_gain_ft": 68,
+        "elevation_loss_ft": 57,
+        "elevation_profile_ft": [
+          902.1,
+          901.1,
+          899.3,
+          896.8,
+          895.4,
+          894.0,
+          893.4,
+          891.3,
+          890.3,
+          889.3,
+          888.4,
+          884.0,
+          876.6
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8337894,
+            43.3594434
+          ],
+          [
+            -73.8339483,
+            43.3586367
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "powerline-trail",
+        "name": "Powerline Trail",
+        "type": "walking trail",
+        "status": "rough / provisional",
+        "note": "Accessible trail through the powerline cut; largely off-property and based on one phone-GPS track.",
+        "source_files": [
+          "Raw gaia gpx through 8.31.26/power-line-trail-north.gpx"
+        ],
+        "source_track_count": 1,
+        "recorded_on": "2026-08-10",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 6 m stations.",
+        "length_m": 1190.6,
+        "length_ft": 3906,
+        "elevation_gain_ft": 267,
+        "elevation_loss_ft": 263,
+        "elevation_profile_ft": [
+          734.9,
+          737.1,
+          741.3,
+          747.0,
+          753.5,
+          758.1,
+          761.0,
+          762.2,
+          763.6,
+          765.6,
+          767.6,
+          769.8,
+          772.8,
+          777.0,
+          781.4,
+          785.4,
+          789.0,
+          793.1,
+          797.3,
+          802.1,
+          806.6,
+          811.3,
+          815.3,
+          818.9,
+          821.9,
+          825.7,
+          829.2,
+          832.8,
+          835.6,
+          839.1,
+          843.1,
+          847.5,
+          850.8,
+          852.9,
+          854.8,
+          857.3,
+          859.8,
+          861.5,
+          862.2,
+          863.4,
+          865.8,
+          868.9,
+          871.8,
+          874.4,
+          876.9,
+          879.3,
+          881.2,
+          882.8,
+          884.3,
+          885.6,
+          886.3,
+          886.2,
+          885.8,
+          885.2,
+          884.8,
+          885.4,
+          887.8,
+          891.7,
+          895.7,
+          899.3,
+          902.0,
+          904.5,
+          906.6,
+          908.5,
+          910.0,
+          911.1,
+          912.5,
+          914.4,
+          917.1,
+          920.2,
+          923.7,
+          926.8,
+          929.5,
+          931.6,
+          934.0,
+          936.7,
+          939.6,
+          941.8,
+          943.1,
+          943.4,
+          943.2,
+          942.9,
+          942.9,
+          943.1,
+          943.4,
+          943.0,
+          941.9,
+          939.8,
+          937.5,
+          935.5,
+          934.3,
+          933.9,
+          934.0,
+          934.6,
+          934.9,
+          934.6,
+          933.3,
+          931.3,
+          929.2,
+          926.9,
+          924.2,
+          921.0,
+          918.4,
+          917.4,
+          916.7,
+          915.5,
+          913.0,
+          910.8,
+          908.7,
+          906.5,
+          903.5,
+          900.8,
+          898.0,
+          894.7,
+          890.2,
+          885.7,
+          881.0,
+          877.0,
+          872.2,
+          866.5,
+          859.5,
+          852.9,
+          846.9,
+          841.9,
+          837.7,
+          834.2
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.833378,
+            43.369346
+          ],
+          [
+            -73.8334385,
+            43.3693092
+          ],
+          [
+            -73.833505,
+            43.369301
+          ],
+          [
+            -73.8337087,
+            43.3693128
+          ],
+          [
+            -73.834054,
+            43.369373
+          ],
+          [
+            -73.8339826,
+            43.3692259
+          ],
+          [
+            -73.8339729,
+            43.369027
+          ],
+          [
+            -73.8340566,
+            43.368771
+          ],
+          [
+            -73.8340945,
+            43.3685051
+          ],
+          [
+            -73.8340924,
+            43.3682409
+          ],
+          [
+            -73.8342076,
+            43.3675558
+          ],
+          [
+            -73.8341977,
+            43.3673424
+          ],
+          [
+            -73.8343198,
+            43.3667621
+          ],
+          [
+            -73.8343239,
+            43.3664461
+          ],
+          [
+            -73.8343947,
+            43.3661294
+          ],
+          [
+            -73.8343968,
+            43.3657012
+          ],
+          [
+            -73.8345263,
+            43.3650737
+          ],
+          [
+            -73.834465,
+            43.3647607
+          ],
+          [
+            -73.8345193,
+            43.3644459
+          ],
+          [
+            -73.8345373,
+            43.3640691
+          ],
+          [
+            -73.8346011,
+            43.3638608
+          ],
+          [
+            -73.8346723,
+            43.3634367
+          ],
+          [
+            -73.8347076,
+            43.3625969
+          ],
+          [
+            -73.8351417,
+            43.3616654
+          ],
+          [
+            -73.8354873,
+            43.3610257
+          ],
+          [
+            -73.8355824,
+            43.3606667
+          ],
+          [
+            -73.8357096,
+            43.3604325
+          ],
+          [
+            -73.8357535,
+            43.3601884
+          ],
+          [
+            -73.8359026,
+            43.3600842
+          ],
+          [
+            -73.8360035,
+            43.3598883
+          ],
+          [
+            -73.8361919,
+            43.3596179
+          ],
+          [
+            -73.836367,
+            43.3595055
           ]
         ]
       }

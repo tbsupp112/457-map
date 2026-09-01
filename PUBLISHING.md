@@ -4,13 +4,14 @@ This project intentionally uses a user-controlled publishing process. Codex edit
 
 ## Routine update
 
-1. Codex changes and tests the local files, then lists every file that changed.
-2. Review the changes in GitHub Desktop.
-3. Create a short-lived branch named `update/YYYY-MM-DD-description`.
-4. Commit the reviewed files to that branch and push it to GitHub.
-5. Open a pull request into `main` and review the **Files changed** tab.
-6. Merge the pull request. GitHub Pages publishes from `main`.
-7. Confirm the change on both phone and desktop before marking it completed in `BACKLOG.md`.
+1. After the local changes are ready, run `python tools/bump_version.py` from the web folder so `index.html`, `map.html`, `app.js`, and `home.js` advance together. Pass an explicit `YYYYMMDD-N` only when a specific version is required.
+2. Codex runs the tests and lists every file that changed.
+3. Review the changes in GitHub Desktop.
+4. Create the short-lived branch specified in the current implementation handoff.
+5. Commit the reviewed files to that branch and push it to GitHub.
+6. Open a pull request into `main` and review the **Files changed** tab.
+7. Merge the pull request. GitHub Pages publishes from `main`.
+8. Confirm the change on both phone and desktop before marking it completed in `BACKLOG.md`.
 
 In GitHub's file-delete view, seeing `This file was deleted` is only the proposed diff. Select **Commit changes** (or **Propose changes**), save it to the current update branch, and merge that branch's pull request before expecting the deletion to appear on `main`. Always check the branch selector when verifying whether a file still exists.
 

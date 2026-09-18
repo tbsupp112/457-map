@@ -10,8 +10,8 @@
         "id": "driveway",
         "name": "Driveway",
         "type": "dirt road",
+        "condition": "finished",
         "status": "provisional",
-        "note": "Driveway centerline consolidated from four phone-GPS tracks recorded August 5 and August 10.",
         "source_files": [
           "Raw gaia gpx 8.5.26/driveway.gpx",
           "Raw gaia gpx 8.5.26/driveway (1).gpx",

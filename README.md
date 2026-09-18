@@ -13,7 +13,7 @@ Phone compass guidance is functional, including iPhone `deviceorientation` input
 - `index.html` — responsive landing page
 - `home.css` — landing-page appearance
 - `map.html` — interactive map page
-- `styles.css` — map appearance, responsive icon controls, and Info overlay
+- `styles.css` — map appearance, responsive controls and legend, and Info overlay
 - `app.js` — map behavior and live location
 - `BACKLOG.md` — living feature and improvement list
 - `PUBLISHING.md` — user-controlled publishing, rollback, and backup procedure

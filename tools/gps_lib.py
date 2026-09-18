@@ -732,6 +732,65 @@ def arc_length_centerline(
     return CenterlineResult(processed, spreads, reversed_flags)
 
 
+def reinforce_centerline_with_partial_passes(
+    base: CenterlineResult,
+    partial_passes: Sequence[Sequence[XY]],
+    full_pass_count: int,
+    spacing: float = 3.0,
+    smooth_passes: int = 1,
+    simplify_tolerance: float = 0.8,
+    pass_match_cap: float = 12.0,
+) -> CenterlineResult:
+    """Use endpoint-anchored partial traversals only over their observed overlap."""
+    if not partial_passes:
+        return base
+    stations = resample_line(base.points, spacing)
+    station_lengths = cumulative_lengths(stations)
+    total_length = station_lengths[-1]
+    supports: list[tuple[list[XY], bool, float]] = []
+    for partial in partial_passes:
+        current = list(partial)
+        if len(current) < 2:
+            continue
+        endpoint_matches = [
+            (distance(current[0], stations[0]), False, True),
+            (distance(current[-1], stations[0]), True, True),
+            (distance(current[0], stations[-1]), False, False),
+            (distance(current[-1], stations[-1]), True, False),
+        ]
+        endpoint_distance, reverse, supports_start = min(endpoint_matches)
+        if endpoint_distance > pass_match_cap:
+            continue
+        if reverse:
+            current.reverse()
+        projected, _, segment_index = closest_point_on_line(current[-1], stations)
+        projected_station = station_lengths[segment_index] + distance(
+            stations[segment_index], projected
+        )
+        coverage = projected_station if supports_start else total_length - projected_station
+        supports.append((current, supports_start, max(0.0, coverage)))
+
+    if not supports:
+        return base
+    adjusted: list[XY] = []
+    spreads: list[float] = []
+    base_weight = max(1, full_pass_count)
+    for index, station_point in enumerate(stations):
+        contributors = [station_point] * base_weight
+        for partial, supports_start, coverage in supports:
+            station = station_lengths[index] if supports_start else total_length - station_lengths[index]
+            if station > coverage + spacing / 2:
+                continue
+            candidate = point_at_station(partial, min(station, line_length(partial)))
+            if distance(candidate, station_point) <= pass_match_cap:
+                contributors.append(candidate)
+        center = mean_point(contributors)
+        adjusted.append(center)
+        spreads.append(statistics.median(distance(point, center) for point in contributors))
+    processed = rdp(smooth(adjusted, smooth_passes), simplify_tolerance)
+    return CenterlineResult(processed, spreads, base.reversed_passes)
+
+
 def straighten_line(points: Sequence[XY]) -> list[XY]:
     """Fit one orthogonal-regression line while preserving endpoint extents."""
     if len(points) < 2:

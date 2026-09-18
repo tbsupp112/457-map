@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20260831-1";
+const DATA_CACHE_VERSION = "20260918-2";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -154,6 +154,15 @@ const LAYER_DEFINITIONS = [
       kind: "derived",
       panes: [{ key: "outsideShading", name: "outside-shading-pane", order: 10 }],
       style: { stroke: false, fillColor: "url(#outside-hatch)", fillOpacity: 1, fillRule: "evenodd" },
+      hatch: {
+        size: 18,
+        backgroundColor: "#fff4dc",
+        backgroundOpacity: 0.34,
+        color: "#934c13",
+        opacity: 0.76,
+        weight: 1.65,
+        dashArray: "5 4",
+      },
     },
     getLayer: () => outsideMaskLayer,
     applyData: applyOutsideMaskData,
@@ -161,11 +170,12 @@ const LAYER_DEFINITIONS = [
   {
     key: "zones",
     label: "Zones",
-    group: "40-zones",
+    group: "90-experimental",
     order: 20,
+    experimental: true,
     sources: ["zones"],
     audiences: ALL_AUDIENCES,
-    defaultVisible: { visitor: true, owner: true },
+    defaultVisible: { visitor: false, owner: false },
     render: {
       kind: "geojson",
       panes: [{ key: "zones", name: "zones-pane", order: 20 }],
@@ -215,7 +225,7 @@ const LAYER_DEFINITIONS = [
     label: "Dirt roads",
     group: "20-routes",
     order: 50,
-    sources: ["mountainDrive", "driveway", "trails", "routes"],
+    sources: ["driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: {
@@ -233,7 +243,7 @@ const LAYER_DEFINITIONS = [
     label: "Walking trails",
     group: "20-routes",
     order: 60,
-    sources: ["mountainDrive", "driveway", "trails", "routes"],
+    sources: ["driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: {
@@ -250,7 +260,7 @@ const LAYER_DEFINITIONS = [
     label: null,
     group: "data",
     order: 65,
-    sources: ["mountainDrive", "driveway", "trails", "routes"],
+    sources: ["driveway", "trails", "routes"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: true, owner: true },
     render: { kind: "data", panes: [] },
@@ -260,8 +270,9 @@ const LAYER_DEFINITIONS = [
   {
     key: "camSites",
     label: "Trail cam sites",
-    group: "45-cams",
+    group: "90-experimental",
     order: 64,
+    experimental: true,
     sources: ["camSites"],
     audiences: ["owner"],
     defaultVisible: { owner: false },
@@ -333,15 +344,44 @@ const LAYER_DEFINITIONS = [
         { key: "buildings", name: "buildings-pane", order: 71 },
       ],
       markerPanes: { building: "buildings", landmark: "naturalLandmarks" },
+      markerStyle: {
+        iconUrl: "assets/icons/building-pin.webp",
+        iconSize: [22, 30],
+        iconAnchor: [11, 30],
+        popupAnchor: [0, -27],
+        tooltipAnchor: [0, -25],
+      },
     },
     getLayer: () => landmarksLayer,
     applyData: applyLandmarkData,
   },
   {
+    key: "minorLandmarks",
+    label: "Minor landmarks",
+    group: "30-landmarks",
+    order: 71,
+    sources: ["buildings", "landmarks"],
+    audiences: ALL_AUDIENCES,
+    defaultVisible: { visitor: false, owner: false },
+    render: {
+      kind: "merged-geojson",
+      panes: [],
+      markerStyle: {
+        size: 11,
+        borderWidth: 2,
+        fillColor: "#3b8f7c",
+        borderColor: "#eef8f5",
+      },
+    },
+    getLayer: () => minorLandmarksLayer,
+    applyData: applyMinorLandmarkData,
+  },
+  {
     key: "corners",
     label: "Corner markers",
-    group: "10-corners",
+    group: "90-experimental",
     order: 80,
+    experimental: true,
     sources: ["corners"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: false, owner: false },
@@ -352,8 +392,9 @@ const LAYER_DEFINITIONS = [
   {
     key: "intersections",
     label: "Intersections",
-    group: "50-intersections",
+    group: "90-experimental",
     order: 90,
+    experimental: true,
     sources: ["intersections"],
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: false, owner: false },
@@ -393,8 +434,22 @@ const CAM_SITE_RENDER_CONFIG = activeAudience === "owner"
   ? getLayerDefinition("camSites").render
   : null;
 const LANDMARK_RENDER_CONFIG = getLayerDefinition("landmarks").render;
+const MINOR_LANDMARK_RENDER_CONFIG = getLayerDefinition("minorLandmarks").render;
 const CORNER_RENDER_CONFIG = getLayerDefinition("corners").render;
 const INTERSECTION_RENDER_CONFIG = getLayerDefinition("intersections").render;
+
+document.documentElement.style.setProperty(
+  "--minor-landmark-fill",
+  MINOR_LANDMARK_RENDER_CONFIG.markerStyle.fillColor,
+);
+document.documentElement.style.setProperty(
+  "--minor-landmark-border",
+  MINOR_LANDMARK_RENDER_CONFIG.markerStyle.borderColor,
+);
+document.documentElement.style.setProperty(
+  "--minor-landmark-border-width",
+  `${MINOR_LANDMARK_RENDER_CONFIG.markerStyle.borderWidth}px`,
+);
 
 const outsideMaskRenderer = L.svg({
   pane: MAP_PANES.outsideShading,
@@ -560,12 +615,8 @@ const zonesInteractionLayer = L.geoJSON(null, {
 const zonesGroup = L.layerGroup([zonesLayer, zonesInteractionLayer]);
 
 const buildingIcon = L.icon({
-  iconUrl: "assets/icons/building-pin.webp",
+  ...LANDMARK_RENDER_CONFIG.markerStyle,
   className: "landmark-marker",
-  iconSize: [22, 30],
-  iconAnchor: [11, 30],
-  popupAnchor: [0, -27],
-  tooltipAnchor: [0, -25],
 });
 
 const guidanceTargetIcon = L.divIcon({
@@ -575,31 +626,49 @@ const guidanceTargetIcon = L.divIcon({
   iconAnchor: [10, 10],
 });
 
-const landmarksLayer = L.geoJSON(null, {
-  pointToLayer(feature, latlng) {
-    const markerPane = LANDMARK_RENDER_CONFIG.markerPanes[feature.properties?.type]
-      || LANDMARK_RENDER_CONFIG.markerPanes.landmark;
-    return L.marker(latlng, {
-      icon: buildingIcon,
-      pane: MAP_PANES[markerPane],
-    });
-  },
-  onEachFeature(feature, layer) {
-    registerGuidanceTarget(feature, layer);
-    bindMapFeature(
-      layer,
-      feature,
-      feature.properties.note ||
-        `${feature.properties.type}; provisional center from walked extent.`,
-      {
-        landmark: true,
-        pointPhoto: true,
-        standardPopupWidth: true,
-        focusOverlay: landmarksLayer,
-      },
-    );
-  },
+const minorLandmarkIcon = L.divIcon({
+  className: "minor-landmark-marker",
+  iconSize: [MINOR_LANDMARK_RENDER_CONFIG.markerStyle.size, MINOR_LANDMARK_RENDER_CONFIG.markerStyle.size],
+  iconAnchor: [MINOR_LANDMARK_RENDER_CONFIG.markerStyle.size / 2, MINOR_LANDMARK_RENDER_CONFIG.markerStyle.size / 2],
+  popupAnchor: [0, -7],
+  tooltipAnchor: [0, -7],
 });
+
+function createLandmarksLayer({ prominence, icon }) {
+  let layerGroup;
+  layerGroup = L.geoJSON(null, {
+    filter(feature) {
+      const featureProminence = feature.properties?.prominence || "minor";
+      return featureProminence === prominence;
+    },
+    pointToLayer(feature, latlng) {
+      const markerPane = LANDMARK_RENDER_CONFIG.markerPanes[feature.properties?.type]
+        || LANDMARK_RENDER_CONFIG.markerPanes.landmark;
+      return L.marker(latlng, {
+        icon,
+        pane: MAP_PANES[markerPane],
+      });
+    },
+    onEachFeature(feature, layer) {
+      registerGuidanceTarget(feature, layer);
+      bindMapFeature(
+        layer,
+        feature,
+        feature.properties.note || "",
+        {
+          landmark: true,
+          pointPhoto: true,
+          standardPopupWidth: true,
+          focusOverlay: layerGroup,
+        },
+      );
+    },
+  });
+  return layerGroup;
+}
+
+const landmarksLayer = createLandmarksLayer({ prominence: "major", icon: buildingIcon });
+const minorLandmarksLayer = createLandmarksLayer({ prominence: "minor", icon: minorLandmarkIcon });
 
 const intersectionsLayer = L.geoJSON(null, {
   pane: MAP_PANES[INTERSECTION_RENDER_CONFIG.markerPane],
@@ -746,7 +815,9 @@ const layerControl = L.control
   )
   .addTo(map);
 
-installLayerResetButton(layerControl);
+const infoButton = installLayerResetButton(layerControl);
+installExperimentalGroupHeading(layerControl);
+installMapLegend();
 const clearLayerControlHoverDelay = installLayerControlHoverDelay(layerControl);
 
 if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
@@ -772,7 +843,6 @@ installMobileDoubleTapZoom();
 const locationStatus = document.getElementById("location-status");
 const locateButton = document.getElementById("locate-button");
 const locationPanel = document.querySelector(".location-panel");
-const infoButton = document.getElementById("info-button");
 const infoOverlay = document.getElementById("info-overlay");
 const infoClose = document.getElementById("info-close");
 const guidanceTint = document.getElementById("guidance-tint");
@@ -1367,8 +1437,8 @@ function combineFeatureCollections(title, ...collections) {
   };
 }
 
-function applyRoadsData({ mountainDrive, driveway, trails, routes }) {
-  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
+function applyRoadsData({ driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
@@ -1379,8 +1449,8 @@ function applyRoadsData({ mountainDrive, driveway, trails, routes }) {
   roadInteractionLayer.addData(roads);
 }
 
-function applyTrailsData({ mountainDrive, driveway, trails, routes }) {
-  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
+function applyTrailsData({ driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
@@ -1391,8 +1461,8 @@ function applyTrailsData({ mountainDrive, driveway, trails, routes }) {
   }
 }
 
-function applyRouteDefinitionData({ mountainDrive, driveway, trails, routes }) {
-  const roads = combineFeatureCollections("Dirt roads", mountainDrive, driveway);
+function applyRouteDefinitionData({ driveway, trails, routes }) {
+  const roads = combineFeatureCollections("Dirt roads", driveway);
   configureMapRoutes(
     [roads, trails].filter(Boolean),
     Array.isArray(routes?.routes) ? routes.routes : [],
@@ -1402,6 +1472,11 @@ function applyRouteDefinitionData({ mountainDrive, driveway, trails, routes }) {
 function applyLandmarkData({ buildings, landmarks }) {
   if (buildings) landmarksLayer.addData(buildings);
   if (landmarks) landmarksLayer.addData(landmarks);
+}
+
+function applyMinorLandmarkData({ buildings, landmarks }) {
+  if (buildings) minorLandmarksLayer.addData(buildings);
+  if (landmarks) minorLandmarksLayer.addData(landmarks);
 }
 
 function applyCornersData({ corners }) {
@@ -1593,12 +1668,13 @@ function routesForFeature(feature) {
 
 function trailStyle(feature) {
   const isConnector = hasRouteDefinitions && routesForFeature(feature).length === 0;
+  const isUnfinished = feature.properties?.condition === "unfinished";
   return {
-    color: "#63b8e8",
+    color: isUnfinished ? "#6f8fa3" : "#63b8e8",
     weight: 3,
     // Keep unassigned segments present, but subtly secondary to named routes.
     opacity: isConnector ? 0.78 : 1,
-    dashArray: "7 6",
+    dashArray: isUnfinished ? "3 11" : "7 6",
     lineCap: "round",
     lineJoin: "round",
   };
@@ -1607,8 +1683,18 @@ function trailStyle(feature) {
 function buildTrailPopupOptions(feature) {
   const segmentName = feature.properties.name;
   const routes = routesForFeature(feature);
-  const detail = "Provisional walking-trail centerline from repeated phone-GPS passes.";
-  if (routes.length === 0) return { detail, standardPopupWidth: true };
+  const baseDetail = "Approximate route.";
+  const detail = feature.properties?.condition === "unfinished"
+    ? "Not finished yet."
+    : baseDetail;
+  if (routes.length === 0) {
+    const lengthFeet = Number(feature.properties?.length_ft);
+    return {
+      detail,
+      secondary: Number.isFinite(lengthFeet) ? `${Math.round(lengthFeet).toLocaleString()} ft` : "",
+      standardPopupWidth: true,
+    };
+  }
 
   return {
     title: routes.map((route) => route.name).join(" \u00b7 "),
@@ -1621,16 +1707,12 @@ function buildTrailPopupOptions(feature) {
 function buildRoadPopupOptions(feature) {
   const routes = routesForFeature(feature);
   const properties = feature.properties || {};
-  const detail = [properties.status, properties.note]
-    .filter((value) => typeof value === "string" && value.trim())
-    .map((value) => value.trim().replace(/[.\s]+$/, ""))
-    .join(". ");
-  const safeDetail = detail ? `${detail}.` : "Approximate dirt-road centerline.";
-  if (routes.length === 0) return { detail: safeDetail, standardPopupWidth: true };
+  const detail = typeof properties.note === "string" ? properties.note.trim() : "";
+  if (routes.length === 0) return { detail, standardPopupWidth: true };
   return {
     title: routes.map((route) => route.name).join(" \u00b7 "),
     secondary: `Road: ${properties.name || "Mapped road"}`,
-    detail: safeDetail,
+    detail,
     routes,
   };
 }
@@ -1700,27 +1782,141 @@ function installOutsideHatchPattern() {
   const defs = document.createElementNS(svgNamespace, "defs");
   const pattern = document.createElementNS(svgNamespace, "pattern");
   pattern.setAttribute("id", "outside-hatch");
-  pattern.setAttribute("width", "18");
-  pattern.setAttribute("height", "18");
+  pattern.setAttribute("width", String(OUTSIDE_RENDER_CONFIG.hatch.size));
+  pattern.setAttribute("height", String(OUTSIDE_RENDER_CONFIG.hatch.size));
   pattern.setAttribute("patternUnits", "userSpaceOnUse");
 
   const background = document.createElementNS(svgNamespace, "rect");
-  background.setAttribute("width", "18");
-  background.setAttribute("height", "18");
-  background.setAttribute("fill", "#fff4dc");
-  background.setAttribute("fill-opacity", "0.34");
+  background.setAttribute("width", String(OUTSIDE_RENDER_CONFIG.hatch.size));
+  background.setAttribute("height", String(OUTSIDE_RENDER_CONFIG.hatch.size));
+  background.setAttribute("fill", OUTSIDE_RENDER_CONFIG.hatch.backgroundColor);
+  background.setAttribute("fill-opacity", String(OUTSIDE_RENDER_CONFIG.hatch.backgroundOpacity));
 
   const hatch = document.createElementNS(svgNamespace, "path");
   hatch.setAttribute("d", "M-4 4 L4 -4 M0 18 L18 0 M14 22 L22 14");
   hatch.setAttribute("fill", "none");
-  hatch.setAttribute("stroke", "#934c13");
-  hatch.setAttribute("stroke-opacity", "0.76");
-  hatch.setAttribute("stroke-width", "1.65");
-  hatch.setAttribute("stroke-dasharray", "5 4");
+  hatch.setAttribute("stroke", OUTSIDE_RENDER_CONFIG.hatch.color);
+  hatch.setAttribute("stroke-opacity", String(OUTSIDE_RENDER_CONFIG.hatch.opacity));
+  hatch.setAttribute("stroke-width", String(OUTSIDE_RENDER_CONFIG.hatch.weight));
+  hatch.setAttribute("stroke-dasharray", OUTSIDE_RENDER_CONFIG.hatch.dashArray);
 
   pattern.append(background, hatch);
   defs.append(pattern);
   svg.prepend(defs);
+}
+
+function createLegendSvg() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 34 18");
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("map-legend-swatch");
+  return svg;
+}
+
+function createLegendLine(styles) {
+  const svg = createLegendSvg();
+  styles.forEach((style) => {
+    const line = document.createElementNS(svg.namespaceURI, "line");
+    line.setAttribute("x1", "2");
+    line.setAttribute("x2", "32");
+    line.setAttribute("y1", "9");
+    line.setAttribute("y2", "9");
+    line.setAttribute("stroke", style.color);
+    line.setAttribute("stroke-width", String(style.weight));
+    line.setAttribute("stroke-opacity", String(style.opacity ?? 1));
+    if (style.dashArray) line.setAttribute("stroke-dasharray", style.dashArray);
+    line.setAttribute("stroke-linecap", style.lineCap || "round");
+    svg.append(line);
+  });
+  return svg;
+}
+
+function createLegendHatch() {
+  const style = OUTSIDE_RENDER_CONFIG.hatch;
+  const svg = createLegendSvg();
+  const background = document.createElementNS(svg.namespaceURI, "rect");
+  background.setAttribute("x", "1");
+  background.setAttribute("y", "1");
+  background.setAttribute("width", "32");
+  background.setAttribute("height", "16");
+  background.setAttribute("rx", "2");
+  background.setAttribute("fill", style.backgroundColor);
+  background.setAttribute("fill-opacity", String(style.backgroundOpacity));
+  const hatch = document.createElementNS(svg.namespaceURI, "path");
+  hatch.setAttribute("d", "M-3 17 L17 -3 M5 21 L25 1 M17 21 L37 1");
+  hatch.setAttribute("fill", "none");
+  hatch.setAttribute("stroke", style.color);
+  hatch.setAttribute("stroke-opacity", String(style.opacity));
+  hatch.setAttribute("stroke-width", String(style.weight));
+  hatch.setAttribute("stroke-dasharray", style.dashArray);
+  svg.append(background, hatch);
+  return svg;
+}
+
+function createLegendLandmark({ minor = false } = {}) {
+  const svg = createLegendSvg();
+  if (minor) {
+    const style = MINOR_LANDMARK_RENDER_CONFIG.markerStyle;
+    const circle = document.createElementNS(svg.namespaceURI, "circle");
+    circle.setAttribute("cx", "17");
+    circle.setAttribute("cy", "9");
+    circle.setAttribute("r", String(style.size / 2));
+    circle.setAttribute("fill", style.fillColor);
+    circle.setAttribute("stroke", style.borderColor);
+    circle.setAttribute("stroke-width", String(style.borderWidth));
+    svg.append(circle);
+    return svg;
+  }
+  const style = LANDMARK_RENDER_CONFIG.markerStyle;
+  const image = document.createElementNS(svg.namespaceURI, "image");
+  image.setAttribute("href", style.iconUrl);
+  image.setAttribute("x", "10");
+  image.setAttribute("y", "0");
+  image.setAttribute("width", "14");
+  image.setAttribute("height", "18");
+  image.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  svg.append(image);
+  return svg;
+}
+
+function installMapLegend() {
+  const finishedTrailStyle = trailStyle({ properties: { condition: "finished" } });
+  const unfinishedTrailStyle = trailStyle({ properties: { condition: "unfinished" } });
+  const rows = [
+    ["Property boundary (approximate)", createLegendLine([BOUNDARY_RENDER_CONFIG.haloStyle, BOUNDARY_RENDER_CONFIG.style])],
+    ["Walking trail", createLegendLine([finishedTrailStyle])],
+    ["Walking trail — not finished", createLegendLine([unfinishedTrailStyle])],
+    ["Dirt road", createLegendLine([ROAD_RENDER_CONFIG.style])],
+    ["Not part of the property", createLegendHatch()],
+    ["Powerline corridor (not owned, access allowed)", createLegendLine([CORRIDOR_RENDER_CONFIG.style]), true],
+    ["Landmark", createLegendLandmark(), true],
+    ["Minor landmark", createLegendLandmark({ minor: true }), true],
+  ];
+  const control = L.control({ position: "bottomleft" });
+  control.onAdd = () => {
+    const container = L.DomUtil.create("div", "map-legend");
+    container.setAttribute("role", "region");
+    container.setAttribute("aria-label", "Map legend");
+    const dismiss = L.DomUtil.create("button", "map-legend-dismiss", container);
+    dismiss.type = "button";
+    dismiss.setAttribute("aria-label", "Dismiss map legend");
+    dismiss.textContent = "×";
+    rows.forEach(([label, swatch, desktopOnly]) => {
+      const row = L.DomUtil.create(
+        "div",
+        `map-legend-row${desktopOnly ? " map-legend-row--desktop" : ""}`,
+        container,
+      );
+      row.append(swatch);
+      const text = L.DomUtil.create("span", "map-legend-label", row);
+      text.textContent = label;
+    });
+    dismiss.addEventListener("click", () => control.remove());
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    return container;
+  };
+  control.addTo(map);
 }
 
 function openInfo() {
@@ -1765,7 +1961,7 @@ function registerGuidanceTarget(feature, layer) {
 function buildMapFeaturePopup(feature, detail, options = {}) {
   const title = options.title || feature.properties.name;
   const name = escapeHtml(title);
-  const safeDetail = escapeHtml(detail || "Approximate mapped feature.");
+  const safeDetail = detail ? escapeHtml(detail) : "";
   const popupClass = shouldUseStandardPopupWidth(title, detail, options)
     ? "map-popup-content map-popup-content--standard"
     : "map-popup-content";
@@ -1775,7 +1971,7 @@ function buildMapFeaturePopup(feature, detail, options = {}) {
   if (options.secondary) {
     popupHtml += `<span class="map-popup-secondary">${escapeHtml(options.secondary)}</span>`;
   }
-  popupHtml += `<span class="map-popup-detail">${safeDetail}</span>`;
+  if (safeDetail) popupHtml += `<span class="map-popup-detail">${safeDetail}</span>`;
   if (options.caveat) {
     popupHtml += `<small class="map-popup-caveat">${escapeHtml(options.caveat)}</small>`;
   }
@@ -2753,9 +2949,34 @@ function installLayerResetButton(control) {
     event.stopPropagation();
     resetMapToDefaults();
   });
-  resetSection.append(resetButton);
+  const aboutButton = document.createElement("button");
+  aboutButton.id = "info-button";
+  aboutButton.className = "layer-reset-button";
+  aboutButton.type = "button";
+  aboutButton.textContent = "About this map";
+  aboutButton.setAttribute("aria-controls", "info-overlay");
+  aboutButton.setAttribute("aria-expanded", "false");
+  resetSection.append(aboutButton, resetButton);
   list.append(resetSection);
   L.DomEvent.disableClickPropagation(resetSection);
+  return aboutButton;
+}
+
+function installExperimentalGroupHeading(control) {
+  const overlays = control.getContainer().querySelector(".leaflet-control-layers-overlays");
+  if (!overlays) return;
+  const experimentalLabels = new Set(
+    getAudienceLayerDefinitions({ panelOnly: true })
+      .filter((definition) => definition.experimental)
+      .map((definition) => definition.label),
+  );
+  const firstExperimentalEntry = [...overlays.querySelectorAll("label")]
+    .find((label) => experimentalLabels.has(label.textContent.trim()));
+  if (!firstExperimentalEntry) return;
+  const heading = document.createElement("div");
+  heading.className = "layer-group-heading";
+  heading.textContent = "Experimental";
+  firstExperimentalEntry.before(heading);
 }
 
 function installLayerControlHoverDelay(control) {

@@ -290,8 +290,8 @@
     {
       "id": "mountain-drive-route",
       "name": "Mountain Drive Route",
-      "segments": ["mountain-drive"],
-      "segment_directions": ["forward"],
+      "segments": ["mountain-drive", "mountain-drive-upper"],
+      "segment_directions": ["forward", "forward"],
       "shape": "out-and-back",
       "difficulty": "moderate",
       "description": "Provisional out-and-back route following Mountain Drive from its driveway connection to the current mapped endpoint.",

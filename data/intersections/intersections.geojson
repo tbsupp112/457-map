@@ -16,7 +16,7 @@
         ],
         "status": "confirmed in person; mapped approximately",
         "map_offset_from_building_m": 5.0,
-        "note": "Placed 5 m northeast of the Pavilion point along the trail so the building and intersection symbols remain distinct."
+        "note": "Marker is offset from the Pavilion so both remain visible."
       },
       "geometry": {
         "type": "Point",
@@ -36,8 +36,7 @@
           "garden-cut-through",
           "front-field-zone"
         ],
-        "status": "confirmed in person; mapped approximately",
-        "note": "Trail endpoint and the owner-refined zone boundary share the first west-to-east crossing coordinate exactly; the trail segment beyond this point was removed."
+        "status": "confirmed in person; mapped approximately"
       },
       "geometry": {
         "type": "Point",
@@ -58,8 +57,7 @@
           "pavilion-side-trail"
         ],
         "status": "confirmed in person; mapped approximately",
-        "snap_adjustment_m": 1.5,
-        "note": "The trail endpoint and an inserted Mountain Drive vertex share this exact coordinate."
+        "snap_adjustment_m": 1.5
       },
       "geometry": {
         "type": "Point",
@@ -80,8 +78,7 @@
           "main-loop"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "The former open connection point now terminates cleanly on Main Loop. Declared extend join moved/extended the end side by 5.0 m; source and target now share [-73.8352984, 43.3591487]."
+        "recorded_on": "2026-08-05"
       },
       "geometry": {
         "type": "Point",
@@ -102,8 +99,7 @@
           "front-field-zone"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Connector overshoot was trimmed at the existing zone edge without an additional inset. Declared trim join moved/extended the start side by 2.9 m; source and target now share [-73.8347378, 43.3588363]."
+        "recorded_on": "2026-08-05"
       },
       "geometry": {
         "type": "Point",
@@ -124,8 +120,7 @@
           "main-loop-ext"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Connector endpoint snapped to Main Loop Ext. Declared snap join moved/extended the end side by 3.1 m; source and target now share [-73.8343892, 43.3588265]."
+        "recorded_on": "2026-08-05"
       },
       "geometry": {
         "type": "Point",
@@ -148,7 +143,7 @@
         ],
         "status": "provisional; derived from declared join",
         "recorded_on": "2026-08-05",
-        "note": "Main Loop, Main Loop Ext, and Barbershop Trail share one owner-confirmed clearing node. Node centroid [-73.8342293, 43.3591683]; endpoint movements: main-loop-ext start 5.1 m, barbershop-trail start 3.8 m, main-loop start 31.6 m."
+        "note": "Main Loop, Main Loop Ext, and Barbershop Trail meet here."
       },
       "geometry": {
         "type": "Point",
@@ -169,8 +164,7 @@
           "driveway"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-31",
-        "note": "Main Loop endpoint snapped to the updated Driveway centerline. Declared snap join moved/extended the end side by 0.6 m; source and target now share [-73.8354327, 43.35894]."
+        "recorded_on": "2026-08-31"
       },
       "geometry": {
         "type": "Point",
@@ -191,8 +185,7 @@
           "main-loop"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-05",
-        "note": "Pavilion Side Trail was extended beyond its existing Pavilion-offset vertex to Main Loop. Declared extend join moved/extended the start side by 11.6 m; source and target now share [-73.8352243, 43.3592239]. Resulting separation from pavilion: 11.4 m."
+        "recorded_on": "2026-08-05"
       },
       "geometry": {
         "type": "Point",
@@ -213,14 +206,55 @@
           "driveway"
         ],
         "status": "provisional; derived from declared join",
-        "recorded_on": "2026-08-31",
-        "note": "Mountain Drive endpoint snapped to the updated Driveway centerline. Declared snap join moved/extended the start side by 2.2 m; source and target now share [-73.8359401, 43.3591414]."
+        "recorded_on": "2026-08-31"
       },
       "geometry": {
         "type": "Point",
         "coordinates": [
           -73.8359401,
           43.3591414
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "beeline-main-loop-ext",
+        "name": "Beeline / Main Loop Ext",
+        "type": "trail intersection",
+        "features": [
+          "line",
+          "main-loop-ext"
+        ],
+        "status": "provisional",
+        "recorded_on": "2026-09-18"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8339724,
+          43.3584277
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "back-cut-through-main-loop-ext",
+        "name": "Back Cut Through / Main Loop Ext",
+        "type": "confirmed intersection",
+        "features": [
+          "back-cut-through",
+          "main-loop-ext"
+        ],
+        "status": "provisional; derived from declared join",
+        "recorded_on": "2026-09-18"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -73.8342787,
+          43.3587166
         ]
       }
     }

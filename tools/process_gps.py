@@ -46,6 +46,7 @@ from gps_lib import (
     outset_ring,
     rdp,
     read_gpx,
+    reinforce_centerline_with_partial_passes,
     ring_area,
     ring_perimeter,
     self_intersection_count,
@@ -196,6 +197,11 @@ def load_manifest(path: Path) -> dict[str, Any]:
             raise ValueError(f"Duplicate job id: {job['id']}")
         if not isinstance(job["inputs"], list) or not job["inputs"]:
             raise ValueError(f"Job {job['id']} needs at least one input")
+        partial_inputs = job.get("partial_inputs", [])
+        if not isinstance(partial_inputs, list):
+            raise ValueError(f"Job {job['id']} partial_inputs must be a list")
+        if partial_inputs and job["type"] != "path":
+            raise ValueError(f"Job {job['id']} partial_inputs are supported only for paths")
         safe_target(job["target"])
         job_ids.add(job["id"])
     return manifest
@@ -240,7 +246,9 @@ def set_line(current_feature: dict[str, Any], points: list[XY]) -> None:
         "type": "LineString",
         "coordinates": [to_lonlat(point) for point in points],
     }
-    current_feature["properties"]["length_m"] = round(line_length(points), 1)
+    length_m = round(line_length(points), 1)
+    current_feature["properties"]["length_m"] = length_m
+    current_feature["properties"]["length_ft"] = round(length_m * 3.28084)
 
 
 def ring_xy(current_feature: dict[str, Any]) -> list[XY]:
@@ -293,12 +301,13 @@ def endpoint_index_for_target(source: list[XY], endpoint: str, target: list[XY],
 def process_job(
     job: dict[str, Any], source_root: Path, intake_date: str
 ) -> tuple[WorkingFeature, JobReport]:
-    report = JobReport(job["id"], job["name"], job["type"], list(job["inputs"]))
+    all_inputs = list(dict.fromkeys([*job["inputs"], *job.get("partial_inputs", [])]))
+    report = JobReport(job["id"], job["name"], job["type"], all_inputs)
     options = job.get("options", {})
     parsed_files = {}
     tracks_by_name = {}
     bridge_by_name: dict[str, list[float]] = {}
-    for filename in job["inputs"]:
+    for filename in all_inputs:
         path = source_root / filename
         if not path.is_file():
             raise ValueError(f"Job {job['id']} is missing input file {filename}")
@@ -422,7 +431,7 @@ def process_job(
         acres = area / 4046.8564224
         computed = {
             "source_files": list(job["inputs"]),
-            "source_track_count": len(job["inputs"]),
+            "source_track_count": lap_count,
             "recorded_on": job.get("recorded_on", intake_date),
             "processing": (
                 f"Median perimeter from {lap_count} walked laps; low-area jitter removed"
@@ -452,6 +461,7 @@ def process_job(
     else:
         passes = []
         pass_tracks = []
+        partial_passes = []
         leg_gains = []
         leg_losses = []
         detected_leg_counts: dict[str, int] = {}
@@ -491,6 +501,25 @@ def process_job(
             leg_gains.extend(value for value in (elevation_gain(leg) for leg in file_legs) if value is not None)
             leg_losses.extend(value for value in (elevation_loss(leg) for leg in file_legs) if value is not None)
 
+        partial_split_setting = options.get("partial_split_passes", True)
+        for filename in job.get("partial_inputs", []):
+            track = tracks_by_name[filename]
+            split = split_out_and_back(
+                track,
+                float(options.get("min_leg_length", 15.0)),
+                float(options.get("reversal_threshold", 8.0)),
+                float(options.get("pass_match_cap", 12.0)),
+                force=partial_split_setting is True,
+            )
+            file_legs = split.legs if partial_split_setting is not False else [track]
+            lengths = [track_length(leg) for leg in file_legs]
+            detected_leg_counts[filename] = len(file_legs)
+            report.file_lines.append(
+                f"  - partial legs detected: {len(file_legs)} ({[round(value, 1) for value in lengths]} m); "
+                "used only over their recorded overlap."
+            )
+            partial_passes.extend([[point.xy for point in leg] for leg in file_legs])
+
         spacing = float(options.get("spacing", 3.0))
         result = arc_length_centerline(
             passes,
@@ -499,6 +528,16 @@ def process_job(
             float(options.get("simplify_tolerance", spacing * 0.28)),
             float(options.get("pass_match_cap", 12.0)),
         )
+        if partial_passes:
+            result = reinforce_centerline_with_partial_passes(
+                result,
+                partial_passes,
+                len(passes),
+                spacing,
+                int(options.get("smooth_passes", 1)),
+                float(options.get("simplify_tolerance", spacing * 0.28)),
+                float(options.get("pass_match_cap", 12.0)),
+            )
         output_line = result.points
         if options.get("straighten"):
             output_line = straighten_line(output_line)
@@ -523,19 +562,24 @@ def process_job(
         )
         if options.get("straighten"):
             processing += " Orthogonal best-fit straight line; processed endpoint extents preserved."
+        if partial_passes:
+            processing += (
+                f" {len(partial_passes)} partial traversal(s) reinforced only their recorded overlap."
+            )
         computed = {
-            "source_files": list(job["inputs"]),
-            "source_track_count": len(job["inputs"]),
+            "source_files": all_inputs,
+            "source_track_count": len(passes) + len(partial_passes),
             "recorded_on": job.get("recorded_on", intake_date),
             "processing": processing,
             "length_m": round(length_m, 1),
             "length_ft": length_ft,
         }
-        if gain_ft is not None:
+        omit_elevation = bool(options.get("omit_elevation"))
+        if gain_ft is not None and not omit_elevation:
             computed["elevation_gain_ft"] = gain_ft
-        if loss_ft is not None:
+        if loss_ft is not None and not omit_elevation:
             computed["elevation_loss_ft"] = loss_ft
-        if elevation_profile_m:
+        if elevation_profile_m and not omit_elevation:
             computed["elevation_profile_ft"] = [
                 round(value * 3.28084, 1) for value in elevation_profile_m
             ]
@@ -1178,6 +1222,7 @@ def process_manifest(manifest_path: Path) -> PipelineResult:
         (feature_id, point_xy(working.feature))
         for feature_id, working in live_catalog.items()
         if working.feature["geometry"]["type"] == "Point"
+        and working.feature.get("properties", {}).get("status") != "placeholder"
     ]
     for feature_id in sorted(candidate_ids):
         working = catalog[feature_id]

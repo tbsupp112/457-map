@@ -35,11 +35,11 @@ class ValidateDataTests(unittest.TestCase):
 
     def test_duplicate_id_fails_informatively(self) -> None:
         def mutate(root: Path) -> None:
-            mountain_path = root / "data" / "roads" / "mountain-drive.geojson"
+            trails_path = root / "data" / "trails" / "walking-trails.geojson"
             driveway_path = root / "data" / "roads" / "driveway.geojson"
-            mountain = json.loads(mountain_path.read_text(encoding="utf-8"))
+            trails = json.loads(trails_path.read_text(encoding="utf-8"))
             driveway = json.loads(driveway_path.read_text(encoding="utf-8"))
-            driveway["features"][0]["properties"]["id"] = mountain["features"][0]["properties"]["id"]
+            driveway["features"][0]["properties"]["id"] = trails["features"][0]["properties"]["id"]
             driveway_path.write_text(json.dumps(driveway), encoding="utf-8")
 
         errors = self.validate_broken_copy(mutate)
@@ -85,7 +85,7 @@ class ValidateDataTests(unittest.TestCase):
             path = root / "home.js"
             source = path.read_text(encoding="utf-8")
             path.write_text(
-                source.replace('"mountainDrive"', '"missingRoadSource"', 1),
+                source.replace('"trails"', '"missingRoadSource"', 1),
                 encoding="utf-8",
             )
 
@@ -131,6 +131,20 @@ class ValidateDataTests(unittest.TestCase):
             ),
             errors,
         )
+
+    def test_stale_length_ft_fails_informatively(self) -> None:
+        def mutate(root: Path) -> None:
+            path = root / "data" / "trails" / "walking-trails.geojson"
+            data = json.loads(path.read_text(encoding="utf-8"))
+            feature = next(
+                item for item in data["features"]
+                if item["properties"]["id"] == "main-loop"
+            )
+            feature["properties"]["length_ft"] += 2
+            path.write_text(json.dumps(data), encoding="utf-8")
+
+        errors = self.validate_broken_copy(mutate)
+        self.assertTrue(any("length_ft disagrees with length_m" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

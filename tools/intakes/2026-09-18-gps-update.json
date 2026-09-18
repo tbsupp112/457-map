@@ -1,0 +1,150 @@
+{
+  "intake_date": "2026-09-18",
+  "source_dir": "../_local",
+  "warnings": [
+    "All inputs are phone GPS and remain approximate orientation data; raw GPX stays under sibling _local.",
+    "Beeline remains a straight two-point centerline with both endpoints extended to its confirmed joins.",
+    "Partial Back Cut Through traversals influence only the section they recorded and are not stretched across the full trail."
+  ],
+  "jobs": [
+    {
+      "id": "line",
+      "name": "Beeline",
+      "type": "path",
+      "inputs": [
+        "Raw gaia gpx through 8.31.26/Line.gpx",
+        "Raw gaia gpx through 8.31.26/Line - 2.gpx",
+        "Raw gaia gpx 9.18.26/beeline.gpx",
+        "Raw gaia gpx 9.18.26/beeline-2.gpx"
+      ],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-09-18",
+      "properties": {
+        "type": "walking trail",
+        "condition": "unfinished",
+        "status": "provisional"
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 0,
+        "simplify_tolerance": 0.5,
+        "pass_match_cap": 15.0,
+        "split_passes": false,
+        "straighten": true,
+        "omit_elevation": true
+      },
+      "expect": {
+        "closed": false,
+        "length_range_m": [120, 135],
+        "legs": {
+          "Raw gaia gpx through 8.31.26/Line.gpx": 1,
+          "Raw gaia gpx through 8.31.26/Line - 2.gpx": 1,
+          "Raw gaia gpx 9.18.26/beeline.gpx": 1,
+          "Raw gaia gpx 9.18.26/beeline-2.gpx": 1
+        }
+      }
+    },
+    {
+      "id": "back-cut-through",
+      "name": "Back Cut Through",
+      "type": "path",
+      "inputs": [
+        "Raw gaia gpx 9.18.26/back-cut-through-x3.gpx",
+        "Raw gaia gpx 9.18.26/back-cut-through-x1.gpx"
+      ],
+      "partial_inputs": [
+        "Raw gaia gpx 9.18.26/partial-back-cut-through.gpx"
+      ],
+      "target": "trails/walking-trails.geojson",
+      "recorded_on": "2026-09-18",
+      "properties": {
+        "type": "walking trail",
+        "condition": "finished",
+        "status": "provisional"
+      },
+      "options": {
+        "spacing": 3.0,
+        "smooth_passes": 1,
+        "simplify_tolerance": 0.8,
+        "min_leg_length": 15.0,
+        "pass_match_cap": 15.0,
+        "split_passes": true,
+        "partial_split_passes": true
+      },
+      "expect": {
+        "closed": false,
+        "length_range_m": [95, 135],
+        "legs": {
+          "Raw gaia gpx 9.18.26/back-cut-through-x3.gpx": 3,
+          "Raw gaia gpx 9.18.26/back-cut-through-x1.gpx": 1,
+          "Raw gaia gpx 9.18.26/partial-back-cut-through.gpx": 2
+        }
+      }
+    }
+  ],
+  "joins": [
+    {
+      "id": "beeline-barbershop-landmark",
+      "name": "Beeline / The Barbershop",
+      "feature": "line",
+      "endpoint": "nearest",
+      "target_feature": "the-barbershop",
+      "target_kind": "point",
+      "action": "offset",
+      "distance_m": 0.0,
+      "movement_cap": 30.0
+    },
+    {
+      "id": "barbershop-trail-beeline",
+      "name": "Barbershop Trail / Beeline",
+      "feature": "barbershop-trail",
+      "endpoint": "nearest",
+      "target_feature": "line",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 6.0
+    },
+    {
+      "id": "beeline-main-loop-ext-anchor",
+      "name": "Beeline junction anchor",
+      "feature": "line",
+      "endpoint": "nearest",
+      "target_feature": "beeline-main-loop-ext",
+      "target_kind": "point",
+      "action": "offset",
+      "distance_m": 0.0,
+      "movement_cap": 30.0
+    },
+    {
+      "id": "beeline-main-loop-ext",
+      "name": "Beeline / Main Loop Ext",
+      "feature": "line",
+      "endpoint": "nearest",
+      "target_feature": "main-loop-ext",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 5.0,
+      "emit_intersection": {
+        "id": "beeline-main-loop-ext",
+        "name": "Beeline / Main Loop Ext",
+        "note": "Beeline meets Main Loop Ext."
+      }
+    },
+    {
+      "id": "back-cut-through-main-loop-ext",
+      "name": "Back Cut Through / Main Loop Ext",
+      "feature": "back-cut-through",
+      "endpoint": "nearest",
+      "target_feature": "main-loop-ext",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 10.0,
+      "emit_intersection": {
+        "id": "back-cut-through-main-loop-ext",
+        "name": "Back Cut Through / Main Loop Ext",
+        "note": "Back Cut Through meets Main Loop Ext."
+      }
+    }
+  ],
+  "route_omissions": ["line", "back-cut-through"]
+}

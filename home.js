@@ -1,6 +1,6 @@
 "use strict";
 
-const DATA_CACHE_VERSION = "20260831-1";
+const DATA_CACHE_VERSION = "20260918-2";
 let openRouteDetails = null;
 
 function versionedDataUrl(path) {
@@ -74,7 +74,7 @@ async function loadHomeRoutes() {
   const sources = new Map(
     (manifest.sources || []).map((source) => [source.key, source.path]),
   );
-  const requiredKeys = ["routes", "mountainDrive", "driveway", "trails"];
+  const requiredKeys = ["routes", "driveway", "trails"];
   if (requiredKeys.some((key) => !sources.has(key))) {
     throw new Error("The data manifest is missing a route source.");
   }
@@ -86,12 +86,11 @@ async function loadHomeRoutes() {
       throw new Error(`Could not load ${requiredKeys[index]}: ${response.status}`);
     }
   });
-  const [routeData, mountainDriveData, drivewayData, trailData] = await Promise.all(
+  const [routeData, drivewayData, trailData] = await Promise.all(
     responses.map((response) => response.json()),
   );
   const segmentFeaturesById = new Map(
     [
-      ...(mountainDriveData.features || []),
       ...(drivewayData.features || []),
       ...(trailData.features || []),
     ]

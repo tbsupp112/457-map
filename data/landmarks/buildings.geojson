@@ -16,7 +16,8 @@
           "Home_point.gpx"
         ],
         "source_track_count": 1,
-        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing stationary dwell samples from dominating."
+        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing stationary dwell samples from dominating.",
+        "prominence": "major"
       },
       "geometry": {
         "type": "Point",
@@ -38,7 +39,8 @@
           "Pavilion_point.gpx"
         ],
         "source_track_count": 1,
-        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing repeated samples from dominating."
+        "processing": "Position-weighted center: each occupied 2 m spatial cell counted once, preventing repeated samples from dominating.",
+        "prominence": "major"
       },
       "geometry": {
         "type": "Point",
@@ -54,8 +56,8 @@
         "id": "cabin",
         "name": "Cabin",
         "type": "building",
+        "prominence": "major",
         "status": "provisional",
-        "note": "Approximate center derived from walked exterior and interior wall traces.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/cabin-ext-point.gpx",
           "Raw gaia gpx through 8.31.26/cabin-int-point.gpx"
@@ -78,8 +80,8 @@
         "id": "gravel-shed",
         "name": "Gravel Shed",
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
-        "note": "Approximate center derived from the walked exterior.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/gravel-shed-point-ext.gpx"
         ],
@@ -101,8 +103,8 @@
         "id": "mystery-shack",
         "name": "Mystery Shack",
         "type": "building",
+        "prominence": "minor",
         "status": "rough / provisional",
-        "note": "Low-priority approximate center from a short exterior walk and entrance reading.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/mystery-shack.gpx"
         ],
@@ -124,8 +126,8 @@
         "id": "shed",
         "name": "Shed",
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
-        "note": "Approximate center derived from the walked exterior after removing the final 10 seconds.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/shed-ext-point-delete-last-10s.gpx"
         ],
@@ -147,8 +149,8 @@
         "id": "wood-shed",
         "name": "Wood Shed",
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
-        "note": "Approximate center derived from the walked exterior.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/wood-shed-ext-point.gpx"
         ],

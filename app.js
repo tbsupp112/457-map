@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20260918-2";
+const DATA_CACHE_VERSION = "20260918-4";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -55,6 +55,7 @@ const hasExplicitMapFocus = requestedMapFocus === "property" || Boolean(requeste
 let preferencesReady = false;
 let initialViewReady = false;
 let pendingFeaturePopupTimer = null;
+let pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
 let suppressFeaturePopupsUntil = 0;
 let suppressPreferencePersistence = false;
 let programmaticFocusViewActive = false;
@@ -72,6 +73,11 @@ let hoveredFeatureEventLayers = new Set();
 let featureHoverClearTimer = null;
 let openMapRouteDetails = null;
 let hidingPopupForRouteDetails = false;
+let infoButton = null;
+let mapLegendControl = null;
+let mapLegendRestoreControl = null;
+let legendDismissedForSession = false;
+let layerControlDecorationFrame = null;
 const roadVisualLayersById = new Map();
 const trailVisualLayersById = new Map();
 const zoneVisualLayersById = new Map();
@@ -222,7 +228,7 @@ const LAYER_DEFINITIONS = [
   },
   {
     key: "roads",
-    label: "Dirt roads",
+    label: null,
     group: "20-routes",
     order: 50,
     sources: ["driveway", "trails", "routes"],
@@ -248,9 +254,12 @@ const LAYER_DEFINITIONS = [
     defaultVisible: { visitor: true, owner: true },
     render: {
       kind: "geojson",
-      panes: [{ key: "trails", name: "trails-pane", order: 60 }],
+      panes: [
+        { key: "trails", name: "trails-pane", order: 60 },
+        { key: "trailInteractions", name: "trail-interactions-pane", order: 67.5 },
+      ],
       style: trailStyle,
-      interactionStyle: { color: "#ffffff", weight: ROAD_INTERACTION_WEIGHT_PX, opacity: 0.001, lineCap: "round", lineJoin: "round" },
+      interactionStyle: trailInteractionStyle,
     },
     getLayer: () => trailsGroup,
     applyData: applyTrailsData,
@@ -465,6 +474,10 @@ const interactionsRenderer = L.svg({
   pane: MAP_PANES.interactions,
   padding: 0.5,
 });
+const trailInteractionsRenderer = L.svg({
+  pane: MAP_PANES.trailInteractions,
+  padding: 0.5,
+});
 const intersectionsRenderer = L.svg({
   pane: MAP_PANES.intersections,
   padding: 0.5,
@@ -577,8 +590,8 @@ const trailsLayer = L.geoJSON(null, {
   },
 });
 const trailInteractionLayer = L.geoJSON(null, {
-  pane: MAP_PANES.interactions,
-  renderer: interactionsRenderer,
+  pane: MAP_PANES.trailInteractions,
+  renderer: trailInteractionsRenderer,
   style: TRAIL_RENDER_CONFIG.interactionStyle,
   onEachFeature(feature, layer) {
     const popupOptions = buildTrailPopupOptions(feature);
@@ -586,6 +599,7 @@ const trailInteractionLayer = L.geoJSON(null, {
       ...popupOptions,
       focusOverlay: trailsGroup,
       visualLayer: trailVisualLayersById.get(feature.properties?.id),
+      interactionPriority: 100,
     });
   },
 });
@@ -815,8 +829,7 @@ const layerControl = L.control
   )
   .addTo(map);
 
-const infoButton = installLayerResetButton(layerControl);
-installExperimentalGroupHeading(layerControl);
+decorateLayerControl(layerControl);
 installMapLegend();
 const clearLayerControlHoverDelay = installLayerControlHoverDelay(layerControl);
 
@@ -834,7 +847,11 @@ if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
 }
 
 map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEvent);
+map.on("baselayerchange", refreshTrailPresentation);
+map.on("baselayerchange overlayadd overlayremove", scheduleLayerControlDecoration);
 map.on("movestart zoomstart", handleMapViewChangeStart);
+window.matchMedia("(max-width: 720px)").addEventListener("change", refreshTrailPresentation);
+window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPresentation);
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
 window.addEventListener("pagehide", handlePageHide);
 window.addEventListener("pageshow", handlePageShow);
@@ -872,7 +889,6 @@ map.on("popupclose", () => {
 loadLayerRegistry();
 installGuidancePreviewControl();
 
-infoButton.addEventListener("click", openInfo);
 infoClose.addEventListener("click", closeInfo);
 infoOverlay.addEventListener("click", (event) => {
   if (event.target === infoOverlay) closeInfo();
@@ -1667,14 +1683,24 @@ function routesForFeature(feature) {
 }
 
 function trailStyle(feature) {
-  const isConnector = hasRouteDefinitions && routesForFeature(feature).length === 0;
   const isUnfinished = feature.properties?.condition === "unfinished";
+  const isPhone = window.matchMedia("(max-width: 720px)").matches;
+  const aerialIsActive = map.hasLayer(nysAerial);
   return {
-    color: isUnfinished ? "#6f8fa3" : "#63b8e8",
-    weight: 3,
-    // Keep unassigned segments present, but subtly secondary to named routes.
-    opacity: isConnector ? 0.78 : 1,
+    color: isUnfinished && aerialIsActive ? "#bed6df" : isUnfinished ? "#6f8fa3" : "#63b8e8",
+    weight: isUnfinished && isPhone ? 2.35 : 3,
+    opacity: 1,
     dashArray: isUnfinished ? "3 11" : "7 6",
+    lineCap: "round",
+    lineJoin: "round",
+  };
+}
+
+function trailInteractionStyle() {
+  return {
+    color: "#ffffff",
+    weight: window.matchMedia("(pointer: coarse)").matches ? 26 : ROAD_INTERACTION_WEIGHT_PX,
+    opacity: 0.001,
     lineCap: "round",
     lineJoin: "round",
   };
@@ -1683,10 +1709,9 @@ function trailStyle(feature) {
 function buildTrailPopupOptions(feature) {
   const segmentName = feature.properties.name;
   const routes = routesForFeature(feature);
-  const baseDetail = "Approximate route.";
   const detail = feature.properties?.condition === "unfinished"
     ? "Not finished yet."
-    : baseDetail;
+    : "";
   if (routes.length === 0) {
     const lengthFeet = Number(feature.properties?.length_ft);
     return {
@@ -1879,19 +1904,31 @@ function createLegendLandmark({ minor = false } = {}) {
   return svg;
 }
 
-function installMapLegend() {
+function legendRows() {
   const finishedTrailStyle = trailStyle({ properties: { condition: "finished" } });
   const unfinishedTrailStyle = trailStyle({ properties: { condition: "unfinished" } });
-  const rows = [
+  return [
     ["Property boundary (approximate)", createLegendLine([BOUNDARY_RENDER_CONFIG.haloStyle, BOUNDARY_RENDER_CONFIG.style])],
     ["Walking trail", createLegendLine([finishedTrailStyle])],
-    ["Walking trail — not finished", createLegendLine([unfinishedTrailStyle])],
+    ["Unfinished trail", createLegendLine([unfinishedTrailStyle])],
     ["Dirt road", createLegendLine([ROAD_RENDER_CONFIG.style])],
     ["Not part of the property", createLegendHatch()],
     ["Powerline corridor (not owned, access allowed)", createLegendLine([CORRIDOR_RENDER_CONFIG.style]), true],
     ["Landmark", createLegendLandmark(), true],
     ["Minor landmark", createLegendLandmark({ minor: true }), true],
   ];
+}
+
+function installMapLegend() {
+  if (mapLegendControl) mapLegendControl.remove();
+  if (mapLegendRestoreControl) {
+    mapLegendRestoreControl.remove();
+    mapLegendRestoreControl = null;
+  }
+  if (legendDismissedForSession) {
+    installMapLegendRestoreControl();
+    return;
+  }
   const control = L.control({ position: "bottomleft" });
   control.onAdd = () => {
     const container = L.DomUtil.create("div", "map-legend");
@@ -1901,7 +1938,7 @@ function installMapLegend() {
     dismiss.type = "button";
     dismiss.setAttribute("aria-label", "Dismiss map legend");
     dismiss.textContent = "×";
-    rows.forEach(([label, swatch, desktopOnly]) => {
+    legendRows().forEach(([label, swatch, desktopOnly]) => {
       const row = L.DomUtil.create(
         "div",
         `map-legend-row${desktopOnly ? " map-legend-row--desktop" : ""}`,
@@ -1911,24 +1948,62 @@ function installMapLegend() {
       const text = L.DomUtil.create("span", "map-legend-label", row);
       text.textContent = label;
     });
-    dismiss.addEventListener("click", () => control.remove());
+    dismiss.addEventListener("click", dismissMapLegend);
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
     return container;
   };
   control.addTo(map);
+  mapLegendControl = control;
+}
+
+function dismissMapLegend() {
+  legendDismissedForSession = true;
+  if (mapLegendControl) {
+    mapLegendControl.remove();
+    mapLegendControl = null;
+  }
+  installMapLegendRestoreControl();
+}
+
+function installMapLegendRestoreControl() {
+  if (mapLegendRestoreControl) mapLegendRestoreControl.remove();
+  const control = L.control({ position: "bottomleft" });
+  control.onAdd = () => {
+    const button = L.DomUtil.create("button", "map-legend-restore");
+    button.type = "button";
+    button.setAttribute("aria-label", "Show map legend");
+    button.title = "Show map legend";
+    button.append(createLegendLine([trailStyle({ properties: { condition: "finished" } })]));
+    button.addEventListener("click", showMapLegend);
+    L.DomEvent.disableClickPropagation(button);
+    return button;
+  };
+  control.addTo(map);
+  mapLegendRestoreControl = control;
+}
+
+function showMapLegend() {
+  legendDismissedForSession = false;
+  installMapLegend();
+}
+
+function refreshTrailPresentation() {
+  trailsLayer.setStyle(TRAIL_RENDER_CONFIG.style);
+  trailInteractionLayer.setStyle(TRAIL_RENDER_CONFIG.interactionStyle);
+  installMapLegend();
 }
 
 function openInfo() {
   infoOverlay.hidden = false;
-  infoButton.setAttribute("aria-expanded", "true");
+  infoButton?.setAttribute("aria-expanded", "true");
   infoClose.focus();
 }
 
 function closeInfo() {
   infoOverlay.hidden = true;
-  infoButton.setAttribute("aria-expanded", "false");
-  infoButton.focus();
+  infoButton?.setAttribute("aria-expanded", "false");
+  if (infoButton?.isConnected) infoButton.focus();
 }
 
 function showLocationStatus(message, hideAfter = 0) {
@@ -2140,12 +2215,11 @@ function bindMapFeature(layer, feature, detail, options = {}) {
 
   layer.on("click", (event) => {
     if (!hasFinePointer) layer.closeTooltip();
-    window.clearTimeout(pendingFeaturePopupTimer);
-    pendingFeaturePopupTimer = null;
     if (featurePopupsAreSuppressed()) return;
 
     const activateFeature = () => {
       pendingFeaturePopupTimer = null;
+      pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
       if (featurePopupsAreSuppressed()) return;
       if (typeof options.onActivate === "function" && options.onActivate(event)) {
         setSelectedFeatureLayers(featureSelectionLayers(layer, options));
@@ -2162,8 +2236,15 @@ function bindMapFeature(layer, feature, detail, options = {}) {
         .openOn(map);
     };
     if (hasFinePointer) {
+      window.clearTimeout(pendingFeaturePopupTimer);
+      pendingFeaturePopupTimer = null;
+      pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
       activateFeature();
     } else {
+      const priority = Number(options.interactionPriority) || 0;
+      if (pendingFeaturePopupTimer && priority < pendingFeaturePopupPriority) return;
+      window.clearTimeout(pendingFeaturePopupTimer);
+      pendingFeaturePopupPriority = priority;
       pendingFeaturePopupTimer = window.setTimeout(
         activateFeature,
         RAPID_DOUBLE_TAP_MS + 20,
@@ -2936,8 +3017,25 @@ function initializeRegistryLayers() {
   });
 }
 
+function decorateLayerControl(control) {
+  window.cancelAnimationFrame(layerControlDecorationFrame);
+  layerControlDecorationFrame = null;
+  installExperimentalGroupHeading(control);
+  infoButton = installLayerResetButton(control);
+}
+
+function scheduleLayerControlDecoration() {
+  window.cancelAnimationFrame(layerControlDecorationFrame);
+  layerControlDecorationFrame = window.requestAnimationFrame(() => {
+    layerControlDecorationFrame = null;
+    decorateLayerControl(layerControl);
+  });
+}
+
 function installLayerResetButton(control) {
   const list = control.getContainer().querySelector(".leaflet-control-layers-list");
+  const existingButton = list.querySelector("#info-button");
+  if (existingButton && list.querySelector(".layer-reset-section")) return existingButton;
   const resetSection = document.createElement("div");
   resetSection.className = "layer-reset-section";
   const resetButton = document.createElement("button");
@@ -2948,23 +3046,44 @@ function installLayerResetButton(control) {
     event.preventDefault();
     event.stopPropagation();
     resetMapToDefaults();
+    scheduleLayerControlDecoration();
   });
   const aboutButton = document.createElement("button");
   aboutButton.id = "info-button";
-  aboutButton.className = "layer-reset-button";
+  aboutButton.className = "layer-about-button";
   aboutButton.type = "button";
-  aboutButton.textContent = "About this map";
+  aboutButton.setAttribute("aria-label", "About this map");
+  aboutButton.title = "About this map";
   aboutButton.setAttribute("aria-controls", "info-overlay");
   aboutButton.setAttribute("aria-expanded", "false");
-  resetSection.append(aboutButton, resetButton);
+  aboutButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.5v6M12 7.5h.01"></path></svg>';
+  aboutButton.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openInfo();
+  });
+  const intersectionsLabel = [...list.querySelectorAll(".leaflet-control-layers-overlays label")]
+    .find((label) => label.textContent.trim() === "Intersections");
+  let aboutRow = null;
+  if (intersectionsLabel) {
+    aboutRow = document.createElement("div");
+    aboutRow.className = "layer-about-row";
+    intersectionsLabel.before(aboutRow);
+    aboutRow.append(intersectionsLabel, aboutButton);
+  } else {
+    resetSection.append(aboutButton);
+  }
+  resetSection.append(resetButton);
   list.append(resetSection);
   L.DomEvent.disableClickPropagation(resetSection);
+  if (aboutRow) L.DomEvent.disableClickPropagation(aboutRow);
   return aboutButton;
 }
 
 function installExperimentalGroupHeading(control) {
   const overlays = control.getContainer().querySelector(".leaflet-control-layers-overlays");
   if (!overlays) return;
+  overlays.querySelectorAll(".layer-group-heading").forEach((heading) => heading.remove());
   const experimentalLabels = new Set(
     getAudienceLayerDefinitions({ panelOnly: true })
       .filter((definition) => definition.experimental)
@@ -3008,6 +3127,7 @@ function installLayerControlHoverDelay(control) {
 function resetMapToDefaults() {
   programmaticFocusViewActive = false;
   stopGuidance();
+  showMapLegend();
   map.closePopup();
   if (map.hasLayer(topoMap)) map.removeLayer(topoMap);
   if (!map.hasLayer(nysAerial)) map.addLayer(nysAerial);
@@ -3104,6 +3224,7 @@ function handlePageHide() {
   if (locationMarker) locationMarker.closeTooltip().unbindTooltip();
   window.clearTimeout(pendingFeaturePopupTimer);
   pendingFeaturePopupTimer = null;
+  pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
   window.clearTimeout(programmaticFocusReleaseTimer);
   programmaticFocusReleaseTimer = null;
   if (releaseProgrammaticFocus) releaseProgrammaticFocus(false);
@@ -3149,6 +3270,7 @@ function installMobileDoubleTapZoom() {
       previousTap = null;
       window.clearTimeout(pendingFeaturePopupTimer);
       pendingFeaturePopupTimer = null;
+      pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
       suppressFeaturePopupsUntil = performance.now() + RAPID_DOUBLE_TAP_MS;
       map.closePopup();
       const bounds = container.getBoundingClientRect();

@@ -11,8 +11,8 @@
         "name": "The Barbershop",
         "type": "landmark",
         "status": "provisional; derived from trail endpoint",
-        "note": "Approximate landmark location, placed 5 m north of the current Barbershop Trail dead end.",
-        "recorded_on": "2026-08-05"
+        "recorded_on": "2026-08-05",
+        "prominence": "minor"
       },
       "geometry": {
         "type": "Point",

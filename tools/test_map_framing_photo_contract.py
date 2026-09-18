@@ -84,7 +84,7 @@ class MapFramingPhotoContractTests(unittest.TestCase):
         self.assertRegex(
             self.app,
             r"landmark:\s*true,\s*pointPhoto:\s*true,\s*"
-            r"standardPopupWidth:\s*true,\s*focusOverlay:\s*landmarksLayer,",
+            r"standardPopupWidth:\s*true,\s*focusOverlay:\s*layerGroup,",
         )
         self.assertRegex(
             self.app,

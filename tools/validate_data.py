@@ -336,6 +336,17 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
             for property_name in required_properties:
                 if not property_is_present(properties, property_name):
                     report.error(f"{location} is missing required property {property_name!r}")
+            if source.get("feature_type") in {"road", "trail"}:
+                condition = properties.get("condition")
+                if condition is None:
+                    report.warn(f"{location} omits condition; display defaults to 'finished'")
+                elif condition not in {"finished", "unfinished"}:
+                    report.error(
+                        f"{location} condition must be 'finished' or 'unfinished'"
+                    )
+            prominence = properties.get("prominence")
+            if prominence is not None and prominence not in {"major", "minor"}:
+                report.error(f"{location} prominence must be 'major' or 'minor'")
             if source.get("ids"):
                 feature_id = properties.get("id")
                 if not isinstance(feature_id, str) or not feature_id:
@@ -372,6 +383,26 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
                     report.error(
                         f"{location} coordinate [{longitude}, {latitude}] is outside the property bounding box; check longitude/latitude order"
                     )
+            if (
+                source.get("feature_type") in {"road", "trail"}
+                and geometry_type == "LineString"
+                and len(coordinate_pairs) >= 2
+            ):
+                geometry_length_m = sum(
+                    distance_meters(first, second)
+                    for first, second in zip(coordinate_pairs, coordinate_pairs[1:])
+                )
+                length_m = properties.get("length_m")
+                length_ft = properties.get("length_ft")
+                if isinstance(length_m, (int, float)):
+                    if abs(float(length_m) - geometry_length_m) > 0.5:
+                        report.error(f"{location} length_m disagrees with its geometry")
+                    if isinstance(length_ft, (int, float)) and abs(
+                        float(length_ft) - float(length_m) * FEET_PER_METER
+                    ) > 1:
+                        report.error(
+                            f"{location} length_ft disagrees with length_m × {FEET_PER_METER}"
+                        )
             if geometry_type in {"Polygon", "MultiPolygon"}:
                 polygons = [coordinates] if geometry_type == "Polygon" else coordinates
                 for polygon_index, polygon in enumerate(polygons or []):
@@ -384,7 +415,8 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
                             report.error(f"{location} has a self-intersecting zone ring")
             if geometry_type == "Point" and coordinate_pairs:
                 pin_name = properties.get("id") or properties.get("label") or location
-                pins.append((str(pin_name), coordinate_pairs[0]))
+                if properties.get("status") != "placeholder":
+                    pins.append((str(pin_name), coordinate_pairs[0]))
             if source.get("feature_type") in {"road", "trail"} and isinstance(properties.get("id"), str):
                 segments_by_id[properties["id"]] = record
 

@@ -48,19 +48,6 @@
       "generated_properties": []
     },
     {
-      "key": "mountainDrive",
-      "path": "data/roads/mountain-drive.geojson",
-      "format": "geojson",
-      "feature_type": "road",
-      "geometry_types": ["LineString"],
-      "required": true,
-      "ids": true,
-      "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
-      "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
-      "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
-    },
-    {
       "key": "driveway",
       "path": "data/roads/driveway.geojson",
       "format": "geojson",
@@ -69,8 +56,8 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "provisional", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
-      "authored_properties": ["id", "name", "type", "status", "note", "provisional"],
+      "optional_properties": ["status", "note", "provisional", "condition", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "type", "status", "note", "provisional", "condition"],
       "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
     },
     {
@@ -82,8 +69,8 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
-      "authored_properties": ["id", "name", "type", "status", "note"],
+      "optional_properties": ["status", "note", "condition", "recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"],
+      "authored_properties": ["id", "name", "type", "status", "note", "condition"],
       "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing", "length_m", "length_ft", "elevation_gain_ft", "elevation_loss_ft", "elevation_profile_ft"]
     },
     {
@@ -106,8 +93,8 @@
       "required": true,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "recorded_on", "source_files", "source_track_count", "processing"],
-      "authored_properties": ["id", "name", "type", "status", "note"],
+      "optional_properties": ["status", "note", "prominence", "recorded_on", "source_files", "source_track_count", "processing"],
+      "authored_properties": ["id", "name", "type", "status", "note", "prominence"],
       "generated_properties": ["recorded_on", "source_files", "source_track_count", "processing"]
     },
     {
@@ -118,8 +105,8 @@
       "required": false,
       "ids": true,
       "required_properties": ["id", "name", "type"],
-      "optional_properties": ["status", "note", "recorded_on"],
-      "authored_properties": ["id", "name", "type", "status", "note"],
+      "optional_properties": ["status", "note", "prominence", "recorded_on"],
+      "authored_properties": ["id", "name", "type", "status", "note", "prominence"],
       "generated_properties": ["recorded_on"]
     },
     {

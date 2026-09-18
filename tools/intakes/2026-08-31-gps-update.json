@@ -3,10 +3,11 @@
   "source_dir": "../_local",
   "warnings": [
     "All inputs are phone GPS and remain provisional orientation data; raw GPX stays under sibling _local.",
-    "Line is provisionally interpreted as a walking trail named Line because the owner contrasted its straight shape with natural trails.",
-    "No unconfirmed topology was added for Line or Powerline Trail; their recorded endpoints remain free.",
+    "Beeline is kept as a straight two-point walking-trail centerline and joined to The Barbershop and Main Loop Ext at owner-confirmed coordinates.",
+    "Mountain Drive is published as two walking-trail segments split at [-73.8351907, 43.3596533]; future processing must preserve that exact shared endpoint.",
+    "Powerline Trail's recorded endpoints remain free.",
     "The Shed input drops its final 10 seconds as directed by its filename and owner note.",
-    "Yard Area consolidates two walked laps and then expands the perimeter outward 8 ft (2.438 m)."
+    "Yard Area was withdrawn from the published map; its processed feature is retained only under sibling _local/withdrawn."
   ],
   "jobs": [
     {
@@ -21,6 +22,7 @@
       "recorded_on": "2026-08-28",
       "properties": {
         "type": "building",
+        "prominence": "major",
         "status": "provisional",
         "note": "Approximate center derived from walked exterior and interior wall traces."
       },
@@ -40,6 +42,7 @@
       "recorded_on": "2026-08-10",
       "properties": {
         "type": "dirt road",
+        "condition": "finished",
         "status": "provisional",
         "note": "Driveway centerline consolidated from four phone-GPS tracks recorded August 5 and August 10."
       },
@@ -81,6 +84,7 @@
       "recorded_on": "2026-08-28",
       "properties": {
         "type": "walking trail",
+        "condition": "unfinished",
         "status": "provisional",
         "note": "Infrastructure connector updated from two phone-GPS tracks; placeholder name."
       },
@@ -110,6 +114,7 @@
       "recorded_on": "2026-08-28",
       "properties": {
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
         "note": "Approximate center derived from the walked exterior."
       },
@@ -117,7 +122,7 @@
     },
     {
       "id": "line",
-      "name": "Line",
+      "name": "Beeline",
       "type": "path",
       "inputs": [
         "Raw gaia gpx through 8.31.26/Line.gpx",
@@ -127,6 +132,7 @@
       "recorded_on": "2026-08-25",
       "properties": {
         "type": "walking trail",
+        "condition": "unfinished",
         "status": "provisional",
         "note": "Straight trail fitted from two opposite-direction phone-GPS tracks."
       },
@@ -136,7 +142,8 @@
         "simplify_tolerance": 0.5,
         "pass_match_cap": 15.0,
         "split_passes": false,
-        "straighten": true
+        "straighten": true,
+        "omit_elevation": true
       },
       "expect": {
         "closed": false,
@@ -157,6 +164,7 @@
       "recorded_on": "2026-08-11",
       "properties": {
         "type": "building",
+        "prominence": "minor",
         "status": "rough / provisional",
         "note": "Low-priority approximate center from a short exterior walk and entrance reading."
       },
@@ -171,8 +179,9 @@
       "recorded_on": "2026-08-10",
       "properties": {
         "type": "walking trail",
+        "condition": "finished",
         "status": "rough / provisional",
-        "note": "Accessible trail through the powerline cut; largely off-property and based on one phone-GPS track."
+        "note": "Accessible trail through the powerline cut; largely off-property and based on one phone-GPS recording with two traversals."
       },
       "options": {
         "spacing": 6.0,
@@ -199,6 +208,7 @@
       "recorded_on": "2026-08-28",
       "properties": {
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
         "note": "Approximate center derived from the walked exterior after removing the final 10 seconds."
       },
@@ -213,32 +223,11 @@
       "recorded_on": "2026-08-28",
       "properties": {
         "type": "building",
+        "prominence": "minor",
         "status": "provisional",
         "note": "Approximate center derived from the walked exterior."
       },
       "options": {"cell_size": 2.0}
-    },
-    {
-      "id": "yard-area",
-      "name": "Yard Area",
-      "type": "zone",
-      "inputs": ["Raw gaia gpx through 8.31.26/yard-area-region.gpx"],
-      "target": "zones/zones.geojson",
-      "recorded_on": "2026-08-28",
-      "properties": {
-        "type": "zone",
-        "status": "provisional",
-        "note": "Close yard around Home; consolidated from two laps and extended 8 ft beyond the walked perimeter."
-      },
-      "options": {
-        "closed_laps": 2,
-        "spacing": 3.0,
-        "smooth_passes": 1,
-        "simplify_tolerance": 0.5,
-        "pass_match_cap": 15.0,
-        "area_threshold": 5.0,
-        "outset_m": 2.4384
-      }
     }
   ],
   "joins": [
@@ -270,6 +259,53 @@
         "id": "mountain-drive-driveway",
         "name": "Mountain Drive / Driveway",
         "note": "Mountain Drive endpoint snapped to the updated Driveway centerline."
+      }
+    },
+    {
+      "id": "beeline-barbershop-landmark",
+      "name": "Beeline / The Barbershop",
+      "feature": "line",
+      "endpoint": "start",
+      "target_feature": "the-barbershop",
+      "target_kind": "point",
+      "action": "offset",
+      "distance_m": 0.0,
+      "movement_cap": 30.0
+    },
+    {
+      "id": "barbershop-trail-beeline",
+      "name": "Barbershop Trail / Beeline",
+      "feature": "barbershop-trail",
+      "endpoint": "end",
+      "target_feature": "line",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 6.0
+    },
+    {
+      "id": "beeline-main-loop-ext-anchor",
+      "name": "Beeline junction anchor",
+      "feature": "line",
+      "endpoint": "end",
+      "target_feature": "beeline-main-loop-ext",
+      "target_kind": "point",
+      "action": "offset",
+      "distance_m": 0.0,
+      "movement_cap": 30.0
+    },
+    {
+      "id": "beeline-main-loop-ext",
+      "name": "Beeline / Main Loop Ext",
+      "feature": "line",
+      "endpoint": "end",
+      "target_feature": "main-loop-ext",
+      "target_kind": "line",
+      "action": "snap",
+      "movement_cap": 50.0,
+      "emit_intersection": {
+        "id": "beeline-main-loop-ext",
+        "name": "Beeline / Main Loop Ext",
+        "note": "Beeline meets Main Loop Ext."
       }
     },
     {

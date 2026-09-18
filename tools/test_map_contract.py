@@ -29,27 +29,35 @@ class MapContractTests(unittest.TestCase):
         self.assertIn('CANDIDATES = LOCAL / "_candidates"', pipeline)
         self.assertIn("sys.dont_write_bytecode = True", pipeline)
 
-    def test_roads_are_independent_sources_and_only_mountain_drive_is_routed(self) -> None:
+    def test_mountain_drive_is_a_split_trail_and_driveway_is_the_only_road(self) -> None:
         manifest = json.loads((ROOT / "data" / "manifest.json").read_text(encoding="utf-8"))
         sources = {source["key"]: source for source in manifest["sources"]}
-        self.assertEqual("data/roads/mountain-drive.geojson", sources["mountainDrive"]["path"])
+        self.assertNotIn("mountainDrive", sources)
         self.assertEqual("data/roads/driveway.geojson", sources["driveway"]["path"])
+        self.assertFalse((ROOT / "data" / "roads" / "mountain-drive.geojson").exists())
         self.assertFalse((ROOT / "data" / "roads" / "dirt-roads.geojson").exists())
 
-        mountain = json.loads(
-            (ROOT / sources["mountainDrive"]["path"]).read_text(encoding="utf-8")
+        trails = json.loads(
+            (ROOT / sources["trails"]["path"]).read_text(encoding="utf-8")
         )["features"]
+        trails_by_id = {item["properties"]["id"]: item for item in trails}
         driveway = json.loads(
             (ROOT / sources["driveway"]["path"]).read_text(encoding="utf-8")
         )["features"]
-        self.assertEqual(["mountain-drive"], [item["properties"]["id"] for item in mountain])
         self.assertEqual(["driveway"], [item["properties"]["id"] for item in driveway])
+        lower = trails_by_id["mountain-drive"]
+        upper = trails_by_id["mountain-drive-upper"]
+        self.assertEqual(lower["geometry"]["coordinates"][-1], upper["geometry"]["coordinates"][0])
+        self.assertEqual([-73.8351907, 43.3596533], lower["geometry"]["coordinates"][-1])
+        self.assertEqual("finished", lower["properties"]["condition"])
+        self.assertEqual("unfinished", upper["properties"]["condition"])
 
         routes = json.loads(
             (ROOT / "data" / "trails" / "routes.json").read_text(encoding="utf-8")
         )["routes"]
         mountain_route = next(route for route in routes if route["id"] == "mountain-drive-route")
-        self.assertEqual(["mountain-drive"], mountain_route["segments"])
+        self.assertEqual(["mountain-drive", "mountain-drive-upper"], mountain_route["segments"])
+        self.assertEqual(["forward", "forward"], mountain_route["segment_directions"])
         self.assertEqual("moderate", mountain_route["difficulty"])
         self.assertTrue(all("driveway" not in route["segments"] for route in routes))
 

@@ -17,7 +17,7 @@
         ],
         "source_track_count": 1,
         "processing": "Single walked perimeter; small start/finish crossings untangled and low-area GPS jitter removed. The owner manually refined the field boundary on 2026-08-04; an exact vertex was then inserted on the unchanged boundary edge at the first west-to-east Garden Cut Through crossing. A matching vertex was inserted for join `field-connector-front-field-zone`. Join `driveway-front-field-zone-clearance` moved only conflicting zone vertices by at most 0.8 m.",
-        "note": "Rough test zone; not a surveyed or exact boundary.",
+        "note": "Approximate area; not a surveyed boundary.",
         "acres_computed": 0.24
       },
       "geometry": {
@@ -139,114 +139,6 @@
             [
               -73.8350349,
               43.3591096
-            ]
-          ]
-        ]
-      }
-    },
-    {
-      "type": "Feature",
-      "properties": {
-        "id": "yard-area",
-        "name": "Yard Area",
-        "type": "zone",
-        "status": "provisional",
-        "note": "Close yard around Home; consolidated from two laps and extended 8 ft beyond the walked perimeter.",
-        "source_files": [
-          "Raw gaia gpx through 8.31.26/yard-area-region.gpx"
-        ],
-        "source_track_count": 1,
-        "recorded_on": "2026-08-28",
-        "processing": "Median perimeter from 2 walked laps; low-area jitter removed; expanded outward 2.438 m; ring closed counter-clockwise.",
-        "acres_computed": 0.306
-      },
-      "geometry": {
-        "type": "Polygon",
-        "coordinates": [
-          [
-            [
-              -73.8354416,
-              43.3589081
-            ],
-            [
-              -73.8355146,
-              43.3588576
-            ],
-            [
-              -73.8355672,
-              43.3587736
-            ],
-            [
-              -73.835579,
-              43.3587124
-            ],
-            [
-              -73.8356238,
-              43.3586385
-            ],
-            [
-              -73.8355852,
-              43.3585807
-            ],
-            [
-              -73.8354573,
-              43.358474
-            ],
-            [
-              -73.8354333,
-              43.3584368
-            ],
-            [
-              -73.8354435,
-              43.3584013
-            ],
-            [
-              -73.8355234,
-              43.3583399
-            ],
-            [
-              -73.8353766,
-              43.3582933
-            ],
-            [
-              -73.8353182,
-              43.3583353
-            ],
-            [
-              -73.8353337,
-              43.3583918
-            ],
-            [
-              -73.8353089,
-              43.3584534
-            ],
-            [
-              -73.8352284,
-              43.3585046
-            ],
-            [
-              -73.835211,
-              43.3585664
-            ],
-            [
-              -73.8352477,
-              43.3586249
-            ],
-            [
-              -73.8353158,
-              43.3586634
-            ],
-            [
-              -73.8352828,
-              43.358747
-            ],
-            [
-              -73.8353801,
-              43.3588836
-            ],
-            [
-              -73.8354416,
-              43.3589081
             ]
           ]
         ]

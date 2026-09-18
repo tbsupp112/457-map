@@ -16,7 +16,7 @@
     "acres_computed": 18.17,
     "accuracy": "Approximate - derived from Warren County zoning document corner coordinates. NOT A SURVEY.",
     "note": "Primary ~18.2ac parcel",
-    "popup_description": "Primary 18.2 acre parcel off Gailey Hill Road. Boundary is approximate, but fairly accurate. Borders currently not consistently posted."
+    "popup_description": "Primary 18.2 acre parcel off Gailey Hill Road. Boundary is approximate, but fairly accurate."
    },
    "geometry": {
     "type": "Polygon",

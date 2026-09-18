@@ -8,7 +8,7 @@ Processed map data is organized by the type of feature shown in the layer picker
 
 The map supports `visitor` and `owner` presentation audiences, with `visitor` as the first-load default and `?view=owner` as an opt-in remembered on that device. Public property layers are assigned to both audiences. The owner view also offers the off-by-default Trail cam sites test layer, which contains fake placeholder positions only. Audiences are a presentation convenience, **not a security boundary**: files committed here are publicly downloadable, and anyone can select either view. Data that must remain private must not be added to this repository.
 
-Required source assignment: parcel boundaries, the powerline corridor, both road files, trails, buildings, and zones. Optional source assignment: corner markers, non-building landmarks, route definitions, and intersections. A missing required source produces one quiet map notice while other sources continue loading; an optional 404 is silent. Malformed content is logged separately from a network failure.
+Required source assignment: parcel boundaries, the powerline corridor, the driveway, trails, buildings, and zones. Optional source assignment: corner markers, non-building landmarks, route definitions, and intersections. A missing required source produces one quiet map notice while other sources continue loading; an optional 404 is silent. Malformed content is logged separately from a network failure.
 
 ## Feature-property schema
 
@@ -17,17 +17,19 @@ The machine-readable version of this schema is in `manifest.json`. **Authored** 
 - **Parcel boundaries:** required `name`, `role`; optional authored `id`, `accuracy`, `note`, `popup_description`; generated `acres_computed`. Boundary ids are not required or validated because parcel behavior keys off `role`.
 - **Corner markers:** required/authored `label`, `parcel`; no generated properties and no required id.
 - **Powerline corridor:** required/authored `name`, `ownership`, `access`; optional authored `accuracy`; no required id.
-- **Roads:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `provisional`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`.
-- **Trail segments:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`.
+- **Roads:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `provisional`, `condition`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`.
+- **Trail segments:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `condition`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`, `length_m`, `length_ft`, `elevation_gain_ft`, `elevation_loss_ft`, `elevation_profile_ft`. `condition` is `finished` or `unfinished`; omitted values display as finished for backward compatibility.
 - **Routes:** required/authored `id`, `name`, `segments`, `segment_directions`, `shape`, `difficulty`; optional authored `description`, `status`. Length, gain/loss, and the full profile are derived in the browser from member segments and must not be cached in `routes.json`.
-- **Buildings:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`.
-- **Other landmarks:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`.
+- **Buildings:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `prominence`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`.
+- **Other landmarks:** required/authored `id`, `name`, `type`; optional authored `status`, `note`, `prominence`; generated `recorded_on`. `prominence` is `major` or `minor`; omitted values display as minor.
 - **Zones:** required/authored `id`, `name`, `type`; optional authored `status`, `note`; generated `recorded_on`, `source_files`, `source_track_count`, `processing`, `acres_computed`.
 - **Intersections:** required/authored `id`, `name`, `type`, `features`; optional authored `status`, `note`; generated `recorded_on`, `map_offset_from_building_m`, `snap_adjustment_m`.
 
 Ids must be present and unique across roads, trails, zones, buildings, landmarks, intersections, and routes. Boundary and corner records are intentionally excluded. Segment elevation profiles are arrays of elevation samples in feet; the segment's `length_m` spaces those samples along its centerline. Some older, currently unrouted segments have no elevation profile yet. A route using any elevation-less segment still loads and shows its derived distance, while its elevation panel reports that a profile is unavailable.
 
-`source_track_count` records the number of raw GPX files contributing to a consolidated feature. It is reference metadata only and does not change map behavior or styling. Current inputs are phone GPS. If dedicated GPS data is later mixed in, its weighting should be explicitly stronger than phone data rather than inferred from track count alone.
+Authored `note` values are optional visitor-facing copy. Use them only when a short fact helps someone use the map; keep GPS methods, uncertainty calculations, joins, sample counts, and other provenance in generated fields such as `processing`, `source_files`, `source_track_count`, and `recorded_on`. Empty notes are valid and should produce no filler text in a popup.
+
+`source_track_count` records individual traversals contributing to a consolidated feature, including separately detected outbound and return passes within one GPX file. It is reference metadata only and does not change map behavior or styling. Current inputs are phone GPS. If dedicated GPS data is later mixed in, its weighting should be explicitly stronger than phone data rather than inferred from track count alone.
 
 ## Property
 
@@ -38,19 +40,18 @@ Ids must be present and unique across roads, trails, zones, buildings, landmarks
 
 ## Roads
 
-- Mountain Drive's south endpoint is extended to a shared vertex on the otherwise unchanged Driveway centerline, closing the small mapped gap between the two road recordings.
-- `roads/mountain-drive.geojson` — Mountain Drive's independent road centerline and generated measurements.
 - `roads/driveway.geojson` — the independently labeled Driveway centerline and generated measurements.
-- Both files render together in the `Dirt roads` layer, but they remain separate paths. Mountain Drive alone is the member segment of `mountain-drive-route`; Driveway is not silently merged into that route.
-- Mountain Drive combines `New_rd_down.gpx` and `New_Road_up.gpx`. Each pass contributes equally within six-meter distance bands so the noisier pass does not dominate. Status: work in progress; replace when better GPS data is available.
-- Driveway now combines four phone-GPS tracks recorded August 5 and August 10. Its two independently named road files and confirmed joins remain unchanged.
+- Driveway combines four phone-GPS traversals recorded August 5 and August 10. Its confirmed joins remain unchanged.
 
 ## Trails
 
 - Main Loop Ext is an out-and-back recording. Its two directions are split into separate passes and consolidated into one centerline rather than displayed as two nearby trails.
 - `trails/walking-trails.geojson` — walking-trail centerlines.
 - Repeated passes were consolidated into median positions by distance along each trail, then lightly smoothed and simplified.
-- Field Connector now combines two phone-GPS files containing eleven complete traversals. `Line` uses two opposite-direction tracks and is fitted to one perfectly straight provisional centerline. `Powerline Trail` consolidates the outbound and return legs of one recording; most of it is off-property but accessible.
+- Field Connector combines two phone-GPS files containing eleven complete traversals. `line`, displayed as Beeline, is a straight two-point centerline consolidated from four traversals and joined to The Barbershop and Main Loop Ext. Powerline Trail consolidates the two traversals in one recording; most of it is off-property but accessible.
+- Back Cut Through combines four complete traversals and two partial traversals. The partial recordings reinforce only their overlapping section; its eastern endpoint shares a vertex with Main Loop Ext and its western endpoint remains free.
+- Mountain Drive is a walking trail split at `[-73.8351907, 43.3596533]`: the lower `mountain-drive` segment is finished and the upper `mountain-drive-upper` segment is unfinished. The two exact endpoints form one continuous route.
+- Barbershop Trail extends to the shared landmark coordinate so it meets Beeline without a visible gap. No separate intersection pin is added at that landmark because the symbols would overlap.
 - The Pavilion-side intersection is placed 5 m northeast of the Pavilion point so the symbols do not overlap. The trail's other endpoint is snapped 1.5 m to Mountain Drive.
 - After the owner manually refined Front Field Zone on August 4, Garden Cut Through was trimmed at its first west-to-east crossing of the revised boundary. The trail endpoint, an inserted zone-edge vertex, and the intersection marker share `[-73.8350683, 43.3590097]`; the inserted vertex does not change the owner-edited field shape.
 
@@ -69,10 +70,11 @@ Ids must be present and unique across roads, trails, zones, buildings, landmarks
 
 ## Landmarks
 
-- `landmarks/buildings.geojson` — central point locations for Home and Pavilion.
+- `landmarks/buildings.geojson` — central point locations for mapped buildings.
 - Cabin, Gravel Shed, Shed, Wood Shed, and Mystery Shack are approximate building centers derived from walked interior/exterior traces. The low-priority Mystery Shack point deliberately uses position-weighted cells so the minute left at its entrance does not dominate the result.
 - `landmarks/landmarks.geojson` — non-building destinations such as the provisional landmark The Barbershop.
 - Each occupied two-meter spatial cell from the walked building extent counts once. This prevents time spent standing in one location from biasing the result.
+- Major landmarks (Home, Pavilion, and Cabin) appear by default with building pins. Minor landmarks use smaller dots in a separate layer that is off by default; both retain popup guidance and deep-link focus.
 - Future natural landmarks and miscellaneous landmarks should use separate GeoJSON files in this folder. Empty placeholder files are intentionally avoided.
 - Optional popup photos live in `../assets/points/`. The filename rule is exact and case-sensitive: use the point feature's lowercase id followed by lowercase `.jpg`, with no other extension. No manifest or data edit is needed. Keep photos roughly 1200 px wide or smaller and under 300 KB, and strip all EXIF metadata—especially GPS coordinates—before adding them. Replacing a photo under the same filename may require a browser hard reload because point-photo URLs are deliberately not cache-versioned.
 - Current point-photo filenames are:
@@ -104,7 +106,7 @@ assets/points/garden-cut-through-open-end.jpg
 
 - `zones/zones.geojson` — approximate activity/land-use areas rather than routes or legal boundaries.
 - Front Field Zone comes from one rough walked perimeter. Small start/finish crossings were untangled, minor GPS jitter removed, and the owner manually refined the current boundary on August 4; the shape remains provisional.
-- Yard Area is the approximate close yard around Home. Two walked laps are consolidated into one perimeter and then expanded outward 8 ft (2.438 m).
+- Yard Area is withdrawn from publication and retained under sibling `_local/withdrawn/yard-area.geojson` for possible restoration.
 
 ## Intersections
 

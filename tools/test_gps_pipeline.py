@@ -186,10 +186,10 @@ class IntakeIntegrationTests(unittest.TestCase):
         self.assertTrue(all(CANDIDATES not in path.parents for path in writes))
 
     def test_reprocessing_promoted_intake_is_idempotent(self) -> None:
-        current_manifest = TOOLS / "intakes" / "2026-08-31-gps-update.json"
-        source = LOCAL / "Raw gaia gpx through 8.31.26"
+        current_manifest = TOOLS / "intakes" / "2026-09-18-gps-update.json"
+        source = LOCAL / "Raw gaia gpx 9.18.26"
         if not source.exists():
-            self.skipTest("The local current raw GPX intake is not present")
+            self.skipTest("The local 9/18 raw GPX intake is not present")
         result = process_manifest(current_manifest)
         writes, _ = prepare_promotion(result, backup=False)
         for path, content in writes.items():
@@ -296,8 +296,21 @@ class IntakeIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(mountain_route["difficulty"], "moderate")
         self.assertEqual(mountain_route["shape"], "out-and-back")
-        self.assertEqual(mountain_route["segments"], ["mountain-drive"])
-        self.assertEqual(mountain_route["length_ft"], 1362)
+        self.assertEqual(
+            mountain_route["segments"],
+            ["mountain-drive", "mountain-drive-upper"],
+        )
+        self.assertEqual(
+            mountain_route["length_ft"],
+            round(
+                sum(
+                    result.catalog[segment_id].feature["properties"]["length_m"]
+                    for segment_id in mountain_route["segments"]
+                )
+                * 3.28084
+                * 2
+            ),
+        )
         self.assertEqual(mountain_route["elevation_gain_ft"], 312)
         self.assertEqual(mountain_route["elevation_loss_ft"], 312)
         self.assertGreater(len(mountain_route["elevation_profile_ft"]), 20)
@@ -358,17 +371,40 @@ class August31IntakeIntegrationTests(unittest.TestCase):
         self.assertEqual(len(line["geometry"]["coordinates"]), 2)
         self.assertEqual(line["properties"]["source_track_count"], 2)
 
-        yard = result.catalog["yard-area"].feature
-        yard_xy = [to_xy(*coordinate) for coordinate in yard["geometry"]["coordinates"][0][:-1]]
-        self.assertEqual(self_intersection_count(yard_xy, closed=True), 0)
-        self.assertGreater(yard["properties"]["acres_computed"], 0.28)
-        self.assertLess(yard["properties"]["acres_computed"], 0.33)
+        self.assertNotIn("yard-area", result.catalog)
 
         driveway = result.catalog["driveway"].feature
         connector = result.catalog["field-connector"].feature
         self.assertEqual(driveway["properties"]["source_track_count"], 4)
-        self.assertEqual(connector["properties"]["source_track_count"], 2)
+        self.assertEqual(connector["properties"]["source_track_count"], 11)
         self.assertIn("removed 2 point(s) from the final 10 seconds", result.qa_text)
+
+
+class September18IntakeIntegrationTests(unittest.TestCase):
+    manifest = TOOLS / "intakes" / "2026-09-18-gps-update.json"
+
+    def test_beeline_and_back_cut_through_follow_field_notes(self) -> None:
+        source = LOCAL / "Raw gaia gpx 9.18.26"
+        if not source.exists():
+            self.skipTest("The local 9/18 raw GPX intake is not present")
+        result = process_manifest(self.manifest)
+
+        beeline = result.catalog["line"].feature
+        self.assertEqual("Beeline", beeline["properties"]["name"])
+        self.assertEqual(4, beeline["properties"]["source_track_count"])
+        self.assertEqual(2, len(beeline["geometry"]["coordinates"]))
+        self.assertEqual(419, beeline["properties"]["length_ft"])
+        self.assertNotIn("elevation_profile_ft", beeline["properties"])
+
+        back = result.catalog["back-cut-through"].feature
+        self.assertEqual("finished", back["properties"]["condition"])
+        self.assertEqual(6, back["properties"]["source_track_count"])
+        self.assertIn("2 partial traversal(s)", back["properties"]["processing"])
+        self.assertIn(
+            back["geometry"]["coordinates"][-1],
+            result.catalog["main-loop-ext"].feature["geometry"]["coordinates"],
+        )
+        self.assertNotIn(back["geometry"]["coordinates"][0], result.catalog["main-loop-ext"].feature["geometry"]["coordinates"])
 
 
 if __name__ == "__main__":

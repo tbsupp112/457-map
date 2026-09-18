@@ -17,7 +17,8 @@
         ],
         "source_track_count": 1,
         "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. South endpoint placed 5 m northeast of the Pavilion point to separate the building and intersection symbols; north endpoint snapped 1.5 m to Mountain Drive. Join `pavilion-side-trail-main-loop` moved/extended its endpoint 11.6 m.",
-        "length_m": 42.6
+        "length_m": 42.6,
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
@@ -58,7 +59,8 @@
         ],
         "source_track_count": 1,
         "processing": "Repeated passes consolidated with a median centerline in 3 m distance bands. After the owner refined the Front Field Zone, the field end was trimmed at the first west-to-east crossing of the revised zone boundary. Join `garden-cut-through-main-loop` moved/extended its endpoint 5.0 m.",
-        "length_m": 26.0
+        "length_m": 26.0,
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
@@ -93,16 +95,15 @@
         "name": "Barbershop Trail",
         "type": "walking trail",
         "status": "provisional",
-        "note": "Dead-end spur from the shared clearing; its far end is intentionally free.",
         "source_files": [
           "barbershop-trail.gpx"
         ],
-        "source_track_count": 1,
+        "source_track_count": 4,
         "recorded_on": "2026-08-05",
-        "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 3.8 m to the shared Main Loop Clearing centroid.",
-        "length_m": 56.2,
-        "length_ft": 174,
-        "elevation_gain_ft": 21,
+        "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 3.8 m to the shared Main Loop Clearing centroid. Its free endpoint was extended 5.0 m to The Barbershop junction. Join `barbershop-trail-beeline` adjusted its endpoint to the declared connection.",
+        "length_m": 58.9,
+        "length_ft": 193,
+        "elevation_gain_ft": 27,
         "elevation_loss_ft": 20,
         "elevation_profile_ft": [
           902.9,
@@ -112,8 +113,10 @@
           896.9,
           896.1,
           895.6,
-          895.7
-        ]
+          895.7,
+          902.1
+        ],
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
@@ -148,7 +151,7 @@
           ],
           [
             -73.8338405,
-            43.3595281
+            43.3595731
           ]
         ]
       }
@@ -159,13 +162,13 @@
         "id": "field-connector",
         "name": "Field Connector",
         "type": "walking trail",
+        "condition": "unfinished",
         "status": "provisional",
-        "note": "Infrastructure connector updated from two phone-GPS tracks; placeholder name.",
         "source_files": [
           "Raw gaia gpx 8.5.26/connector.gpx",
           "Raw gaia gpx through 8.31.26/field-connector-side-trail.gpx"
         ],
-        "source_track_count": 2,
+        "source_track_count": 11,
         "recorded_on": "2026-08-28",
         "processing": "Arc-length median centerline from 11 equally weighted passes; directions normalized; 2.5 m stations. Join `field-connector-main-loop-ext` adjusted its endpoint to the declared connection. Join `field-connector-front-field-zone` adjusted its endpoint to the declared connection.",
         "length_m": 29.2,
@@ -213,7 +216,6 @@
         "name": "Main Loop",
         "type": "walking trail",
         "status": "provisional",
-        "note": "New main trail segment; owner confirmation and naming remain provisional.",
         "source_files": [
           "main-loop.gpx"
         ],
@@ -221,7 +223,7 @@
         "recorded_on": "2026-08-05",
         "processing": "Single-pass order-preserving smoothing and RDP simplification. Its start endpoint was extended 31.6 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `garden-cut-through-main-loop`. A matching vertex was inserted for join `pavilion-side-trail-main-loop`. Join `main-loop-driveway` adjusted its endpoint to the declared connection.",
         "length_m": 149.0,
-        "length_ft": 529,
+        "length_ft": 489,
         "elevation_gain_ft": 51,
         "elevation_loss_ft": 67,
         "elevation_profile_ft": [
@@ -245,7 +247,8 @@
           872.0,
           873.5,
           876.0
-        ]
+        ],
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
@@ -332,15 +335,14 @@
         "name": "Main Loop Ext",
         "type": "walking trail",
         "status": "provisional",
-        "note": "Out-and-back trail centerline consolidated from the two recorded directions; placeholder name pending owner review.",
         "source_files": [
           "main-loop-ext.gpx"
         ],
-        "source_track_count": 1,
+        "source_track_count": 2,
         "recorded_on": "2026-08-05",
-        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 5.1 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`.",
+        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Its start endpoint was extended 5.1 m to the shared Main Loop Clearing centroid. A matching vertex was inserted for join `field-connector-main-loop-ext`. A shared vertex was inserted for Beeline junction. A matching vertex was inserted for join `beeline-main-loop-ext`. A matching vertex was inserted for join `back-cut-through-main-loop-ext`.",
         "length_m": 158.2,
-        "length_ft": 502,
+        "length_ft": 519,
         "elevation_gain_ft": 68,
         "elevation_loss_ft": 48,
         "elevation_profile_ft": [
@@ -363,7 +365,8 @@
           885.7,
           880.2,
           872.7
-        ]
+        ],
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
@@ -409,6 +412,10 @@
             43.3587382
           ],
           [
+            -73.8342787,
+            43.3587166
+          ],
+          [
             -73.8342115,
             43.3586935
           ],
@@ -419,6 +426,10 @@
           [
             -73.8340972,
             43.3585694
+          ],
+          [
+            -73.8339724,
+            43.3584277
           ],
           [
             -73.8339385,
@@ -450,48 +461,198 @@
     {
       "type": "Feature",
       "properties": {
-        "id": "line",
-        "name": "Line",
+        "id": "mountain-drive",
+        "name": "Mountain Drive",
         "type": "walking trail",
-        "status": "provisional",
-        "note": "Straight trail fitted from two opposite-direction phone-GPS tracks.",
+        "status": "work in progress",
+        "recorded_on": "2026-08-04",
         "source_files": [
-          "Raw gaia gpx through 8.31.26/Line.gpx",
-          "Raw gaia gpx through 8.31.26/Line - 2.gpx"
+          "New_rd_down.gpx",
+          "New_Road_up.gpx"
         ],
         "source_track_count": 2,
-        "recorded_on": "2026-08-25",
-        "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 3 m stations. Orthogonal best-fit straight line; processed endpoint extents preserved.",
-        "length_m": 90.6,
-        "length_ft": 297,
-        "elevation_gain_ft": 68,
-        "elevation_loss_ft": 57,
+        "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road. Join `mountain-drive-driveway` adjusted its endpoint to the declared connection. Split at the measured finished/unfinished transition.",
+        "length_m": 94.2,
+        "length_ft": 309,
+        "elevation_gain_ft": 66,
+        "elevation_loss_ft": 114,
         "elevation_profile_ft": [
-          902.1,
-          901.1,
-          899.3,
-          896.8,
-          895.4,
-          894.0,
-          893.4,
-          891.3,
-          890.3,
-          889.3,
-          888.4,
-          884.0,
-          876.6
-        ]
+          845.8,
+          843.0,
+          842.4,
+          844.2,
+          847.8,
+          852.2,
+          856.3,
+          859.3,
+          860.7,
+          861.6,
+          862.8,
+          864.8,
+          867.0,
+          869.0,
+          871.1,
+          873.5,
+          876.3,
+          879.1,
+          881.7,
+          884.3,
+          887.0,
+          890.4
+        ],
+        "condition": "finished"
       },
       "geometry": {
         "type": "LineString",
         "coordinates": [
           [
-            -73.8337894,
-            43.3594434
+            -73.8359401,
+            43.3591414
           ],
           [
-            -73.8339483,
-            43.3586367
+            -73.8359205,
+            43.3592015
+          ],
+          [
+            -73.8359193,
+            43.3593367
+          ],
+          [
+            -73.8358657,
+            43.3593707
+          ],
+          [
+            -73.8356051,
+            43.3594245
+          ],
+          [
+            -73.8354957,
+            43.3594944
+          ],
+          [
+            -73.8354833,
+            43.3595137
+          ],
+          [
+            -73.8354316,
+            43.3595946
+          ],
+          [
+            -73.8351907,
+            43.3596533
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "mountain-drive-upper",
+        "name": "Mountain Drive (upper)",
+        "type": "walking trail",
+        "status": "work in progress",
+        "recorded_on": "2026-08-04",
+        "source_files": [
+          "New_rd_down.gpx",
+          "New_Road_up.gpx"
+        ],
+        "source_track_count": 2,
+        "processing": "Equal-pass median centerline in 6 m distance bands; lightly smoothed and simplified. Combined extent retained. A vertex was inserted at the Pavilion Side Trail junction, with that trail endpoint snapped 1.5 m to the road. Join `mountain-drive-driveway` adjusted its endpoint to the declared connection. Split at the measured finished/unfinished transition.",
+        "length_m": 112.0,
+        "length_ft": 367,
+        "elevation_gain_ft": 95,
+        "elevation_loss_ft": 37,
+        "elevation_profile_ft": [
+          890.4,
+          893.6,
+          896.9,
+          899.8,
+          902.6,
+          905.4,
+          908.6,
+          911.7,
+          913.5,
+          913.7,
+          913.2,
+          913.9,
+          915.9,
+          918.7,
+          920.9,
+          922.6,
+          924.5,
+          927.6,
+          931.4,
+          934.5,
+          934.9,
+          934.3,
+          934.9,
+          938.4,
+          943.8,
+          950.7,
+          958.3
+        ],
+        "condition": "unfinished"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8351907,
+            43.3596533
+          ],
+          [
+            -73.8351067,
+            43.3596738
+          ],
+          [
+            -73.8349879,
+            43.3597511
+          ],
+          [
+            -73.8348198,
+            43.3599924
+          ],
+          [
+            -73.8347548,
+            43.3602226
+          ],
+          [
+            -73.83456,
+            43.360511
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "line",
+        "name": "Beeline",
+        "type": "walking trail",
+        "condition": "unfinished",
+        "status": "provisional",
+        "source_files": [
+          "Raw gaia gpx through 8.31.26/Line.gpx",
+          "Raw gaia gpx through 8.31.26/Line - 2.gpx",
+          "Raw gaia gpx 9.18.26/beeline.gpx",
+          "Raw gaia gpx 9.18.26/beeline-2.gpx"
+        ],
+        "source_track_count": 4,
+        "recorded_on": "2026-09-18",
+        "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. Orthogonal best-fit straight line; processed endpoint extents preserved. Join `beeline-barbershop-landmark` adjusted its endpoint to the declared connection. A matching vertex was inserted for join `barbershop-trail-beeline`. Join `beeline-main-loop-ext-anchor` adjusted its endpoint to the declared connection. Join `beeline-main-loop-ext` adjusted its endpoint to the declared connection.",
+        "length_m": 127.7,
+        "length_ft": 419
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8339724,
+            43.3584277
+          ],
+          [
+            -73.8338405,
+            43.3595731
           ]
         ]
       }
@@ -502,12 +663,12 @@
         "id": "powerline-trail",
         "name": "Powerline Trail",
         "type": "walking trail",
+        "condition": "finished",
         "status": "rough / provisional",
-        "note": "Accessible trail through the powerline cut; largely off-property and based on one phone-GPS track.",
         "source_files": [
           "Raw gaia gpx through 8.31.26/power-line-trail-north.gpx"
         ],
-        "source_track_count": 1,
+        "source_track_count": 2,
         "recorded_on": "2026-08-10",
         "processing": "Arc-length median centerline from 2 equally weighted passes; directions normalized; 6 m stations.",
         "length_m": 1190.6,
@@ -773,6 +934,88 @@
           [
             -73.836367,
             43.3595055
+          ]
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "back-cut-through",
+        "name": "Back Cut Through",
+        "type": "walking trail",
+        "condition": "finished",
+        "status": "provisional",
+        "source_files": [
+          "Raw gaia gpx 9.18.26/back-cut-through-x3.gpx",
+          "Raw gaia gpx 9.18.26/back-cut-through-x1.gpx",
+          "Raw gaia gpx 9.18.26/partial-back-cut-through.gpx"
+        ],
+        "source_track_count": 6,
+        "recorded_on": "2026-09-18",
+        "processing": "Arc-length median centerline from 4 equally weighted passes; directions normalized; 3 m stations. 2 partial traversal(s) reinforced only their recorded overlap. Join `back-cut-through-main-loop-ext` adjusted its endpoint to the declared connection.",
+        "length_m": 102.6,
+        "length_ft": 337,
+        "elevation_gain_ft": 56,
+        "elevation_loss_ft": 67,
+        "elevation_profile_ft": [
+          878.0,
+          875.7,
+          873.5,
+          872.7,
+          873.0,
+          874.8,
+          876.5,
+          877.5,
+          878.0,
+          878.6,
+          880.5,
+          882.9,
+          885.4,
+          887.4,
+          890.3,
+          895.3,
+          902.2
+        ]
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            -73.8351929,
+            43.358467
+          ],
+          [
+            -73.8350989,
+            43.3584444
+          ],
+          [
+            -73.8348429,
+            43.358319
+          ],
+          [
+            -73.8347622,
+            43.3583051
+          ],
+          [
+            -73.8346927,
+            43.35831
+          ],
+          [
+            -73.8346488,
+            43.358346
+          ],
+          [
+            -73.834482,
+            43.3585802
+          ],
+          [
+            -73.8343665,
+            43.3586384
+          ],
+          [
+            -73.8342787,
+            43.3587166
           ]
         ]
       }

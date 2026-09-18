@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import shutil
 import sys
 import tempfile
@@ -16,7 +17,12 @@ TOOLS = Path(__file__).resolve().parent
 ROOT = TOOLS.parent
 sys.path.insert(0, str(TOOLS))
 
-from validate_data import validate_repository  # noqa: E402
+from validate_data import (  # noqa: E402
+    FORBIDDEN_TERM_DIGESTS,
+    ValidationReport,
+    scan_forbidden_terminology,
+    validate_repository,
+)
 
 
 class ValidateDataTests(unittest.TestCase):
@@ -55,14 +61,6 @@ class ValidateDataTests(unittest.TestCase):
         errors = self.validate_broken_copy(mutate)
         self.assertTrue(any("references missing segment" in error for error in errors), errors)
 
-    def test_forbidden_terminology_fails_informatively(self) -> None:
-        def mutate(root: Path) -> None:
-            forbidden_text = "".join(["shoot", "ing", " ", "range"])
-            (root / "stale-note.txt").write_text(forbidden_text, encoding="utf-8")
-
-        errors = self.validate_broken_copy(mutate)
-        self.assertTrue(any("Forbidden landmark terminology" in error for error in errors), errors)
-
     def test_missing_parcel_role_fails_informatively(self) -> None:
         def mutate(root: Path) -> None:
             path = root / "data" / "property" / "boundaries.geojson"
@@ -79,6 +77,55 @@ class ValidateDataTests(unittest.TestCase):
 
         errors = self.validate_broken_copy(mutate)
         self.assertTrue(any("Local-only item remains" in error for error in errors), errors)
+
+    def test_internal_handoff_document_fails_informatively(self) -> None:
+        def mutate(root: Path) -> None:
+            nested = root / "notes"
+            nested.mkdir()
+            (nested / "PROJECT_HANDOFF_old.md").write_text("internal", encoding="utf-8")
+
+        errors = self.validate_broken_copy(mutate)
+        self.assertTrue(any("Local-only item remains" in error for error in errors), errors)
+
+    def test_point_photo_over_400_kb_fails_informatively(self) -> None:
+        def mutate(root: Path) -> None:
+            photo_root = root / "assets" / "points"
+            photo_root.mkdir(parents=True)
+            (photo_root / "oversize.jpg").write_bytes(b"0" * (400 * 1024 + 1))
+
+        errors = self.validate_broken_copy(mutate)
+        self.assertTrue(any("Point photo exceeds 400 KB" in error for error in errors), errors)
+
+    def test_digest_scanner_handles_supported_separator_spellings(self) -> None:
+        sentinel = "zzz sentinel"
+        digest = hashlib.sha256(sentinel.encode("utf-8")).hexdigest()
+        variants = (
+            sentinel,
+            sentinel.replace(" ", "-"),
+            sentinel.replace(" ", "_"),
+            sentinel.replace(" ", ""),
+            sentinel.upper(),
+        )
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary_directory:
+            root = Path(temporary_directory)
+            for index, variant in enumerate(variants):
+                with self.subTest(variant=variant):
+                    path = root / f"sentinel-{index}.txt"
+                    path.write_text(variant, encoding="utf-8")
+                    report = ValidationReport()
+                    scan_forbidden_terminology(root, report, frozenset({digest}))
+                    self.assertTrue(report.errors)
+                    path.unlink()
+
+    def test_real_digest_constant_is_lowercase_sha256(self) -> None:
+        self.assertTrue(FORBIDDEN_TERM_DIGESTS)
+        for digest in FORBIDDEN_TERM_DIGESTS:
+            self.assertRegex(digest, r"^[0-9a-f]{64}$")
+
+    def test_digest_scanner_accepts_current_tree(self) -> None:
+        report = ValidationReport()
+        scan_forbidden_terminology(ROOT, report)
+        self.assertEqual([], report.errors)
 
     def test_manifest_source_reference_mismatches_fail_informatively(self) -> None:
         def mutate_missing_reference(root: Path) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -16,6 +17,11 @@ sys.dont_write_bytecode = True
 
 ROOT = Path(__file__).resolve().parents[1]
 FEET_PER_METER = 3.28084
+FORBIDDEN_TERM_DIGESTS = frozenset({
+    "cbc96d4e05bc1de245367be020fa0b8ca01c38c3f08769fdb89028cc9d387757",
+})
+MAX_POINT_PHOTO_BYTES = 400 * 1024
+MAX_RUN_TOGETHER_TOKEN_LENGTH = 128
 
 
 @dataclass
@@ -32,6 +38,47 @@ class ValidationReport:
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
+
+
+def scan_forbidden_terminology(
+    root: Path,
+    report: ValidationReport,
+    banned_digests: frozenset[str] = FORBIDDEN_TERM_DIGESTS,
+) -> None:
+    for path in root.rglob("*"):
+        if not path.is_file() or ".git" in path.parts:
+            continue
+        try:
+            text = path.read_bytes().decode("utf-8", errors="ignore").lower()
+        except OSError as error:
+            report.warn(f"Could not scan {path.relative_to(root)}: {error}")
+            continue
+        tokens = re.findall(r"[a-z0-9]+", text)
+        found = False
+        for token in tokens:
+            if hashlib.sha256(token.encode("utf-8")).hexdigest() in banned_digests:
+                found = True
+                break
+            if len(token) <= MAX_RUN_TOGETHER_TOKEN_LENGTH:
+                for split in range(1, len(token)):
+                    candidate = f"{token[:split]} {token[split:]}"
+                    if hashlib.sha256(candidate.encode("utf-8")).hexdigest() in banned_digests:
+                        found = True
+                        break
+            if found:
+                break
+        if not found:
+            for first, second in zip(tokens, tokens[1:]):
+                if any(
+                    hashlib.sha256(candidate.encode("utf-8")).hexdigest() in banned_digests
+                    for candidate in (f"{first} {second}", f"{first}{second}")
+                ):
+                    found = True
+                    break
+        if found:
+            report.error(
+                f"Forbidden landmark terminology appears in {path.relative_to(root)}"
+            )
 
 
 def read_json(path: Path, report: ValidationReport, *, required: bool = True) -> Any | None:
@@ -246,6 +293,10 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
         root / "Unprocessed GPS Files",
         root / "data" / "_candidates",
         root / "compass-test.html",
+        *[
+            path for path in root.rglob("PROJECT_HANDOFF*.md")
+            if ".git" not in path.parts
+        ],
     ]
     for path in forbidden_publish_paths:
         if path.exists():
@@ -260,6 +311,13 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
     for path in root.rglob("*.gpx"):
         if path.is_file():
             report.error(f"Raw GPX remains in the publish folder: {path.relative_to(root)}")
+    point_photo_root = root / "assets" / "points"
+    if point_photo_root.is_dir():
+        for path in point_photo_root.rglob("*"):
+            if path.is_file() and path.stat().st_size > MAX_POINT_PHOTO_BYTES:
+                report.error(
+                    f"Point photo exceeds 400 KB: {path.relative_to(root)}"
+                )
 
     manifest = read_json(root / "data" / "manifest.json", report)
     if not isinstance(manifest, dict) or not isinstance(manifest.get("sources"), list):
@@ -503,22 +561,7 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
         if not feature.get("properties", {}).get("elevation_profile_ft"):
             report.warn(f"Segment {segment_id!r} has no elevation profile yet")
 
-    forbidden_pattern = re.compile(
-        b"shoot" + b"ing" + b"[\\s_-]*" + b"range", re.IGNORECASE
-    )
-    for path in root.rglob("*"):
-        if not path.is_file() or ".git" in path.parts:
-            continue
-        try:
-            content = path.read_bytes()
-        except OSError as error:
-            report.warn(f"Could not scan {path.relative_to(root)}: {error}")
-            continue
-        if forbidden_pattern.search(content):
-            report.error(
-                f"Forbidden landmark terminology appears in {path.relative_to(root)}"
-            )
-
+    scan_forbidden_terminology(root, report)
     return report
 
 

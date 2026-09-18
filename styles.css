@@ -210,7 +210,7 @@ button { font: inherit; }
 .location-panel {
   position: fixed;
   z-index: 1000;
-  top: calc(162px + env(safe-area-inset-top));
+  top: calc(112px + env(safe-area-inset-top));
   right: var(--control-right);
   display: flex;
   align-items: center;
@@ -253,7 +253,8 @@ button { font: inherit; }
 }
 
 .leaflet-top.leaflet-right {
-  top: calc(102px + env(safe-area-inset-top));
+  z-index: 1200;
+  top: calc(52px + env(safe-area-inset-top));
   right: calc(2px + env(safe-area-inset-right));
 }
 
@@ -307,6 +308,49 @@ button { font: inherit; }
 
 .layer-reset-section .layer-reset-button + .layer-reset-button {
   margin-top: 5px;
+}
+
+.layer-about-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.layer-about-row > label {
+  min-width: 0;
+  flex: 1;
+}
+
+.layer-about-button {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 30px;
+  padding: 4px;
+  border: 1px solid #b9c1bd;
+  border-radius: 5px;
+  color: var(--shared-accent-deep);
+  background: #f5f7f6;
+  cursor: pointer;
+}
+
+.layer-about-button svg {
+  width: 19px;
+  height: 19px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.layer-about-button:hover,
+.layer-about-button:focus-visible {
+  border-color: #648177;
+  outline: 2px solid var(--owned);
+  outline-offset: 1px;
+  background: var(--shared-text-on-dark);
 }
 
 .layer-reset-button {
@@ -827,6 +871,27 @@ button { font: inherit; }
   outline-offset: -2px;
 }
 
+.map-legend-restore {
+  width: 46px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  margin: 0 0 calc(32px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left)) !important;
+  padding: 3px 5px;
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+  box-shadow: var(--chrome-shadow);
+  cursor: pointer;
+}
+
+.map-legend-restore:hover,
+.map-legend-restore:focus-visible {
+  outline: 2px solid var(--owned);
+  outline-offset: 2px;
+}
+
 .minor-landmark-marker:hover,
 .minor-landmark-marker:focus-visible {
   filter: drop-shadow(0 0 4px rgba(94, 230, 189, 0.95));
@@ -1016,8 +1081,10 @@ button { font: inherit; }
 
   .leaflet-control-layers-expanded .leaflet-control-layers-list {
     min-width: 210px;
+    max-height: calc(100vh - 86px - env(safe-area-inset-top));
     padding: 10px 13px 9px 10px;
     border-radius: 8px;
+    overflow-y: auto;
   }
 
   .leaflet-control-layers label {
@@ -1051,6 +1118,12 @@ button { font: inherit; }
     min-height: 42px;
     padding: 8px 11px;
     font-size: 14px;
+  }
+
+  .layer-about-button {
+    width: 34px;
+    height: 34px;
+    flex-basis: 34px;
   }
 }
 

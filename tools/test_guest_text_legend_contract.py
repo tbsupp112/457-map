@@ -24,8 +24,8 @@ class GuestTextLegendContractTests(unittest.TestCase):
         cls.css = (ROOT / "styles.css").read_text(encoding="utf-8")
 
     def test_guest_copy_is_intentional_and_concise(self) -> None:
-        self.assertIn('const baseDetail = "Approximate route.";', self.app)
         self.assertIn('? "Not finished yet."', self.app)
+        self.assertNotIn("Approximate route.", self.app)
         self.assertIn('feature.properties.note || ""', self.app)
         self.assertNotIn("Approximate mapped feature.", self.app)
         self.assertNotIn("properties.status, properties.note", self.app)
@@ -56,7 +56,7 @@ class GuestTextLegendContractTests(unittest.TestCase):
         for label in (
             "Property boundary (approximate)",
             "Walking trail",
-            "Walking trail — not finished",
+            "Unfinished trail",
             "Dirt road",
             "Not part of the property",
             "Powerline corridor (not owned, access allowed)",
@@ -76,8 +76,24 @@ class GuestTextLegendContractTests(unittest.TestCase):
     def test_about_button_is_created_inside_layer_panel(self) -> None:
         self.assertNotIn('id="info-button"', self.html)
         self.assertIn('aboutButton.id = "info-button";', self.app)
-        self.assertIn('aboutButton.textContent = "About this map";', self.app)
-        self.assertIn("const infoButton = installLayerResetButton(layerControl);", self.app)
+        self.assertIn('aboutButton.setAttribute("aria-label", "About this map");', self.app)
+        self.assertIn('aboutButton.className = "layer-about-button";', self.app)
+        self.assertIn("decorateLayerControl(layerControl);", self.app)
+
+    def test_mobile_controls_and_trail_interactions_have_durable_contracts(self) -> None:
+        self.assertRegex(self.app, r'key: "roads",\s+label: null,')
+        self.assertIn('legendDismissedForSession = false;', self.app)
+        self.assertIn('button.setAttribute("aria-label", "Show map legend");', self.app)
+        self.assertIn("showMapLegend();", self.app)
+        self.assertIn('pane: MAP_PANES.trailInteractions', self.app)
+        self.assertIn('interactionPriority: 100', self.app)
+        self.assertIn('? 26 : ROAD_INTERACTION_WEIGHT_PX', self.app)
+        self.assertIn('isUnfinished && aerialIsActive ? "#bed6df"', self.app)
+        self.assertIn('weight: isUnfinished && isPhone ? 2.35 : 3', self.app)
+        self.assertIn('map.on("baselayerchange", refreshTrailPresentation);', self.app)
+        self.assertIn('scheduleLayerControlDecoration();', self.app)
+        self.assertIn(".map-legend-restore", self.css)
+        self.assertIn("z-index: 1200", self.css)
 
 
 if __name__ == "__main__":

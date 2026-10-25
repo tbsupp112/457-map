@@ -12,6 +12,34 @@
   },
   "sources": [
     {
+      "key": "terrainSlope", "path": "data/terrain/slope.geojson", "format": "geojson",
+      "geometry_types": ["Polygon"], "required": false, "ids": true,
+      "required_properties": ["id", "name", "image_path", "bounds", "units", "legend"],
+      "optional_properties": [], "authored_properties": [],
+      "generated_properties": ["id", "name", "image_path", "bounds", "units", "legend"]
+    },
+    {
+      "key": "terrainAspect", "path": "data/terrain/aspect.geojson", "format": "geojson",
+      "geometry_types": ["Polygon"], "required": false, "ids": true,
+      "required_properties": ["id", "name", "image_path", "bounds", "units", "legend"],
+      "optional_properties": [], "authored_properties": [],
+      "generated_properties": ["id", "name", "image_path", "bounds", "units", "legend"]
+    },
+    {
+      "key": "soils", "path": "data/terrain/soils.geojson", "format": "geojson",
+      "geometry_types": ["Polygon", "MultiPolygon"], "required": false, "ids": true,
+      "required_properties": ["id", "name", "symbol", "map_unit_key", "survey_area"],
+      "optional_properties": [], "authored_properties": [],
+      "generated_properties": ["id", "name", "symbol", "map_unit_key", "survey_area"]
+    },
+    {
+      "key": "contours", "path": "data/terrain/contours.geojson", "format": "geojson",
+      "geometry_types": ["LineString", "MultiLineString"], "required": false, "ids": true,
+      "required_properties": ["id", "name", "elevation", "elevation_unit"],
+      "optional_properties": [], "authored_properties": [],
+      "generated_properties": ["id", "name", "elevation", "elevation_unit"]
+    },
+    {
       "key": "boundaries",
       "path": "data/property/boundaries.geojson",
       "format": "geojson",

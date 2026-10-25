@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20260918-4";
+const DATA_CACHE_VERSION = "20261024-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -147,7 +147,27 @@ map.setView([43.3596, -73.8348], 17);
 // repository file remains publicly downloadable, and either view can be chosen
 // through the URL. Keep genuinely private data out of this repository.
 const ALL_AUDIENCES = Object.freeze(["visitor", "owner"]);
+const terrainLayers = Object.fromEntries(
+  ["terrainSlope", "terrainAspect", "soils", "contours"].map((key) => [key, L.layerGroup()]),
+);
+const terrainLegends = new Map();
 const LAYER_DEFINITIONS = [
+  ...[
+    { key: "terrainSlope", label: "Slope", order: 11, sources: ["terrainSlope"] },
+    { key: "terrainAspect", label: "Slope direction (aspect)", order: 12, sources: ["terrainAspect"] },
+    { key: "soils", label: "Soil map units", order: 13, sources: ["soils"] },
+    { key: "contours", label: "Elevation contours", order: 31, sources: ["contours"] },
+  ].map(({ key, label, order, sources }) => ({
+    key, label, group: "80-terrain", order, sources,
+    audiences: ALL_AUDIENCES,
+    defaultVisible: { visitor: false, owner: false },
+    render: { kind: "geojson", panes: [
+      { key, name: `${key}-pane`, order },
+      ...(key === "soils" ? [{ key: "soilInteractions", name: "soil-interactions-pane", order: 66.5 }] : []),
+    ] },
+    getLayer: () => terrainLayers[key],
+    applyData: (data) => applyTerrainData(key, data[key]),
+  })),
   {
     key: "outsideShading",
     label: null,
@@ -849,6 +869,12 @@ if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
 map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEvent);
 map.on("baselayerchange", refreshTrailPresentation);
 map.on("baselayerchange overlayadd overlayremove", scheduleLayerControlDecoration);
+map.on("overlayadd overlayremove", installMapLegend);
+map.on("overlayadd", (event) => {
+  // Keep the two color scales readable by showing one terrain raster at a time.
+  if (event.layer === terrainLayers.terrainSlope) map.removeLayer(terrainLayers.terrainAspect);
+  if (event.layer === terrainLayers.terrainAspect) map.removeLayer(terrainLayers.terrainSlope);
+});
 map.on("movestart zoomstart", handleMapViewChangeStart);
 window.matchMedia("(max-width: 720px)").addEventListener("change", refreshTrailPresentation);
 window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPresentation);
@@ -1904,6 +1930,66 @@ function createLegendLandmark({ minor = false } = {}) {
   return svg;
 }
 
+function applyTerrainData(key, data) {
+  const group = terrainLayers[key];
+  group.clearLayers();
+  if (!data) return;
+  if (key === "terrainSlope" || key === "terrainAspect") {
+    const properties = data.features[0]?.properties;
+    if (!properties?.image_path || !properties.bounds) return;
+    L.imageOverlay(versionedDataUrl(properties.image_path), properties.bounds, {
+      pane: MAP_PANES[key], opacity: 0.58, interactive: false,
+    }).addTo(group);
+    terrainLegends.set(key, properties.legend || []);
+  } else {
+    L.geoJSON(data, {
+      pane: MAP_PANES[key],
+      style: key === "contours"
+        ? (feature) => ({ color: "#765535", weight: Number(feature.properties.elevation) % 5 === 0 ? 1.3 : 0.55, opacity: 0.65, fill: false })
+        : { color: "#8b4b85", weight: 1.5, fillColor: "#ba88b5", fillOpacity: 0.16 },
+      interactive: false,
+    }).addTo(group);
+    if (key === "soils") L.geoJSON(data, {
+      pane: MAP_PANES.soilInteractions,
+      renderer: L.svg({ pane: MAP_PANES.soilInteractions }),
+      style: { stroke: false, fillOpacity: 0.001 },
+      onEachFeature(feature, layer) {
+        if (key !== "soils") return;
+        const properties = feature.properties || {};
+        const content = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = properties.name || "Soil map unit";
+        const detail = document.createElement("div");
+        detail.textContent = `Survey: ${properties.survey_area || "unspecified"} · Map unit: ${properties.map_unit_key || properties.symbol || "unspecified"}`;
+        content.append(title, detail);
+        layer.bindPopup(content);
+      },
+    }).addTo(group);
+  }
+  installMapLegend();
+}
+
+function appendTerrainLegend(container) {
+  for (const [key, group] of Object.entries(terrainLayers)) {
+    if (!map.hasLayer(group)) continue;
+    const section = L.DomUtil.create("div", "terrain-legend", container);
+    const title = L.DomUtil.create("strong", "", section);
+    title.textContent = getLayerDefinition(key).label;
+    const entries = terrainLegends.get(key);
+    if (entries?.length) {
+      entries.forEach(({ label, color }) => {
+        const row = L.DomUtil.create("span", "terrain-legend-item", section);
+        const swatch = L.DomUtil.create("i", "", row);
+        swatch.style.backgroundColor = color;
+        row.append(document.createTextNode(label));
+      });
+    } else {
+      const note = L.DomUtil.create("span", "", section);
+      note.textContent = key === "soils" ? "Purple outlines · tap for map unit" : "Brown lines · 0.5 m intervals; bold every 5 m";
+    }
+  }
+}
+
 function legendRows() {
   const finishedTrailStyle = trailStyle({ properties: { condition: "finished" } });
   const unfinishedTrailStyle = trailStyle({ properties: { condition: "unfinished" } });
@@ -1948,6 +2034,7 @@ function installMapLegend() {
       const text = L.DomUtil.create("span", "map-legend-label", row);
       text.textContent = label;
     });
+    appendTerrainLegend(container);
     dismiss.addEventListener("click", dismissMapLegend);
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
@@ -3084,6 +3171,19 @@ function installExperimentalGroupHeading(control) {
   const overlays = control.getContainer().querySelector(".leaflet-control-layers-overlays");
   if (!overlays) return;
   overlays.querySelectorAll(".layer-group-heading").forEach((heading) => heading.remove());
+  const terrainLabels = new Set(
+    getAudienceLayerDefinitions({ panelOnly: true })
+      .filter((definition) => definition.group === "80-terrain")
+      .map((definition) => definition.label),
+  );
+  const terrainEntry = [...overlays.querySelectorAll("label")]
+    .find((label) => terrainLabels.has(label.textContent.trim()));
+  if (terrainEntry) {
+    const heading = document.createElement("div");
+    heading.className = "layer-group-heading";
+    heading.textContent = "Terrain & soils";
+    terrainEntry.before(heading);
+  }
   const experimentalLabels = new Set(
     getAudienceLayerDefinitions({ panelOnly: true })
       .filter((definition) => definition.experimental)

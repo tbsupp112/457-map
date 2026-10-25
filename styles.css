@@ -1146,3 +1146,30 @@ button { font: inherit; }
 
   .location-dot--near { animation: none; }
 }
+/* Optional terrain keys stay compact and scroll with the map legend. */
+.map-legend {
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.terrain-legend {
+  border-top: 1px solid #cbd4cc;
+  margin-top: 6px;
+  padding-top: 5px;
+  max-width: 270px;
+  font-size: 11px;
+}
+.terrain-legend strong,
+.terrain-legend > span:not(.terrain-legend-item) {
+  display: block;
+}
+.terrain-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-right: 8px;
+}
+.terrain-legend-item i {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+}

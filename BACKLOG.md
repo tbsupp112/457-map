@@ -4,6 +4,8 @@ Organized by intended timing rather than numeric priority. Within each section, 
 
 ## Now
 
+- **Confirm the October 24 terrain layers live.** Enable Slope, Aspect, Soils, and Contours on phone and desktop; confirm placement, legends, soil/contour details, continued trail taps, and reset returning these layers to off.
+
 - **Confirm the September 18 mobile-control and audit cleanup live.** Check the tightened right-side control spacing; compact Info icon and stable Experimental grouping after repeated resets; always-on Dirt roads; trail taps on Main Loop, Mountain Drive, and Powerline Trail; aerial/topo unfinished-trail contrast; legend dismiss, restore, and reset behavior; and the Home popup with no photo or layout jump.
 - **Confirm the September 18 GPS and guest-map update live.** Check the reinforced four-traversal Beeline and its endpoint joins; the new Back Cut Through alignment and Main Loop Ext junction; the compact phone and expanded desktop legends; concise popup wording; and About this map inside the Layers panel. Yard Area remains withdrawn under `_local/withdrawn/`.
 - **Field-test the August 28 full-perimeter guidance tint.** The prior full-turn test confirmed compass input, tint at every angle, correct turn-direction text, and the destination ring. Outdoors in daylight, confirm the brighter tint travels continuously around the full screen perimeter, remains clearly visible at 180°, rewards the ≤8° locked state without dimming, and leaves the top-center pill readable. Confirm Reduce Motion removes breathing without weakening the tint; do not close this from desk geometry checks.

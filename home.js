@@ -1,7 +1,18 @@
 "use strict";
 
-const DATA_CACHE_VERSION = "20261024-1";
+const DATA_CACHE_VERSION = "20261027-1";
 let openRouteDetails = null;
+
+const homeWeatherContent = document.getElementById("home-weather-content");
+if (homeWeatherContent && typeof window.PropertyWeather?.createView === "function") {
+  const weather = window.PropertyWeather.createView(homeWeatherContent, { compact: true });
+  if (typeof IntersectionObserver === "function") {
+    const observer = new IntersectionObserver(([entry]) => weather.setVisible(entry.isIntersecting));
+    observer.observe(homeWeatherContent);
+  } else {
+    weather.setVisible(true);
+  }
+}
 
 function versionedDataUrl(path) {
   const separator = path.includes("?") ? "&" : "?";

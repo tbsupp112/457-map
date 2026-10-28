@@ -67,3 +67,17 @@
 .route-elevation-stats small { color: var(--shared-text-muted); font-size: 0.68rem; }
 .route-elevation-stats strong { font-size: 0.9rem; }
 .route-elevation-note { margin: 10px 0; color: var(--shared-text-muted); font-size: 0.72rem; line-height: 1.4; }
+
+.property-weather { color: var(--shared-text-deep); font-size: 0.78rem; line-height: 1.4; }
+.property-weather p { margin: 0; }
+.weather-status { font-size: 0.72rem; font-weight: 700; }
+.weather-status--stale { color: #8a4e13; }
+.weather-temperature { margin: 2px 0 4px !important; font-size: 1.65rem; font-weight: 750; line-height: 1.2; }
+.weather-reading + .weather-reading { margin-top: 2px; }
+.weather-station { margin-top: 6px !important; font-size: 0.67rem; }
+.weather-forecast { margin-top: 9px; padding-top: 7px; border-top: 1px solid rgba(41, 70, 60, 0.18); color: #566b63; font-size: 0.72rem; }
+.weather-forecast-title { margin-bottom: 3px !important; font-weight: 700; }
+.weather-message { margin-top: 7px !important; font-size: 0.7rem; }
+.weather-disclaimer, .weather-attribution { margin-top: 7px !important; color: #566b63; font-size: 0.66rem; }
+.weather-attribution a { color: inherit; text-underline-offset: 2px; }
+.property-weather--compact .weather-temperature { font-size: 1.45rem; }

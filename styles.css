@@ -892,6 +892,62 @@ button { font: inherit; }
   outline-offset: 2px;
 }
 
+.map-weather-control {
+  margin: 0 0 8px calc(8px + env(safe-area-inset-left)) !important;
+  color: var(--chrome-text);
+  font-family: inherit;
+}
+.map-weather-toggle {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 42px;
+  padding: 6px;
+  color: var(--chrome-text);
+  background: var(--chrome-surface);
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  box-shadow: var(--chrome-shadow);
+  cursor: pointer;
+}
+.map-weather-toggle[hidden], .map-weather-panel[hidden] { display: none; }
+.map-weather-toggle svg { width: 32px; height: 26px; fill: none; stroke-width: 1.8; stroke-linecap: round; }
+.weather-sun { stroke: #dba84e; }
+.weather-cloud { stroke: currentColor; fill: var(--chrome-surface); }
+.map-weather-panel {
+  position: relative;
+  width: min(300px, calc(100vw - 96px));
+  max-height: calc(100dvh - 175px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow-y: auto;
+  padding: 12px;
+  border: var(--chrome-border);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-surface);
+  box-shadow: var(--chrome-shadow);
+}
+.map-weather-panel h2 { margin: 0 24px 8px 0; color: inherit; font-size: 1rem; }
+.map-weather-panel .property-weather { color: var(--chrome-text); }
+.map-weather-panel .weather-forecast,
+.map-weather-panel .weather-disclaimer,
+.map-weather-panel .weather-attribution { color: var(--chrome-muted); }
+.map-weather-panel .weather-forecast { border-color: rgba(255, 255, 255, 0.2); }
+.map-weather-panel .weather-status--stale { color: #f1c583; }
+.map-weather-close {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+.map-weather-control button:focus-visible { outline: 2px solid var(--owned); outline-offset: 2px; }
+
 .minor-landmark-marker:hover,
 .minor-landmark-marker:focus-visible {
   filter: drop-shadow(0 0 4px rgba(94, 230, 189, 0.95));

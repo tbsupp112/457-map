@@ -14,7 +14,12 @@
       milesThresholdFeet = ROUTE_MILES_THRESHOLD_FEET,
     } = {},
   ) {
-    if (!Number.isFinite(Number(lengthFeet))) return "";
+    if (
+      !["number", "string"].includes(typeof lengthFeet) ||
+      (typeof lengthFeet === "string" && lengthFeet.trim() === "") ||
+      !Number.isFinite(Number(lengthFeet)) ||
+      Number(lengthFeet) < 0
+    ) return "";
     const feet = Number(lengthFeet);
     if (Number.isFinite(hereThresholdFeet) && feet < hereThresholdFeet) {
       return "you're here";
@@ -22,15 +27,20 @@
     const miles = feet / 5280;
     const prefix = approximate ? "about " : "";
     if (feet >= milesThresholdFeet) return `${prefix}${miles.toFixed(2)} mi`;
-    const increment = approximate ? (feet < 300 ? 10 : 25) : 1;
-    const displayedFeet = Math.round(feet / increment) * increment;
-    return `${prefix}${displayedFeet.toLocaleString()} ft`;
+    const yards = feet / 3;
+    const increment = approximate ? (yards < 100 ? 5 : 10) : 1;
+    const displayedYards = Math.round(yards / increment) * increment;
+    return `${prefix}${displayedYards.toLocaleString()} yd`;
   }
 
   function distanceLabel(route) {
-    const distance = formatDistance(route.length_ft);
+    const distance = formatDistance(route?.length_ft);
     if (!distance) return "";
     return route.shape === "out-and-back" ? `${distance} round trip` : distance;
+  }
+
+  function segmentDistanceLabel(feature) {
+    return formatDistance(segmentLengthFeet(feature));
   }
 
   function deriveRouteMetrics(route, segmentFeaturesById) {
@@ -59,12 +69,23 @@
   }
 
   function segmentLengthFeet(feature) {
-    const recordedMeters = Number(feature.properties?.length_m);
+    const recordedMeters = Number(feature?.properties?.length_m);
     if (Number.isFinite(recordedMeters) && recordedMeters > 0) {
       return recordedMeters * 3.28084;
     }
-    const coordinates = feature.geometry?.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length < 2) return NaN;
+    const coordinates = feature?.geometry?.coordinates;
+    if (
+      feature?.geometry?.type !== "LineString" ||
+      !Array.isArray(coordinates) ||
+      coordinates.length < 2 ||
+      coordinates.some((coordinate) =>
+        !Array.isArray(coordinate) ||
+        coordinate.length < 2 ||
+        !coordinate.slice(0, 2).every((value) =>
+          typeof value === "number" && Number.isFinite(value),
+        ),
+      )
+    ) return NaN;
     return coordinates.slice(1).reduce(
       (total, coordinate, index) =>
         total + coordinateDistanceFeet(coordinates[index], coordinate),
@@ -275,5 +296,6 @@
     deriveRouteMetrics,
     distanceLabel,
     formatDistance,
+    segmentDistanceLabel,
   });
 })();

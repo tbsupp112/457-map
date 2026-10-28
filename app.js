@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261024-1";
+const DATA_CACHE_VERSION = "20261027-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -77,6 +77,10 @@ let infoButton = null;
 let mapLegendControl = null;
 let mapLegendRestoreControl = null;
 let legendDismissedForSession = false;
+let mapWeatherControl = null;
+let mapWeatherView = null;
+let weatherPanelOpen = false;
+const mobileMapPanels = window.matchMedia("(max-width: 720px)");
 let layerControlDecorationFrame = null;
 const roadVisualLayersById = new Map();
 const trailVisualLayersById = new Map();
@@ -841,7 +845,7 @@ const controlOverlayEntries = Object.fromEntries(
 const layerControl = L.control
   .layers(
     {
-      "NYS aerial (2022)": nysAerial,
+      "Satellite map": nysAerial,
       "Topo map": topoMap,
     },
     controlOverlayEntries,
@@ -851,6 +855,7 @@ const layerControl = L.control
 
 decorateLayerControl(layerControl);
 installMapLegend();
+installMapWeatherControl();
 const clearLayerControlHoverDelay = installLayerControlHoverDelay(layerControl);
 
 if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
@@ -870,6 +875,22 @@ map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEv
 map.on("baselayerchange", refreshTrailPresentation);
 map.on("baselayerchange overlayadd overlayremove", scheduleLayerControlDecoration);
 map.on("overlayadd overlayremove", installMapLegend);
+layerControl.getContainer().addEventListener("click", (event) => {
+  const input = event.target;
+  if (!input.matches?.("input.leaflet-control-layers-selector") || !input.checked) return;
+  const terrainKeys = ["terrainSlope", "terrainAspect"];
+  const selectedKey = terrainKeys.find(
+    (key) => getLayerDefinition(key).label === input.closest("label")?.textContent.trim(),
+  );
+  if (!selectedKey) return;
+  const otherKey = terrainKeys.find((key) => key !== selectedKey);
+  const otherLabel = [...layerControl.getContainer().querySelectorAll("label")]
+    .find((label) => label.textContent.trim() === getLayerDefinition(otherKey).label);
+  // Leaflet snapshots all checked overlays before applying a click. Clear the
+  // other checkbox first so its snapshot cannot re-add the just-removed raster.
+  const otherInput = otherLabel?.querySelector("input");
+  if (otherInput) otherInput.checked = false;
+}, true);
 map.on("overlayadd", (event) => {
   // Keep the two color scales readable by showing one terrain raster at a time.
   if (event.layer === terrainLayers.terrainSlope) map.removeLayer(terrainLayers.terrainAspect);
@@ -878,6 +899,9 @@ map.on("overlayadd", (event) => {
 map.on("movestart zoomstart", handleMapViewChangeStart);
 window.matchMedia("(max-width: 720px)").addEventListener("change", refreshTrailPresentation);
 window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPresentation);
+mobileMapPanels.addEventListener("change", () => {
+  if (mobileMapPanels.matches && weatherPanelOpen) dismissMapLegend();
+});
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
 window.addEventListener("pagehide", handlePageHide);
 window.addEventListener("pageshow", handlePageShow);
@@ -1739,10 +1763,9 @@ function buildTrailPopupOptions(feature) {
     ? "Not finished yet."
     : "";
   if (routes.length === 0) {
-    const lengthFeet = Number(feature.properties?.length_ft);
     return {
       detail,
-      secondary: Number.isFinite(lengthFeet) ? `${Math.round(lengthFeet).toLocaleString()} ft` : "",
+      secondary: formatSegmentDistance(feature),
       standardPopupWidth: true,
     };
   }
@@ -1999,7 +2022,6 @@ function legendRows() {
     ["Unfinished trail", createLegendLine([unfinishedTrailStyle])],
     ["Dirt road", createLegendLine([ROAD_RENDER_CONFIG.style])],
     ["Not part of the property", createLegendHatch()],
-    ["Powerline corridor (not owned, access allowed)", createLegendLine([CORRIDOR_RENDER_CONFIG.style]), true],
     ["Landmark", createLegendLandmark(), true],
     ["Minor landmark", createLegendLandmark({ minor: true }), true],
   ];
@@ -2042,6 +2064,7 @@ function installMapLegend() {
   };
   control.addTo(map);
   mapLegendControl = control;
+  placeMapWeatherControl();
 }
 
 function dismissMapLegend() {
@@ -2068,11 +2091,79 @@ function installMapLegendRestoreControl() {
   };
   control.addTo(map);
   mapLegendRestoreControl = control;
+  placeMapWeatherControl();
 }
 
 function showMapLegend() {
+  if (mobileMapPanels.matches) setMapWeatherOpen(false);
   legendDismissedForSession = false;
   installMapLegend();
+}
+
+function installMapWeatherControl() {
+  if (typeof window.PropertyWeather?.createView !== "function") return;
+  const control = L.control({ position: "bottomleft" });
+  control.onAdd = () => {
+    const container = L.DomUtil.create("div", "map-weather-control");
+    const toggle = L.DomUtil.create("button", "map-weather-toggle", container);
+    toggle.type = "button";
+    toggle.setAttribute("aria-label", "Show weather");
+    toggle.title = "Weather";
+    toggle.setAttribute("aria-controls", "map-weather-panel");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.innerHTML = '<svg viewBox="0 0 32 26" aria-hidden="true"><path class="weather-sun" d="M14 17a7 7 0 1 1 7-7M14 1v2M4 10H2M6 3l2 2M23 3l-2 2"></path><path class="weather-cloud" d="M11 23a5 5 0 0 1 0-10h1a7 7 0 0 1 13 1 4.5 4.5 0 0 1 0 9Z"></path></svg>';
+    const panel = L.DomUtil.create("section", "map-weather-panel", container);
+    panel.id = "map-weather-panel";
+    panel.hidden = true;
+    panel.setAttribute("aria-labelledby", "map-weather-title");
+    const title = L.DomUtil.create("h2", "", panel);
+    title.id = "map-weather-title";
+    title.textContent = "Nearby weather";
+    const close = L.DomUtil.create("button", "map-weather-close", panel);
+    close.type = "button";
+    close.setAttribute("aria-label", "Close weather");
+    close.textContent = "×";
+    const content = L.DomUtil.create("div", "map-weather-content", panel);
+    mapWeatherView = window.PropertyWeather.createView(content);
+    toggle.addEventListener("click", () => {
+      setMapWeatherOpen(true);
+      close.focus();
+    });
+    close.addEventListener("click", () => {
+      setMapWeatherOpen(false);
+      toggle.focus();
+    });
+    container.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && weatherPanelOpen) {
+        setMapWeatherOpen(false);
+        toggle.focus();
+      }
+    });
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    return container;
+  };
+  control.addTo(map);
+  mapWeatherControl = control;
+  placeMapWeatherControl();
+}
+
+function setMapWeatherOpen(open) {
+  weatherPanelOpen = Boolean(open && mapWeatherControl);
+  if (!mapWeatherControl) return;
+  const container = mapWeatherControl.getContainer();
+  container.querySelector(".map-weather-panel").hidden = !weatherPanelOpen;
+  const toggle = container.querySelector(".map-weather-toggle");
+  toggle.hidden = weatherPanelOpen;
+  toggle.setAttribute("aria-expanded", String(weatherPanelOpen));
+  mapWeatherView.setVisible(weatherPanelOpen);
+  if (weatherPanelOpen && mobileMapPanels.matches) dismissMapLegend();
+}
+
+function placeMapWeatherControl() {
+  const legend = (mapLegendControl || mapLegendRestoreControl)?.getContainer();
+  const weather = mapWeatherControl?.getContainer();
+  if (legend?.isConnected && weather?.isConnected) legend.before(weather);
 }
 
 function refreshTrailPresentation() {
@@ -2228,8 +2319,9 @@ function buildRouteSummaryHtml(routes) {
         `<span class="route-difficulty-symbol" aria-hidden="true"></span>` +
         `<span>${escapeHtml(difficulty.label)}</span></span>`
       : "";
-    const lengthHtml = Number.isFinite(Number(route.length_ft))
-      ? `<span class="route-length">${escapeHtml(formatRouteDistanceLabel(route))}</span>`
+    const distanceLabel = formatRouteDistanceLabel(route);
+    const lengthHtml = distanceLabel
+      ? `<span class="route-length">${escapeHtml(distanceLabel)}</span>`
       : "";
     const detailsHtml =
       `<button class="route-details-trigger" type="button" ` +
@@ -2243,12 +2335,21 @@ function formatRouteDistanceLabel(route) {
   if (typeof window.RouteDetails?.distanceLabel === "function") {
     return window.RouteDetails.distanceLabel(route);
   }
-  const feet = Number(route?.length_ft);
-  if (!Number.isFinite(feet)) return "";
+  const rawFeet = route?.length_ft;
+  if (!["number", "string"].includes(typeof rawFeet) || String(rawFeet).trim() === "") return "";
+  const feet = Number(rawFeet);
+  if (!Number.isFinite(feet) || feet < 0) return "";
   const distance = feet >= ROUTE_MILES_THRESHOLD_FEET
     ? `${(feet / 5280).toFixed(2)} mi`
-    : `${Math.round(feet).toLocaleString()} ft`;
+    : `${Math.round(feet / 3).toLocaleString()} yd`;
   return route.shape === "out-and-back" ? `${distance} round trip` : distance;
+}
+
+function formatSegmentDistance(feature) {
+  if (typeof window.RouteDetails?.segmentDistanceLabel === "function") {
+    return window.RouteDetails.segmentDistanceLabel(feature);
+  }
+  return formatRouteDistanceLabel({ length_ft: feature.properties?.length_ft });
 }
 
 function formatLiveDistance(lengthFeet, hereThresholdFeet = null) {
@@ -2259,16 +2360,18 @@ function formatLiveDistance(lengthFeet, hereThresholdFeet = null) {
       milesThresholdFeet: LIVE_DISTANCE_MILES_THRESHOLD_FEET,
     });
   }
+  if (!["number", "string"].includes(typeof lengthFeet) || String(lengthFeet).trim() === "") return "";
   const feet = Number(lengthFeet);
-  if (!Number.isFinite(feet)) return "";
+  if (!Number.isFinite(feet) || feet < 0) return "";
   if (Number.isFinite(hereThresholdFeet) && feet < hereThresholdFeet) {
     return "you're here";
   }
   if (feet >= LIVE_DISTANCE_MILES_THRESHOLD_FEET) {
     return `about ${(feet / 5280).toFixed(2)} mi`;
   }
-  const increment = feet < 300 ? 10 : 25;
-  return `about ${(Math.round(feet / increment) * increment).toLocaleString()} ft`;
+  const yards = feet / 3;
+  const increment = yards < 100 ? 5 : 10;
+  return `about ${(Math.round(yards / increment) * increment).toLocaleString()} yd`;
 }
 
 function routeDifficultyPresentation(value) {
@@ -3107,8 +3210,12 @@ function initializeRegistryLayers() {
 function decorateLayerControl(control) {
   window.cancelAnimationFrame(layerControlDecorationFrame);
   layerControlDecorationFrame = null;
-  installExperimentalGroupHeading(control);
+  const focusedControlElement = control.getContainer().contains(document.activeElement)
+    ? document.activeElement
+    : null;
+  installLayerControlHeadings(control);
   infoButton = installLayerResetButton(control);
+  if (focusedControlElement?.isConnected) focusedControlElement.focus();
 }
 
 function scheduleLayerControlDecoration() {
@@ -3121,44 +3228,58 @@ function scheduleLayerControlDecoration() {
 
 function installLayerResetButton(control) {
   const list = control.getContainer().querySelector(".leaflet-control-layers-list");
-  const existingButton = list.querySelector("#info-button");
-  if (existingButton && list.querySelector(".layer-reset-section")) return existingButton;
-  const resetSection = document.createElement("div");
+  const resetSections = [...list.querySelectorAll(".layer-reset-section")];
+  const resetSection = resetSections.shift() || document.createElement("div");
+  resetSections.forEach((section) => section.remove());
   resetSection.className = "layer-reset-section";
-  const resetButton = document.createElement("button");
-  resetButton.className = "layer-reset-button";
-  resetButton.type = "button";
-  resetButton.textContent = "Reset to default";
-  resetButton.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    resetMapToDefaults();
-    scheduleLayerControlDecoration();
-  });
-  const aboutButton = document.createElement("button");
-  aboutButton.id = "info-button";
-  aboutButton.className = "layer-about-button";
-  aboutButton.type = "button";
-  aboutButton.setAttribute("aria-label", "About this map");
-  aboutButton.title = "About this map";
-  aboutButton.setAttribute("aria-controls", "info-overlay");
-  aboutButton.setAttribute("aria-expanded", "false");
-  aboutButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.5v6M12 7.5h.01"></path></svg>';
-  aboutButton.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    openInfo();
+  let resetButton = resetSection.querySelector(".layer-reset-button");
+  if (!resetButton) {
+    resetButton = document.createElement("button");
+    resetButton.className = "layer-reset-button";
+    resetButton.type = "button";
+    resetButton.textContent = "Reset to default";
+    resetButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      resetMapToDefaults();
+      scheduleLayerControlDecoration();
+    });
+  }
+  // Leaflet replaces its checkbox lists, but the custom footer survives. Reuse
+  // the About button even when its previous Intersections row was detached.
+  let aboutButton = infoButton || list.querySelector("#info-button");
+  if (!aboutButton) {
+    aboutButton = document.createElement("button");
+    aboutButton.id = "info-button";
+    aboutButton.className = "layer-about-button";
+    aboutButton.type = "button";
+    aboutButton.setAttribute("aria-label", "About this map");
+    aboutButton.title = "About this map";
+    aboutButton.setAttribute("aria-controls", "info-overlay");
+    aboutButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><path d="M12 10.5v6M12 7.5h.01"></path></svg>';
+    aboutButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openInfo();
+    });
+  }
+  aboutButton.setAttribute("aria-expanded", String(!document.getElementById("info-overlay").hidden));
+  list.querySelectorAll("#info-button").forEach((button) => {
+    if (button !== aboutButton) button.remove();
   });
   const intersectionsLabel = [...list.querySelectorAll(".leaflet-control-layers-overlays label")]
     .find((label) => label.textContent.trim() === "Intersections");
-  let aboutRow = null;
+  const aboutRows = [...list.querySelectorAll(".layer-about-row")];
+  let aboutRow = aboutRows.shift() || null;
+  aboutRows.forEach((row) => row.remove());
   if (intersectionsLabel) {
-    aboutRow = document.createElement("div");
+    aboutRow ||= document.createElement("div");
     aboutRow.className = "layer-about-row";
     intersectionsLabel.before(aboutRow);
     aboutRow.append(intersectionsLabel, aboutButton);
   } else {
     resetSection.append(aboutButton);
+    aboutRow?.remove();
   }
   resetSection.append(resetButton);
   list.append(resetSection);
@@ -3167,35 +3288,29 @@ function installLayerResetButton(control) {
   return aboutButton;
 }
 
-function installExperimentalGroupHeading(control) {
-  const overlays = control.getContainer().querySelector(".leaflet-control-layers-overlays");
-  if (!overlays) return;
-  overlays.querySelectorAll(".layer-group-heading").forEach((heading) => heading.remove());
-  const terrainLabels = new Set(
-    getAudienceLayerDefinitions({ panelOnly: true })
-      .filter((definition) => definition.group === "80-terrain")
-      .map((definition) => definition.label),
+function installLayerControlHeadings(control) {
+  const list = control.getContainer().querySelector(".leaflet-control-layers-list");
+  const baseLayers = list.querySelector(".leaflet-control-layers-base");
+  const overlays = list.querySelector(".leaflet-control-layers-overlays");
+  list.querySelectorAll(".layer-group-heading").forEach((heading) => heading.remove());
+  const definitions = getAudienceLayerDefinitions({ panelOnly: true });
+  const labels = new Map(
+    [...overlays.querySelectorAll("label")].map((label) => [label.textContent.trim(), label]),
   );
-  const terrainEntry = [...overlays.querySelectorAll("label")]
-    .find((label) => terrainLabels.has(label.textContent.trim()));
-  if (terrainEntry) {
+  const appendGroup = (title, entries, container) => {
+    const groupLabels = entries.map((entry) => labels.get(entry.label)).filter(Boolean);
+    if (groupLabels.length === 0) return;
     const heading = document.createElement("div");
     heading.className = "layer-group-heading";
-    heading.textContent = "Terrain & soils";
-    terrainEntry.before(heading);
-  }
-  const experimentalLabels = new Set(
-    getAudienceLayerDefinitions({ panelOnly: true })
-      .filter((definition) => definition.experimental)
-      .map((definition) => definition.label),
-  );
-  const firstExperimentalEntry = [...overlays.querySelectorAll("label")]
-    .find((label) => experimentalLabels.has(label.textContent.trim()));
-  if (!firstExperimentalEntry) return;
-  const heading = document.createElement("div");
-  heading.className = "layer-group-heading";
-  heading.textContent = "Experimental";
-  firstExperimentalEntry.before(heading);
+    heading.textContent = title;
+    container.append(heading, ...groupLabels);
+  };
+  const mapTypeHeading = document.createElement("div");
+  mapTypeHeading.className = "layer-group-heading";
+  mapTypeHeading.textContent = "Map Type";
+  baseLayers.prepend(mapTypeHeading);
+  appendGroup("Points", definitions.filter((entry) => entry.group !== "80-terrain"), overlays);
+  appendGroup("Layers", definitions.filter((entry) => entry.group === "80-terrain"), overlays);
 }
 
 function installLayerControlHoverDelay(control) {

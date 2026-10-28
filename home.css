@@ -43,6 +43,7 @@ body {
   display: grid;
   grid-template-areas:
     "map"
+    "weather"
     "routes"
     "qr";
   justify-items: center;
@@ -113,6 +114,15 @@ body {
   width: min(440px, 86vw);
   position: relative;
 }
+.home-weather {
+  grid-area: weather;
+  width: min(440px, 100%);
+  padding: 12px 14px;
+  border: 1px solid rgba(41, 70, 60, 0.22);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.28);
+}
+.home-weather h2 { margin: 0 0 8px; font-size: 1rem; }
 .home-routes h2 { margin: 0 0 10px; font-size: 1.05rem; }
 #home-route-list { display: grid; gap: 8px; }
 .home-route-entry { position: relative; }
@@ -165,7 +175,7 @@ body {
 
 @media (min-width: 620px) {
   .home-layout {
-    grid-template-areas: "qr map routes";
+    grid-template-areas: "qr map routes" ". weather .";
     grid-template-columns: minmax(105px, 0.72fr) minmax(170px, 1fr) minmax(185px, 1.16fr);
     gap: clamp(10px, 2.2vw, 26px);
   }

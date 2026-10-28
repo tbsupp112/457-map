@@ -115,7 +115,10 @@ class GuestReadyContractTests(unittest.TestCase):
     def test_layer_registry_keeps_minor_and_experimental_defaults_honest(self) -> None:
         self.assertIn('key: "minorLandmarks"', self.app)
         self.assertIn('className: "minor-landmark-marker"', self.app)
-        self.assertIn('heading.textContent = "Experimental";', self.app)
+        self.assertIn('mapTypeHeading.textContent = "Map Type";', self.app)
+        self.assertIn('appendGroup("Points",', self.app)
+        self.assertIn('appendGroup("Layers",', self.app)
+        self.assertNotIn('heading.textContent = "Experimental";', self.app)
         self.assertEqual(4, self.app.count("experimental: true"))
         self.assertIn('const isUnfinished = feature.properties?.condition === "unfinished";', self.app)
         self.assertIn('dashArray: isUnfinished ? "3 11" : "7 6"', self.app)

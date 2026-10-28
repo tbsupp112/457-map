@@ -53,17 +53,21 @@ class GuestTextLegendContractTests(unittest.TestCase):
             self.assertNotIn(key, trails["line"])
 
     def test_legend_has_exact_phone_rows_and_style_backed_swatches(self) -> None:
+        legend_rows = self.app.split("function legendRows() {", 1)[1].split(
+            "function installMapLegend() {", 1
+        )[0]
         for label in (
             "Property boundary (approximate)",
             "Walking trail",
             "Unfinished trail",
             "Dirt road",
             "Not part of the property",
-            "Powerline corridor (not owned, access allowed)",
             "Landmark",
             "Minor landmark",
         ):
-            self.assertIn(label, self.app)
+            self.assertIn(label, legend_rows)
+        self.assertNotIn("Powerline corridor", legend_rows)
+        self.assertIn('const CORRIDOR_RENDER_CONFIG = getLayerDefinition("corridor").render;', self.app)
         self.assertIn("trailStyle({ properties: { condition: \"finished\" } })", self.app)
         self.assertIn("BOUNDARY_RENDER_CONFIG.style", self.app)
         self.assertIn("OUTSIDE_RENDER_CONFIG.hatch", self.app)
@@ -71,7 +75,14 @@ class GuestTextLegendContractTests(unittest.TestCase):
         self.assertIn(".map-legend-row--desktop { display: none; }", self.css)
         self.assertIn("pointer-events: none", self.css)
         self.assertIn("pointer-events: auto", self.css)
-        self.assertIn("Number(feature.properties?.length_ft)", self.app)
+
+    def test_segment_only_popups_delegate_horizontal_distance_formatting(self) -> None:
+        segment_popup = self.app.split("function buildTrailPopupOptions(feature) {", 1)[1].split(
+            "function buildRoadPopupOptions(feature) {", 1
+        )[0]
+        self.assertIn("secondary: formatSegmentDistance(feature)", segment_popup)
+        self.assertNotIn("toLocaleString()} ft", segment_popup)
+        self.assertIn("window.RouteDetails.segmentDistanceLabel(feature)", self.app)
 
     def test_about_button_is_created_inside_layer_panel(self) -> None:
         self.assertNotIn('id="info-button"', self.html)

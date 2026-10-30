@@ -1,6 +1,6 @@
 "use strict";
 
-const DATA_CACHE_VERSION = "20261027-1";
+const DATA_CACHE_VERSION = "20261028-1";
 let openRouteDetails = null;
 
 const homeWeatherContent = document.getElementById("home-weather-content");

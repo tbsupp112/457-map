@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -72,7 +74,7 @@ class MapContractTests(unittest.TestCase):
             self.assertIsNotNone(match, f"Missing pane definition for {key}")
             return int(match.group(1))
 
-        for visual_pane in ("zones", "corridor", "boundary", "roads", "trails"):
+        for visual_pane in ("zones", "corridor", "contourLabels", "boundary", "roads", "trails"):
             self.assertGreater(pane_order("interactions"), pane_order(visual_pane))
         self.assertLess(pane_order("interactions"), pane_order("naturalLandmarks"))
         self.assertIn("const interactionsRenderer = L.svg", app)
@@ -125,6 +127,66 @@ class MapContractTests(unittest.TestCase):
             self.assertIsNotNone(match, f"Missing data cache version in {name}")
             self.assertEqual(cache_version, match.group(1))
             self.assertIn('versionedDataUrl("data/manifest.json")', source)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for contour placement checks")
+    def test_contour_labels_are_bounded_and_clear_with_visibility_and_zoom(self) -> None:
+        script = r"""
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const app = fs.readFileSync(process.argv[1] + '/app.js', 'utf8');
+const source = app.slice(app.indexOf('function refreshContourLabels() {'), app.indexOf('function appendTerrainLegend('));
+class Point {
+  constructor(x, y) { this.x=x; this.y=y; }
+  distanceTo(other) { return Math.hypot(this.x-other.x, this.y-other.y); }
+  add(other) { return new Point(this.x+other.x, this.y+other.y); }
+  subtract(other) { return new Point(this.x-other.x, this.y-other.y); }
+  multiplyBy(value) { return new Point(this.x*value, this.y*value); }
+}
+const context = {
+  contourLabelFeatures: [], mobileMapPanels: {matches:false}, MAP_PANES: {contourLabels:'contour-labels-pane'},
+  terrainLayers: {contours:{}}, zoom:17, enabled:true,
+  contourLabelGroup: {markers:[], clearLayers() { this.markers=[]; }},
+  L: {divIcon: options=>options, marker: (latlng,options)=>({addTo(group) { group.markers.push({latlng,options}); }})},
+};
+context.map = {
+  hasLayer: ()=>context.enabled, getZoom: ()=>context.zoom, getSize: ()=>({x:1000,y:1000}),
+  latLngToContainerPoint: ([y,x])=>new Point(x,y), containerPointToLatLng: point=>({lat:point.y,lng:point.x}),
+};
+vm.createContext(context); vm.runInContext(source, context);
+const line = (elevation,y,end=900)=>({properties:{elevation},geometry:{type:'LineString',coordinates:[[80,y],[end,y]]}});
+context.contourLabelFeatures = Array.from({length:18}, (_,i)=>line(250+5*i,50+i*45));
+context.contourLabelFeatures.push(line(250,900));
+context.refreshContourLabels();
+assert.equal(context.contourLabelGroup.markers.length,12);
+const labels = context.contourLabelGroup.markers;
+assert.equal(new Set(labels.map(label=>label.options.icon.html)).size,labels.length);
+for (const label of labels) {
+  assert.match(label.options.icon.html,/\d+ ft/);
+  assert.equal(label.options.pane,'contour-labels-pane');
+  assert.equal(label.options.interactive,false); assert.equal(label.options.keyboard,false);
+  assert.ok(label.latlng.lng>=44 && label.latlng.lng<=956 && label.latlng.lat>=28 && label.latlng.lat<=972);
+}
+context.zoom=16; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
+context.mobileMapPanels.matches=true; context.zoom=17; context.refreshContourLabels();
+assert.equal(context.contourLabelGroup.markers.length,0);
+context.zoom=18; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,8);
+context.enabled=false; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
+context.enabled=true; context.contourLabelFeatures=[line(300,100,120),line(305,10)];
+context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
+context.contourLabelFeatures=[line(300,100),line(305,100)]; context.refreshContourLabels();
+const positions=context.contourLabelGroup.markers.map(label=>label.latlng);
+for (let i=0;i<positions.length;i++) for (let j=0;j<i;j++) {
+  assert.ok(Math.abs(positions[i].lng-positions[j].lng)>=68 || Math.abs(positions[i].lat-positions[j].lat)>=30);
+}
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, str(ROOT)],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        self.assertIn('feature.properties?.elevation_unit === "m"', app)
+        self.assertIn("elevation % 5 === 0", app)
+        self.assertIn('map.getPane(MAP_PANES.contourLabels).style.pointerEvents = "none";', app)
 
     def test_guidance_visibility_contract_has_full_turn_range(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

@@ -70,14 +70,34 @@
 
 .property-weather { color: var(--shared-text-deep); font-size: 0.78rem; line-height: 1.4; }
 .property-weather p { margin: 0; }
-.weather-status { font-size: 0.72rem; font-weight: 700; }
+.weather-accessible-title { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px !important; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.weather-status { margin-bottom: 5px !important; font-size: 0.72rem; font-weight: 700; }
 .weather-status--stale { color: #8a4e13; }
-.weather-temperature { margin: 2px 0 4px !important; font-size: 1.65rem; font-weight: 750; line-height: 1.2; }
+.weather-metrics { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 8px; }
+.weather-temperature-group { min-width: 0; }
+.weather-temperature-line { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.weather-temperature { font-size: 1.65rem; font-weight: 750; line-height: 1.2; }
+.weather-condition-icon { width: 36px; height: 36px; flex: 0 0 36px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.weather-condition-text { margin-top: 3px !important; font-size: 0.7rem; }
+.weather-wind { display: grid; justify-items: center; text-align: center; min-width: 0; }
+.weather-wind-symbol { display: grid; place-items: center; height: 36px; font-size: 0.75rem; }
+.weather-wind-arrow { width: 32px; height: 36px; fill: none; stroke: currentColor; stroke-width: 2.8; stroke-linecap: round; stroke-linejoin: round; }
+.weather-wind-speed { font-size: 1.15rem; font-weight: 750; line-height: 1.25; }
+.weather-wind-unit { font-size: 0.72em; font-weight: 600; }
+.weather-wind-direction, .weather-wind-gust { font-size: 0.69rem; }
 .weather-reading + .weather-reading { margin-top: 2px; }
-.weather-station { margin-top: 6px !important; font-size: 0.67rem; }
+.weather-observed-precipitation { margin-top: 7px !important; }
+.weather-station { margin-top: 9px !important; color: #566b63; font-size: 0.67rem; }
+.weather-station a { color: inherit; text-underline-offset: 2px; }
 .weather-forecast { margin-top: 9px; padding-top: 7px; border-top: 1px solid rgba(41, 70, 60, 0.18); color: #566b63; font-size: 0.72rem; }
-.weather-forecast-title { margin-bottom: 3px !important; font-weight: 700; }
+.weather-forecast-title { margin-bottom: 5px !important; font-weight: 700; }
+.weather-forecast .weather-temperature { font-size: 1.1rem; }
+.weather-forecast .weather-condition-icon { width: 26px; height: 26px; flex-basis: 26px; }
+.weather-forecast .weather-wind-symbol { height: 26px; }
+.weather-forecast .weather-wind-arrow { width: 23px; height: 26px; stroke-width: 2.5; }
+.weather-forecast .weather-wind-speed { font-size: 0.9rem; }
+.weather-forecast .weather-wind-direction { font-size: 0.65rem; }
+.weather-forecast .weather-reading { margin-top: 4px; }
 .weather-message { margin-top: 7px !important; font-size: 0.7rem; }
-.weather-disclaimer, .weather-attribution { margin-top: 7px !important; color: #566b63; font-size: 0.66rem; }
-.weather-attribution a { color: inherit; text-underline-offset: 2px; }
 .property-weather--compact .weather-temperature { font-size: 1.45rem; }
+.property-weather--compact .weather-forecast .weather-temperature { font-size: 1.05rem; }

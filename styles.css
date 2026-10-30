@@ -301,32 +301,20 @@ button { font: inherit; }
 }
 
 .layer-reset-section {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   margin: 7px -4px -1px;
   padding: 7px 4px 0;
   border-top: 1px solid #d7d7d7;
 }
 
-.layer-reset-section .layer-reset-button + .layer-reset-button {
-  margin-top: 5px;
-}
-
-.layer-about-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.layer-about-row > label {
-  min-width: 0;
-  flex: 1;
-}
-
 .layer-about-button {
-  width: 30px;
-  height: 30px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  flex: 0 0 30px;
+  flex: 0 0 36px;
   padding: 4px;
   border: 1px solid #b9c1bd;
   border-radius: 5px;
@@ -354,7 +342,8 @@ button { font: inherit; }
 }
 
 .layer-reset-button {
-  width: 100%;
+  flex: 1;
+  min-height: 36px;
   padding: 6px 9px;
   border: 1px solid #b9c1bd;
   border-radius: 5px;
@@ -369,6 +358,18 @@ button { font: inherit; }
 .layer-reset-button:focus-visible {
   border-color: #648177;
   background: var(--shared-text-on-dark);
+}
+
+.contour-elevation-label {
+  color: #725535;
+  background: transparent;
+  border: 0;
+  text-align: center;
+  font: 600 10.5px/18px system-ui, sans-serif;
+  white-space: nowrap;
+  text-shadow: -1px -1px 1px #fff9ed, 1px -1px 1px #fff9ed,
+    -1px 1px 1px #fff9ed, 1px 1px 1px #fff9ed;
+  pointer-events: none !important;
 }
 
 .leaflet-control-attribution {
@@ -928,6 +929,7 @@ button { font: inherit; }
 .map-weather-panel h2 { margin: 0 24px 8px 0; color: inherit; font-size: 1rem; }
 .map-weather-panel .property-weather { color: var(--chrome-text); }
 .map-weather-panel .weather-forecast,
+.map-weather-panel .weather-station,
 .map-weather-panel .weather-disclaimer,
 .map-weather-panel .weather-attribution { color: var(--chrome-muted); }
 .map-weather-panel .weather-forecast { border-color: rgba(255, 255, 255, 0.2); }
@@ -1177,9 +1179,9 @@ button { font: inherit; }
   }
 
   .layer-about-button {
-    width: 34px;
-    height: 34px;
-    flex-basis: 34px;
+    width: 42px;
+    height: 42px;
+    flex-basis: 42px;
   }
 }
 

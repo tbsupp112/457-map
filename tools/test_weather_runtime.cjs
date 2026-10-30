@@ -10,15 +10,21 @@ const HOUR = 3600000;
 const START = Date.parse("2026-10-27T18:00:00Z");
 
 class Element {
-  constructor() {
+  constructor(tag = "div") {
+    this.tagName = tag;
     this.children = [];
     this.textContent = "";
+    this.attributes = {};
     this.classList = { add() {}, toggle() {} };
   }
+  setAttribute(key, value) { this.attributes[key] = String(value); }
   append(...children) { this.children.push(...children); }
   replaceChildren() { this.children = []; }
   text() { return [this.textContent, ...this.children.map((child) => child.text())].join(" "); }
+  all(predicate) { return [this, ...this.children.flatMap((child) => child.all(predicate))].filter(predicate); }
 }
+
+const classIs = (name) => (element) => (element.className || element.attributes.class || "").split(" ").includes(name);
 
 function harness(saved = {}) {
   let now = START;
@@ -34,7 +40,8 @@ function harness(saved = {}) {
   }
   const document = {
     hidden: false,
-    createElement: () => new Element(),
+    createElement: (tag) => new Element(tag),
+    createElementNS: (namespace, tag) => new Element(tag),
     addEventListener: (name, fn) => listeners.set(fn, name),
     removeEventListener: (name, fn) => listeners.delete(fn),
   };
@@ -44,6 +51,8 @@ function harness(saved = {}) {
     windSpeed: { value: 16.09344, unitCode: "wmoUnit:km_h-1" },
     windDirection: { value: 315, unitCode: "wmoUnit:degree_(angle)" },
     precipitationLastHour: { value: null, unitCode: "wmoUnit:mm" },
+    textDescription: "Fair",
+    icon: "https://api.weather.gov/icons/land/day/skc",
   };
   const periods = [{
     startTime: new Date(START + 2 * HOUR).toISOString(),
@@ -95,6 +104,31 @@ async function main() {
   assert.equal(api.observationDirection({ value: 315, unitCode: "unknown" }), "");
   assert.equal(api.observationDirection({ value: 315, unitCode: "wmoUnit:degree_(angle)" }), "NW");
   assert.equal(api.forecastWind({ windSpeed: "0 mph", windDirection: "N" }), "Calm");
+  for (const [from, travel] of [[0, 180], [90, 270], [180, 0], [270, 90], [202.5, 22.5]]) {
+    assert.equal(api.windTravelBearing(from), travel, `Air travel bearing for wind from ${from} degrees`);
+  }
+  for (const invalid of [null, undefined, -1, 361, NaN]) assert.equal(api.windTravelBearing(invalid), null);
+  assert.equal(api.observationDirection({ value: -1, unitCode: "wmoUnit:degree_(angle)" }), "");
+  assert.equal(api.forecastWind({ windSpeed: "5 to 10 mph", windDirection: "SSW" }), "5–10 mph from SSW");
+  assert.equal(api.forecastWindDetails({ windSpeed: "5 to 10 mph", windDirection: "SSW" }).bearing, 202.5);
+  assert.equal(api.forecastWindDetails({ windSpeed: "10 mph", windDirection: "VRB" }).bearing, null);
+  assert.equal(api.forecastWind({ windSpeed: "10 to 5 mph", windDirection: "N" }), "Unavailable");
+  const conditionCases = [
+    [{ icon: "https://api.weather.gov/icons/land/day/skc", textDescription: "Fair" }, "clear-day"],
+    [{ icon: "https://api.weather.gov/icons/land/night/skc", textDescription: "Fair" }, "clear-night"],
+    [{ textDescription: "Partly Cloudy" }, "partly-cloudy"],
+    [{ textDescription: "Overcast" }, "cloudy"],
+    [{ textDescription: "Light Rain" }, "rain"],
+    [{ textDescription: "Freezing Rain" }, "snow-ice"],
+    [{ textDescription: "Snow" }, "snow-ice"],
+    [{ presentWeather: [{ weather: "thunderstorm" }] }, "thunderstorm"],
+    [{ textDescription: "Fog/Mist" }, "fog"],
+    [{ textDescription: "Unknown conditions" }, null],
+    [{ temperature: { value: 90 }, probabilityOfPrecipitation: { value: 0 } }, null],
+    [{ textDescription: "Fair" }, null], // Clear without day/night evidence has no solar default.
+  ];
+  conditionCases.forEach(([fields, expected]) => assert.equal(api.conditionPresentation(fields).kind, expected));
+  assert.equal(api.conditionPresentation({ shortForecast: "Clear", isDaytime: false }, true).kind, "clear-night");
   const timestamp = new Date(START).toISOString();
   assert.equal(api.observationState({ timestamp }, START + 2 * HOUR), "current");
   assert.equal(api.observationState({ timestamp }, START + 2 * HOUR + 1), "stale");
@@ -116,8 +150,12 @@ async function main() {
   await h.tick();
   assert.equal(h.calls.length, 3, "Concurrent views share point/forecast/observation requests");
   assert.match(first.text(), /50°F/);
-  assert.match(first.text(), /10 mph from NW/);
-  assert.match(first.text(), /Previous-hour precipitation: Unavailable/);
+  assert.match(first.all(classIs("weather-wind"))[0].attributes["aria-label"], /10 mph from NW/);
+  assert.equal(first.all(classIs("weather-wind-arrow"))[0].attributes["data-travel-bearing"], "135");
+  assert.equal(first.all(classIs("weather-condition-icon"))[0].attributes["data-condition"], "clear-day");
+  assert.equal(first.all(classIs("weather-observed-precipitation")).length, 0);
+  assert.equal(first.children.at(-1).className, "weather-station");
+  assert.doesNotMatch(first.text(), /Nearby observation|Nearby airport conditions|Source:/);
   assert.match(first.text(), /Rain chance: 0%/);
   a.setVisible(true);
   await h.tick();
@@ -183,6 +221,55 @@ async function main() {
   assert.doesNotMatch(forecastRoot.text(), /50°F/);
   assert.equal(forecastClock.calls.length, 0, "Forecast target crossing rerenders before hourly refresh without fetching");
   forecastView.destroy();
+
+  async function renderedFixture(observation, periods = []) {
+    const fixture = harness({ attemptedAt: START, observation, periods });
+    const root = new Element();
+    const view = fixture.api.createView(root);
+    view.setVisible(true);
+    await fixture.tick();
+    view.destroy();
+    assert.equal(fixture.calls.length, 0);
+    return root;
+  }
+  const observed = { ...h.observation, timestamp: new Date(START).toISOString() };
+  for (const [from, travel] of [[0, 180], [90, 270], [180, 0], [270, 90], [202.5, 22.5]]) {
+    const root = await renderedFixture({ ...observed, windDirection: { value: from, unitCode: "wmoUnit:degree_(angle)" }, windGust: { value: 15, unitCode: "wmoUnit:mi_h-1" } });
+    assert.equal(root.all(classIs("weather-wind-arrow"))[0].attributes["data-travel-bearing"], String(travel));
+    assert.match(root.all(classIs("weather-wind-gust"))[0].text(), /gusts 15 mph/);
+  }
+  for (const [value, expected] of [[null, null], [0, null], [-1, null], [NaN, null], [25.4, "1.00 in"], [0.01, "<0.01 in"]]) {
+    const root = await renderedFixture({ ...observed, precipitationLastHour: { value, unitCode: "wmoUnit:mm" } });
+    const rows = root.all(classIs("weather-observed-precipitation"));
+    assert.equal(rows.length, expected ? 1 : 0);
+    if (expected) assert.match(rows[0].text(), new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  const zeroWind = await renderedFixture({ ...observed, windSpeed: { value: 0, unitCode: "wmoUnit:mi_h-1" } });
+  assert.equal(zeroWind.all(classIs("weather-wind-arrow")).length, 0);
+  assert.match(zeroWind.text(), /Calm/);
+  for (const direction of [null, { value: null, unitCode: "wmoUnit:degree_(angle)" }, { value: 315, unitCode: "unknown" }]) {
+    const root = await renderedFixture({ ...observed, windDirection: direction });
+    assert.equal(root.all(classIs("weather-wind-arrow")).length, 0);
+    assert.match(root.text(), /direction unavailable/);
+  }
+  const variableForecast = await renderedFixture(observed, [{ ...h.periods[0], windSpeed: "10 mph", windDirection: "VRB" }]);
+  assert.equal(variableForecast.all(classIs("weather-forecast"))[0].all(classIs("weather-wind-arrow")).length, 0);
+  assert.match(variableForecast.all(classIs("weather-forecast"))[0].text(), /direction unavailable/);
+  const ranged = await renderedFixture(observed, [{ ...h.periods[0], windSpeed: "5 to 10 mph", windDirection: "SSW" }]);
+  const forecastWind = ranged.all(classIs("weather-forecast"))[0].all(classIs("weather-wind"))[0];
+  assert.match(forecastWind.attributes["aria-label"], /5–10 mph from SSW/);
+  assert.equal(forecastWind.all(classIs("weather-wind-arrow"))[0].attributes["data-travel-bearing"], "22.5");
+  assert.match(forecastWind.all(classIs("weather-wind-speed"))[0].text(), /5–10\s+mph/);
+  const unsafe = await renderedFixture({ ...observed, textDescription: "<img src=x onerror=alert(1)>", icon: null });
+  assert.equal(unsafe.all(classIs("weather-condition-icon")).length, 0);
+  assert.match(unsafe.all(classIs("weather-condition-text"))[0].text(), /<img src=x onerror=alert\(1\)>/);
+  const separateConditions = await renderedFixture({ ...observed, textDescription: "Unknown", icon: null }, [{ ...h.periods[0], shortForecast: "Sunny", isDaytime: true }]);
+  assert.equal(separateConditions.all(classIs("weather-current"))[0].all(classIs("weather-condition-icon")).length, 0, "Forecast never supplies the observed condition icon");
+  assert.equal(separateConditions.all(classIs("weather-forecast"))[0].all(classIs("weather-condition-icon"))[0].attributes["data-condition"], "clear-day");
+  const expired = await renderedFixture({ ...observed, timestamp: new Date(START - 7 * HOUR).toISOString() });
+  assert.match(expired.text(), /Current conditions unavailable/);
+  assert.equal(expired.all(classIs("weather-condition-icon")).length, 0);
+  assert.equal(expired.all(classIs("weather-wind-arrow")).length, 0);
   console.log("Weather runtime checks passed: units/nulls, timestamp selection, stale boundaries, shared cache, failures, visibility, aging.");
 }
 

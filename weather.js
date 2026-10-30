@@ -9,6 +9,8 @@
   const STATION_ID = "KGFL";
   const STATION_NAME = "Glens Falls airport (KGFL)";
   const OBSERVATION_URL = `https://api.weather.gov/stations/${STATION_ID}/observations/latest`;
+  const COMPASS_POINTS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const views = new Set();
   let cache = readCache();
   let inFlight = null;
@@ -169,12 +171,20 @@
 
   function compassDirection(degrees) {
     if (!Number.isFinite(degrees)) return "";
-    const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
-    return directions[Math.round((((degrees % 360) + 360) % 360) / 22.5) % 16];
+    return COMPASS_POINTS[Math.round((((degrees % 360) + 360) % 360) / 22.5) % 16];
+  }
+
+  function observationBearing(quantity) {
+    const value = numberValue(quantity);
+    return quantity?.unitCode === "wmoUnit:degree_(angle)" && value !== null && value >= 0 && value <= 360 ? value : null;
   }
 
   function observationDirection(quantity) {
-    return quantity?.unitCode === "wmoUnit:degree_(angle)" ? compassDirection(numberValue(quantity)) : "";
+    return compassDirection(observationBearing(quantity));
+  }
+
+  function windTravelBearing(fromBearing) {
+    return Number.isFinite(fromBearing) && fromBearing >= 0 && fromBearing <= 360 ? (fromBearing + 180) % 360 : null;
   }
 
   function formatTemperature(value) {
@@ -228,18 +238,136 @@
     return period.temperatureUnit === "C" ? period.temperature * 9 / 5 + 32 : null;
   }
 
-  function forecastWind(period) {
-    const direction = /^(N|NNE|NE|ENE|E|ESE|SE|SSE|S|SSW|SW|WSW|W|WNW|NW|NNW)$/.test(period.windDirection)
-      ? period.windDirection : "";
-    if (typeof period.windSpeed === "object") return formatWind(speedMph(period.windSpeed), direction);
-    const match = /^(\d+(?:\.\d+)?)(?: to (\d+(?:\.\d+)?))? (mph|km\/h|kt)$/.exec(period.windSpeed || "");
-    if (!match) return "Unavailable";
+  function forecastWindDetails(period) {
+    const directionIndex = COMPASS_POINTS.indexOf(period?.windDirection);
+    const bearing = directionIndex >= 0 ? directionIndex * 22.5 : null;
+    if (typeof period?.windSpeed === "object") {
+      return { low: speedMph(period.windSpeed), high: null, bearing, gust: null };
+    }
+    const match = /^(\d+(?:\.\d+)?)(?: to (\d+(?:\.\d+)?))? (mph|km\/h|kt)$/.exec(period?.windSpeed || "");
+    if (!match) return { low: null, high: null, bearing: null, gust: null };
     const unitCode = { mph: "wmoUnit:mi_h-1", "km/h": "wmoUnit:km_h-1", kt: "wmoUnit:kn" }[match[3]];
     const low = speedMph({ value: Number(match[1]), unitCode });
-    if (!match[2]) return formatWind(low, direction);
-    const high = speedMph({ value: Number(match[2]), unitCode });
+    const high = match[2] ? speedMph({ value: Number(match[2]), unitCode }) : null;
+    if (high !== null && high < low) return { low: null, high: null, bearing: null, gust: null };
+    return { low, high, bearing, gust: null };
+  }
+
+  function windText({ low, high, bearing, gust }) {
+    const direction = compassDirection(bearing);
+    if (high === null) return formatWind(low, direction, gust);
     if (high === 0) return "Calm";
     return `${Math.round(low)}–${Math.round(high)} mph${direction ? ` from ${direction}` : " · direction unavailable"}`;
+  }
+
+  function forecastWind(period) {
+    return windText(forecastWindDetails(period));
+  }
+
+  function conditionPresentation(fields, forecast = false) {
+    const description = typeof (forecast ? fields?.shortForecast : fields?.textDescription) === "string"
+      ? (forecast ? fields.shortForecast : fields.textDescription).trim() : "";
+    let phase = null;
+    let codes = [];
+    try {
+      const url = new URL(fields?.icon);
+      const match = url.origin === "https://api.weather.gov" && /^\/icons\/land\/(day|night)\/(.+)$/.exec(url.pathname);
+      if (match) {
+        phase = match[1];
+        codes = match[2].split("/").map((part) => part.split(",")[0]);
+      }
+    } catch {
+      // Missing or unrecognized icon URLs carry no day/night assumption.
+    }
+    if (forecast && typeof fields?.isDaytime === "boolean") phase = fields.isDaytime ? "day" : "night";
+    const present = !forecast && Array.isArray(fields?.presentWeather)
+      ? fields.presentWeather.map((item) => `${typeof item?.weather === "string" ? item.weather : ""} ${typeof item?.modifier === "string" ? item.modifier : ""}`).join(" ")
+      : "";
+    const evidence = `${description} ${present}`.toLowerCase();
+    let kind = null;
+    if (/thunder/.test(evidence) || codes.some((code) => /^tsra/.test(code))) kind = "thunderstorm";
+    else if (/snow|sleet|ice|freezing|hail|wintry/.test(evidence) || codes.some((code) => /snow|sleet|fzra/.test(code))) kind = "snow-ice";
+    else if (/\brain|showers|drizzle/.test(evidence) || codes.some((code) => /^rain/.test(code))) kind = "rain";
+    else if (/fog|mist/.test(evidence) || codes.includes("fog")) kind = "fog";
+    else if (/partly cloudy|mostly clear|few clouds|scattered clouds/.test(evidence) || codes.some((code) => code === "few" || code === "sct")) kind = "partly-cloudy";
+    else if (/cloudy|overcast|broken clouds/.test(evidence) || codes.some((code) => code === "bkn" || code === "ovc")) kind = "cloudy";
+    else if (/\bclear\b|\bfair\b|\bsunny\b/.test(evidence) || codes.includes("skc")) kind = phase === "day" ? "clear-day" : phase === "night" ? "clear-night" : null;
+    const labels = { "clear-day": "Clear", "clear-night": "Clear night", "partly-cloudy": "Partly cloudy", cloudy: "Cloudy", rain: "Rain", "snow-ice": "Snow or ice", thunderstorm: "Thunderstorm", fog: "Fog" };
+    return { kind, label: description || labels[kind] || "", phase };
+  }
+
+  function svgElement(name, attributes) {
+    const element = document.createElementNS(SVG_NAMESPACE, name);
+    Object.entries(attributes || {}).forEach(([key, value]) => element.setAttribute(key, value));
+    return element;
+  }
+
+  function conditionIcon(condition) {
+    if (!condition.kind) return null;
+    const svg = svgElement("svg", {
+      class: "weather-condition-icon", viewBox: "0 0 40 40", role: "img",
+      "aria-label": condition.label, "data-condition": condition.kind,
+    });
+    const path = (d) => svg.append(svgElement("path", { d }));
+    const sun = () => {
+      svg.append(svgElement("circle", { cx: 20, cy: 20, r: 7 }));
+      path("M20 3v5M20 32v5M3 20h5M32 20h5M8 8l4 4M28 28l4 4M8 32l4-4M28 12l4-4");
+    };
+    const moon = () => path("M26 5A14 14 0 1 0 34 28 15 15 0 0 1 26 5Z");
+    const cloud = () => path("M10 26a6 6 0 1 1 1-12 9 9 0 0 1 17-1 6.5 6.5 0 0 1 1 13H10Z");
+    if (condition.kind === "clear-day") sun();
+    else if (condition.kind === "clear-night") moon();
+    else {
+      if (condition.kind === "partly-cloudy" && condition.phase === "day") {
+        svg.append(svgElement("circle", { cx: 10, cy: 10, r: 5 }));
+        path("M10 1v2M1 10h2M3 3l2 2M17 3l-2 2");
+      } else if (condition.kind === "partly-cloudy" && condition.phase === "night") {
+        path("M13 2A8 8 0 1 0 19 14 9 9 0 0 1 13 2Z");
+      }
+      cloud();
+      if (condition.kind === "rain") path("M12 31l-2 5M22 31l-2 5M32 31l-2 5");
+      if (condition.kind === "snow-ice") path("M12 31v7M9 33l6 3M9 36l6-3M29 31v7M26 33l6 3M26 36l6-3");
+      if (condition.kind === "thunderstorm") path("M22 27l-6 7h6l-3 5 10-9h-7l3-3");
+      if (condition.kind === "fog") path("M5 31h30M9 36h23");
+    }
+    return svg;
+  }
+
+  function appendTemperature(parent, temperature, condition) {
+    const group = appendText(parent, "div", "weather-temperature-group", "");
+    const line = appendText(group, "div", "weather-temperature-line", "");
+    const icon = conditionIcon(condition);
+    if (icon) line.append(icon);
+    appendText(line, "p", "weather-temperature", formatTemperature(temperature));
+    if (!icon && condition.label) appendText(group, "p", "weather-condition-text", condition.label);
+  }
+
+  function appendWind(parent, details) {
+    const { low, high, bearing, gust } = details;
+    const wind = appendText(parent, "div", "weather-wind", "");
+    wind.setAttribute("role", "img");
+    wind.setAttribute("aria-label", `Wind: ${windText(details)}`);
+    const symbol = appendText(wind, "div", "weather-wind-symbol", "");
+    const speed = high === null ? low : high;
+    const travel = Number.isFinite(speed) && speed > 0 ? windTravelBearing(bearing) : null;
+    if (travel !== null) {
+      const svg = svgElement("svg", {
+        class: "weather-wind-arrow", viewBox: "0 0 32 36", "aria-hidden": "true", "data-travel-bearing": travel,
+      });
+      const group = svgElement("g", { transform: `rotate(${travel} 16 18)` });
+      group.append(svgElement("path", { d: "M16 31V5M7 14l9-9 9 9" }));
+      svg.append(group);
+      symbol.append(svg);
+    } else {
+      symbol.textContent = speed === 0 ? "Calm" : "—";
+    }
+    const speedLabel = Number.isFinite(low) ? high === null ? String(low === 0 ? 0 : Math.max(1, Math.round(low))) : `${Math.round(low)}–${Math.round(high)}` : "Unavailable";
+    const reading = appendText(wind, "p", "weather-wind-speed", speedLabel);
+    if (Number.isFinite(low)) appendText(reading, "span", "weather-wind-unit", " mph");
+    const from = Number.isFinite(speed) && speed > 0 ? compassDirection(bearing) : "";
+    if (from) appendText(wind, "p", "weather-wind-direction", `from ${from}`);
+    else if (Number.isFinite(speed) && speed > 0) appendText(wind, "p", "weather-wind-direction", "direction unavailable");
+    if (Number.isFinite(gust) && gust > 0) appendText(wind, "p", "weather-wind-gust", `gusts ${Math.max(1, Math.round(gust))} mph`);
   }
 
   function rainChance(period) {
@@ -263,32 +391,35 @@
     const timeZone = cache.metadata?.timeZone || "America/New_York";
     const available = state !== "unavailable";
     const current = appendText(container, "div", "weather-current", "");
-    const status = state === "stale" ? "Older observation · stale" : available ? "Nearby observation" : "Current conditions unavailable";
-    appendText(current, "p", `weather-status${state === "stale" ? " weather-status--stale" : ""}`, status);
-    appendText(current, "p", "weather-temperature", formatTemperature(available ? temperatureF(observation.temperature) : null));
-    const wind = available ? formatWind(
-      speedMph(observation.windSpeed),
-      observationDirection(observation.windDirection),
-      speedMph(observation.windGust),
-    ) : "Unavailable";
-    appendText(current, "p", "weather-reading", `Wind: ${wind}`);
-    appendText(current, "p", "weather-reading", `Previous-hour precipitation: ${available ? formatPrecipitation(observation.precipitationLastHour) : "Unavailable"}`);
-    appendText(current, "p", "weather-station", `${STATION_NAME} · ${observation?.timestamp ? localTime(observation.timestamp, timeZone) : "Observation time unavailable"}`);
+    const status = state === "stale" ? "Older observation · stale" : available ? "" : inFlight && !observation ? "Loading weather…" : "Current conditions unavailable";
+    if (status) appendText(current, "p", `weather-status${state === "stale" ? " weather-status--stale" : ""}`, status);
+    const metrics = appendText(current, "div", "weather-metrics", "");
+    appendTemperature(metrics, available ? temperatureF(observation.temperature) : null, conditionPresentation(available ? observation : null));
+    appendWind(metrics, {
+      low: available ? speedMph(observation.windSpeed) : null, high: null,
+      bearing: available ? observationBearing(observation.windDirection) : null,
+      gust: available ? speedMph(observation.windGust) : null,
+    });
+    const precipitation = available ? precipitationInches(observation.precipitationLastHour) : null;
+    if (precipitation !== null && precipitation > 0) {
+      appendText(current, "p", "weather-reading weather-observed-precipitation", `Previous-hour precipitation: ${formatPrecipitation(observation.precipitationLastHour)}`);
+    }
     const forecast = appendText(container, "div", "weather-forecast", "");
     const period = selectForecast(cache.periods, now);
     appendText(forecast, "p", "weather-forecast-title", period ? `Forecast · ${localTime(period.startTime, timeZone)}` : "Forecast in about 2 hours unavailable");
     if (period) {
-      appendText(forecast, "p", "weather-reading", `${formatTemperature(forecastTemperature(period))} · wind ${forecastWind(period)}`);
+      const forecastMetrics = appendText(forecast, "div", "weather-metrics", "");
+      appendTemperature(forecastMetrics, forecastTemperature(period), conditionPresentation(period, true));
+      appendWind(forecastMetrics, forecastWindDetails(period));
       appendText(forecast, "p", "weather-reading", `Rain chance: ${rainChance(period)}`);
     }
-    if (inFlight && !observation) appendText(container, "p", "weather-message", "Loading nearby weather…");
     if (cache.refreshFailed) appendText(container, "p", "weather-message", "Refresh unavailable. Any retained reading keeps its original time.");
-    appendText(container, "p", "weather-disclaimer", "Nearby airport conditions; wind may differ on the property.");
-    const attribution = appendText(container, "p", "weather-attribution", "Source: ");
-    const link = appendText(attribution, "a", "", "National Weather Service");
-    link.href = "https://www.weather.gov/";
+    const station = appendText(container, "p", "weather-station", "");
+    const link = appendText(station, "a", "", STATION_NAME);
+    link.href = OBSERVATION_URL;
     link.target = "_blank";
     link.rel = "noopener noreferrer";
+    appendText(station, "span", "", ` · ${observation?.timestamp ? localTime(observation.timestamp, timeZone) : "Observation time unavailable"}`);
   }
 
   function createView(container, { compact = false } = {}) {
@@ -353,6 +484,9 @@
     formatWind,
     formatPrecipitation,
     forecastWind,
+    forecastWindDetails,
+    windTravelBearing,
+    conditionPresentation,
     observationDirection,
     selectForecast,
     observationState,

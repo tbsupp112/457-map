@@ -90,6 +90,8 @@ class GuestTextLegendContractTests(unittest.TestCase):
         self.assertIn('aboutButton.setAttribute("aria-label", "About this map");', self.app)
         self.assertIn('aboutButton.className = "layer-about-button";', self.app)
         self.assertIn("decorateLayerControl(layerControl);", self.app)
+        self.assertIn("resetSection.append(resetButton, aboutButton);", self.app)
+        self.assertNotIn("aboutRow.append(intersectionsLabel, aboutButton)", self.app)
 
     def test_mobile_controls_and_trail_interactions_have_durable_contracts(self) -> None:
         self.assertRegex(self.app, r'key: "roads",\s+label: null,')

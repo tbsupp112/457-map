@@ -35,7 +35,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261027-1";
+const DATA_CACHE_VERSION = "20261028-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -168,6 +168,7 @@ const LAYER_DEFINITIONS = [
     render: { kind: "geojson", panes: [
       { key, name: `${key}-pane`, order },
       ...(key === "soils" ? [{ key: "soilInteractions", name: "soil-interactions-pane", order: 66.5 }] : []),
+      ...(key === "contours" ? [{ key: "contourLabels", name: "contour-labels-pane", order: 32 }] : []),
     ] },
     getLayer: () => terrainLayers[key],
     applyData: (data) => applyTerrainData(key, data[key]),
@@ -456,6 +457,9 @@ paneDefinitions.forEach((pane, index) => {
   map.createPane(pane.name);
   map.getPane(pane.name).style.zIndex = 401 + index;
 });
+map.getPane(MAP_PANES.contourLabels).style.pointerEvents = "none";
+const contourLabelGroup = L.layerGroup().addTo(map);
+let contourLabelFeatures = [];
 
 const OUTSIDE_RENDER_CONFIG = getLayerDefinition("outsideShading").render;
 const ZONE_RENDER_CONFIG = getLayerDefinition("zones").render;
@@ -875,6 +879,10 @@ map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEv
 map.on("baselayerchange", refreshTrailPresentation);
 map.on("baselayerchange overlayadd overlayremove", scheduleLayerControlDecoration);
 map.on("overlayadd overlayremove", installMapLegend);
+map.on("moveend zoomend", refreshContourLabels);
+map.on("overlayadd overlayremove", (event) => {
+  if (event.layer === terrainLayers.contours) refreshContourLabels();
+});
 layerControl.getContainer().addEventListener("click", (event) => {
   const input = event.target;
   if (!input.matches?.("input.leaflet-control-layers-selector") || !input.checked) return;
@@ -901,6 +909,7 @@ window.matchMedia("(max-width: 720px)").addEventListener("change", refreshTrailP
 window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPresentation);
 mobileMapPanels.addEventListener("change", () => {
   if (mobileMapPanels.matches && weatherPanelOpen) dismissMapLegend();
+  refreshContourLabels();
 });
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
 window.addEventListener("pagehide", handlePageHide);
@@ -1956,6 +1965,14 @@ function createLegendLandmark({ minor = false } = {}) {
 function applyTerrainData(key, data) {
   const group = terrainLayers[key];
   group.clearLayers();
+  if (key === "contours") {
+    contourLabelFeatures = (data?.features || []).filter((feature) => {
+      const elevation = feature.properties?.elevation;
+      return feature.properties?.elevation_unit === "m"
+        && typeof elevation === "number" && Number.isFinite(elevation) && elevation % 5 === 0;
+    });
+    refreshContourLabels();
+  }
   if (!data) return;
   if (key === "terrainSlope" || key === "terrainAspect") {
     const properties = data.features[0]?.properties;
@@ -1990,6 +2007,76 @@ function applyTerrainData(key, data) {
     }).addTo(group);
   }
   installMapLegend();
+}
+
+function refreshContourLabels() {
+  contourLabelGroup.clearLayers();
+  const isPhone = mobileMapPanels.matches;
+  if (!map.hasLayer(terrainLayers.contours) || map.getZoom() < (isPhone ? 18 : 17)) return;
+  const size = map.getSize();
+  const minimumRunLength = isPhone ? 90 : 100;
+  const candidates = [];
+  for (const feature of contourLabelFeatures) {
+    const lines = feature.geometry?.type === "LineString"
+      ? [feature.geometry.coordinates]
+      : feature.geometry?.type === "MultiLineString" ? feature.geometry.coordinates : [];
+    for (const coordinates of lines) {
+      let run = [];
+      const addRun = () => {
+        const length = run.slice(1).reduce((total, point, index) => total + point.distanceTo(run[index]), 0);
+        if (length >= minimumRunLength) candidates.push({ elevation: feature.properties.elevation, run, length });
+        run = [];
+      };
+      for (const coordinate of coordinates) {
+        const point = map.latLngToContainerPoint([coordinate[1], coordinate[0]]);
+        if (point.x >= 44 && point.x <= size.x - 44 && point.y >= 28 && point.y <= size.y - 28) {
+          run.push(point);
+        } else {
+          addRun();
+        }
+      }
+      addRun();
+    }
+  }
+  candidates.sort((first, second) => second.length - first.length);
+  const usedElevations = new Set();
+  const boxes = [];
+  for (const candidate of candidates) {
+    if (usedElevations.has(candidate.elevation)) continue;
+    for (const fraction of [0.5, 0.3, 0.7]) {
+      const point = contourRunPoint(candidate.run, candidate.length * fraction);
+      const box = { left: point.x - 34, right: point.x + 34, top: point.y - 15, bottom: point.y + 15 };
+      if (boxes.some((other) => box.left < other.right && box.right > other.left
+        && box.top < other.bottom && box.bottom > other.top)) continue;
+      const text = `${Math.round(candidate.elevation * 3.28084)} ft`;
+      L.marker(map.containerPointToLatLng(point), {
+        pane: MAP_PANES.contourLabels,
+        interactive: false,
+        keyboard: false,
+        icon: L.divIcon({
+          className: "contour-elevation-label",
+          html: `<span>${text}</span>`,
+          iconSize: [54, 18],
+          iconAnchor: [27, 9],
+        }),
+      }).addTo(contourLabelGroup);
+      usedElevations.add(candidate.elevation);
+      boxes.push(box);
+      break;
+    }
+    if (boxes.length >= (isPhone ? 8 : 12)) break;
+  }
+}
+
+function contourRunPoint(run, distance) {
+  for (let index = 1; index < run.length; index += 1) {
+    const length = run[index].distanceTo(run[index - 1]);
+    if (distance <= length && length > 0) {
+      return run[index - 1].add(run[index].subtract(run[index - 1]).multiplyBy(distance / length));
+    }
+    distance -= length;
+  }
+  return run[run.length - 1];
 }
 
 function appendTerrainLegend(container) {
@@ -2116,9 +2203,9 @@ function installMapWeatherControl() {
     panel.id = "map-weather-panel";
     panel.hidden = true;
     panel.setAttribute("aria-labelledby", "map-weather-title");
-    const title = L.DomUtil.create("h2", "", panel);
+    const title = L.DomUtil.create("h2", "weather-accessible-title", panel);
     title.id = "map-weather-title";
-    title.textContent = "Nearby weather";
+    title.textContent = "Weather";
     const close = L.DomUtil.create("button", "map-weather-close", panel);
     close.type = "button";
     close.setAttribute("aria-label", "Close weather");
@@ -3245,8 +3332,7 @@ function installLayerResetButton(control) {
       scheduleLayerControlDecoration();
     });
   }
-  // Leaflet replaces its checkbox lists, but the custom footer survives. Reuse
-  // the About button even when its previous Intersections row was detached.
+  // Leaflet replaces its checkbox lists, while this custom footer survives.
   let aboutButton = infoButton || list.querySelector("#info-button");
   if (!aboutButton) {
     aboutButton = document.createElement("button");
@@ -3267,24 +3353,10 @@ function installLayerResetButton(control) {
   list.querySelectorAll("#info-button").forEach((button) => {
     if (button !== aboutButton) button.remove();
   });
-  const intersectionsLabel = [...list.querySelectorAll(".leaflet-control-layers-overlays label")]
-    .find((label) => label.textContent.trim() === "Intersections");
-  const aboutRows = [...list.querySelectorAll(".layer-about-row")];
-  let aboutRow = aboutRows.shift() || null;
-  aboutRows.forEach((row) => row.remove());
-  if (intersectionsLabel) {
-    aboutRow ||= document.createElement("div");
-    aboutRow.className = "layer-about-row";
-    intersectionsLabel.before(aboutRow);
-    aboutRow.append(intersectionsLabel, aboutButton);
-  } else {
-    resetSection.append(aboutButton);
-    aboutRow?.remove();
-  }
-  resetSection.append(resetButton);
+  list.querySelectorAll(".layer-about-row").forEach((row) => row.remove());
+  resetSection.append(resetButton, aboutButton);
   list.append(resetSection);
   L.DomEvent.disableClickPropagation(resetSection);
-  if (aboutRow) L.DomEvent.disableClickPropagation(aboutRow);
   return aboutButton;
 }
 

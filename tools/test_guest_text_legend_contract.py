@@ -29,6 +29,8 @@ class GuestTextLegendContractTests(unittest.TestCase):
         self.assertIn('feature.properties.note || ""', self.app)
         self.assertNotIn("Approximate mapped feature.", self.app)
         self.assertNotIn("properties.status, properties.note", self.app)
+        self.assertNotIn("access is allowed", self.app.lower())
+        self.assertNotIn("properties.access", self.app)
 
         routes = {route["id"]: route for route in load("data/trails/routes.json")["routes"]}
         self.assertEqual(

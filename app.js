@@ -1,6 +1,7 @@
 "use strict";
 
 const PROPERTY_BOUNDS_PADDING = [28, 28];
+const PROPERTY_CONTEXT_METERS = 60.96;
 const DEFAULT_MAX_ZOOM = 21;
 const RAPID_DOUBLE_TAP_MS = 250;
 const OFF_PROPERTY_MIN_DISTANCE_METERS = 4.5;
@@ -35,7 +36,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261028-1";
+const DATA_CACHE_VERSION = "20261104-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -140,6 +141,9 @@ const guidanceTracker = {
 const map = L.map("map", {
   zoomControl: true,
   maxZoom: DEFAULT_MAX_ZOOM,
+  zoomDelta: 0.5,
+  zoomSnap: 0.5,
+  wheelPxPerZoomLevel: L.Map.prototype.options.wheelPxPerZoomLevel * 2,
   doubleClickZoom: true,
   preferCanvas: true,
 });
@@ -188,9 +192,9 @@ const LAYER_DEFINITIONS = [
       hatch: {
         size: 18,
         backgroundColor: "#fff4dc",
-        backgroundOpacity: 0.34,
+        backgroundOpacity: 0.18,
         color: "#934c13",
-        opacity: 0.76,
+        opacity: 0.45,
         weight: 1.65,
         dashArray: "5 4",
       },
@@ -564,8 +568,8 @@ const corridorInteractionLayer = L.geoJSON(null, {
   renderer: interactionsRenderer,
   style: CORRIDOR_RENDER_CONFIG.interactionStyle,
   onEachFeature(feature, layer) {
-    const message = "National Grid powerline cut — not our land, but access is allowed.";
-    bindMapFeature(layer, feature, "Not our land, but access is allowed.", {
+    const message = feature.properties?.name || "National Grid powerline cut";
+    bindMapFeature(layer, feature, "", {
       tooltip: message,
       caveat: "Shaded extent is approximate; corridor edges are not surveyed here.",
       focusOverlay: corridorGroup,
@@ -1474,7 +1478,7 @@ function applyBoundaryData({ boundaries, corridor }) {
   boundaryInteractionLayer.addData(buildBoundaryLines(boundaries));
   if (hasExplicitMapFocus) programmaticFocusViewActive = true;
   if (requestedMapFocus === "property") {
-    focusRequestedBounds(boundaryLayer.getBounds(), [boundaryGroup], {
+    focusRequestedBounds(propertyContextBounds(), [boundaryGroup], {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
       paddingBottomRight: PROPERTY_BOUNDS_PADDING,
       maxZoom: 18,
@@ -1483,7 +1487,7 @@ function applyBoundaryData({ boundaries, corridor }) {
   } else if (!hasExplicitMapFocus && hasSavedMapView(savedMapPreferences)) {
     map.setView(savedMapPreferences.center, savedMapPreferences.zoom);
   } else if (!hasExplicitMapFocus) {
-    map.fitBounds(boundaryLayer.getBounds(), {
+    map.fitBounds(propertyContextBounds(), {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
       paddingBottomRight: PROPERTY_BOUNDS_PADDING,
       maxZoom: 18,
@@ -1500,6 +1504,16 @@ function finishInitialViewWithoutBoundary() {
   preferencesReady = true;
   initialViewReady = true;
   saveMapPreferences();
+}
+
+function propertyContextBounds(bounds = boundaryLayer.getBounds()) {
+  if (!bounds?.isValid()) return bounds;
+  const latitudeMargin = PROPERTY_CONTEXT_METERS / 6371000 * 180 / Math.PI;
+  const longitudeMargin = latitudeMargin / Math.cos(bounds.getCenter().lat * Math.PI / 180);
+  return L.latLngBounds(
+    [bounds.getSouth() - latitudeMargin, bounds.getWest() - longitudeMargin],
+    [bounds.getNorth() + latitudeMargin, bounds.getEast() + longitudeMargin],
+  );
 }
 
 function combineFeatureCollections(title, ...collections) {
@@ -1969,7 +1983,7 @@ function applyTerrainData(key, data) {
     contourLabelFeatures = (data?.features || []).filter((feature) => {
       const elevation = feature.properties?.elevation;
       return feature.properties?.elevation_unit === "m"
-        && typeof elevation === "number" && Number.isFinite(elevation) && elevation % 5 === 0;
+        && typeof elevation === "number" && Number.isFinite(elevation);
     });
     refreshContourLabels();
   }
@@ -2013,10 +2027,27 @@ function refreshContourLabels() {
   contourLabelGroup.clearLayers();
   const isPhone = mobileMapPanels.matches;
   if (!map.hasLayer(terrainLayers.contours) || map.getZoom() < (isPhone ? 18 : 17)) return;
+  const showMinorLabels = map.getZoom() >= map.getMaxZoom() - map.options.zoomDelta;
   const size = map.getSize();
-  const minimumRunLength = isPhone ? 90 : 100;
+  const interior = { left: 44, right: size.x - 44, top: 28, bottom: size.y - 28 };
+  const measurer = document.createElement("span");
+  map.getContainer().append(measurer);
+  const measuredLabels = new Map();
   const candidates = [];
   for (const feature of contourLabelFeatures) {
+    const elevation = feature.properties.elevation;
+    const major = elevation % 5 === 0;
+    if (!major && !showMinorLabels) continue;
+    const text = `${elevation} m`;
+    const className = `contour-elevation-label${major ? "" : " contour-elevation-label--minor"}`;
+    if (!measuredLabels.has(text)) {
+      measurer.className = `${className} contour-label-measure`;
+      measurer.textContent = text;
+      const bounds = measurer.getBoundingClientRect();
+      measuredLabels.set(text, { width: Math.ceil(bounds.width), height: Math.ceil(bounds.height) });
+    }
+    const labelSize = measuredLabels.get(text);
+    const minimumRunLength = Math.max(showMinorLabels ? 70 : isPhone ? 90 : 100, labelSize.width + 28);
     const lines = feature.geometry?.type === "LineString"
       ? [feature.geometry.coordinates]
       : feature.geometry?.type === "MultiLineString" ? feature.geometry.coordinates : [];
@@ -2024,48 +2055,75 @@ function refreshContourLabels() {
       let run = [];
       const addRun = () => {
         const length = run.slice(1).reduce((total, point, index) => total + point.distanceTo(run[index]), 0);
-        if (length >= minimumRunLength) candidates.push({ elevation: feature.properties.elevation, run, length });
+        if (length >= minimumRunLength) candidates.push({ elevation, major, text, className, labelSize, run, length });
         run = [];
       };
-      for (const coordinate of coordinates) {
-        const point = map.latLngToContainerPoint([coordinate[1], coordinate[0]]);
-        if (point.x >= 44 && point.x <= size.x - 44 && point.y >= 28 && point.y <= size.y - 28) {
-          run.push(point);
-        } else {
+      const points = coordinates.map(([longitude, latitude]) => map.latLngToContainerPoint([latitude, longitude]));
+      for (let index = 1; index < points.length; index += 1) {
+        const segment = clipContourSegment(points[index - 1], points[index], interior);
+        if (!segment) {
           addRun();
+          continue;
         }
+        if (run.length && run[run.length - 1].distanceTo(segment[0]) > 0.5) addRun();
+        if (!run.length) run.push(segment[0]);
+        run.push(segment[1]);
       }
       addRun();
     }
   }
-  candidates.sort((first, second) => second.length - first.length);
+  measurer.remove();
+  candidates.sort((first, second) => Number(second.major) - Number(first.major) || second.length - first.length);
   const usedElevations = new Set();
   const boxes = [];
   for (const candidate of candidates) {
-    if (usedElevations.has(candidate.elevation)) continue;
-    for (const fraction of [0.5, 0.3, 0.7]) {
+    if (!showMinorLabels && usedElevations.has(candidate.elevation)) continue;
+    for (const fraction of [0.5, 0.3, 0.7, 0.15, 0.85]) {
       const point = contourRunPoint(candidate.run, candidate.length * fraction);
-      const box = { left: point.x - 34, right: point.x + 34, top: point.y - 15, bottom: point.y + 15 };
+      const halfWidth = candidate.labelSize.width / 2 + (isPhone ? 10 : 12);
+      const halfHeight = candidate.labelSize.height / 2 + (isPhone ? 5 : 6);
+      const box = { left: point.x - halfWidth, right: point.x + halfWidth, top: point.y - halfHeight, bottom: point.y + halfHeight };
       if (boxes.some((other) => box.left < other.right && box.right > other.left
         && box.top < other.bottom && box.bottom > other.top)) continue;
-      const text = `${Math.round(candidate.elevation * 3.28084)} ft`;
       L.marker(map.containerPointToLatLng(point), {
         pane: MAP_PANES.contourLabels,
         interactive: false,
         keyboard: false,
+        contourMajor: candidate.major,
         icon: L.divIcon({
-          className: "contour-elevation-label",
-          html: `<span>${text}</span>`,
-          iconSize: [54, 18],
-          iconAnchor: [27, 9],
+          className: candidate.className,
+          html: `<span>${candidate.text}</span>`,
+          iconSize: [candidate.labelSize.width, candidate.labelSize.height],
+          iconAnchor: [candidate.labelSize.width / 2, candidate.labelSize.height / 2],
         }),
       }).addTo(contourLabelGroup);
       usedElevations.add(candidate.elevation);
       boxes.push(box);
       break;
     }
-    if (boxes.length >= (isPhone ? 8 : 12)) break;
+    // At close zoom the measured label boxes and their spacing govern density,
+    // leaving useful room for minors after majors instead of imposing the old cap.
+    if (!showMinorLabels && boxes.length >= (isPhone ? 8 : 12)) break;
   }
+}
+
+function clipContourSegment(start, end, bounds) {
+  const delta = end.subtract(start);
+  const directions = [-delta.x, delta.x, -delta.y, delta.y];
+  const distances = [start.x - bounds.left, bounds.right - start.x, start.y - bounds.top, bounds.bottom - start.y];
+  let first = 0;
+  let last = 1;
+  for (let edge = 0; edge < 4; edge += 1) {
+    if (directions[edge] === 0) {
+      if (distances[edge] < 0) return null;
+      continue;
+    }
+    const ratio = distances[edge] / directions[edge];
+    if (directions[edge] < 0) first = Math.max(first, ratio);
+    else last = Math.min(last, ratio);
+    if (first > last) return null;
+  }
+  return [start.add(delta.multiplyBy(first)), start.add(delta.multiplyBy(last))];
 }
 
 function contourRunPoint(run, distance) {
@@ -3427,7 +3485,7 @@ function resetMapToDefaults() {
   });
 
   if (boundaryLayer.getBounds().isValid()) {
-    map.fitBounds(boundaryLayer.getBounds(), {
+    map.fitBounds(propertyContextBounds(), {
       paddingTopLeft: PROPERTY_BOUNDS_PADDING,
       paddingBottomRight: PROPERTY_BOUNDS_PADDING,
       maxZoom: 18,

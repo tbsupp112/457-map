@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -42,7 +44,7 @@ class MapFramingPhotoContractTests(unittest.TestCase):
         )
         self.assertIsNotNone(property_branch)
         branch = property_branch.group(1)
-        self.assertIn("focusRequestedBounds(boundaryLayer.getBounds()", branch)
+        self.assertIn("focusRequestedBounds(propertyContextBounds()", branch)
         self.assertIn("paddingTopLeft: PROPERTY_BOUNDS_PADDING", branch)
         self.assertIn("paddingBottomRight: PROPERTY_BOUNDS_PADDING", branch)
         self.assertIn("zoomSnap: 0.5", branch)
@@ -53,6 +55,44 @@ class MapFramingPhotoContractTests(unittest.TestCase):
         )
         self.assertIn("const previousZoomSnap = map.options.zoomSnap;", self.app)
         self.assertIn("map.options.zoomSnap = previousZoomSnap;", self.app)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for geographic context checks")
+    def test_property_context_expands_each_side_by_metres_without_mutating_boundary(self) -> None:
+        script = r"""
+const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
+const app=fs.readFileSync(process.argv[1]+'/app.js','utf8');
+const helper=app.slice(app.indexOf('function propertyContextBounds('),app.indexOf('function combineFeatureCollections('));
+function bounds(southWest,northEast) {
+  return {getSouth:()=>southWest[0],getWest:()=>southWest[1],getNorth:()=>northEast[0],getEast:()=>northEast[1],
+    getCenter:()=>({lat:(southWest[0]+northEast[0])/2,lng:(southWest[1]+northEast[1])/2}),isValid:()=>true};
+}
+const original=bounds([43.3575,-73.837],[43.3611,-73.833]);
+const context={PROPERTY_CONTEXT_METERS:60.96,L:{latLngBounds:bounds},boundaryLayer:{getBounds:()=>original}};
+vm.createContext(context);vm.runInContext(helper,context);
+const expanded=context.propertyContextBounds();
+const radians=Math.PI/180;
+function distance(first,second) {
+  const a=Math.sin((second[0]-first[0])*radians/2)**2+
+    Math.cos(first[0]*radians)*Math.cos(second[0]*radians)*Math.sin((second[1]-first[1])*radians/2)**2;
+  return 6371000*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+const center=original.getCenter();
+for(const [start,end] of [
+  [[original.getSouth(),center.lng],[expanded.getSouth(),center.lng]],
+  [[original.getNorth(),center.lng],[expanded.getNorth(),center.lng]],
+  [[center.lat,original.getWest()],[center.lat,expanded.getWest()]],
+  [[center.lat,original.getEast()],[center.lat,expanded.getEast()]],
+]) assert.ok(Math.abs(distance(start,end)-60.96)<0.1);
+assert.equal(original.getSouth(),43.3575);assert.equal(original.getWest(),-73.837);
+const invalid={isValid:()=>false};assert.equal(context.propertyContextBounds(invalid),invalid);
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, str(ROOT)],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        self.assertEqual(2, self.app.count("map.fitBounds(propertyContextBounds(),"))
+        self.assertIn("map.setView(savedMapPreferences.center, savedMapPreferences.zoom)", self.app)
 
     def test_route_focus_unions_every_member_segment(self) -> None:
         route_focus = re.search(

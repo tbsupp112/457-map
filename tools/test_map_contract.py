@@ -143,12 +143,17 @@ class Point {
 }
 const context = {
   contourLabelFeatures: [], mobileMapPanels: {matches:false}, MAP_PANES: {contourLabels:'contour-labels-pane'},
-  terrainLayers: {contours:{}}, zoom:17, enabled:true,
+  terrainLayers: {contours:{}}, zoom:17, maxZoom:21, enabled:true,
+  document: {createElement: ()=>({
+    className:'', textContent:'', remove() {},
+    getBoundingClientRect() { return {width:this.textContent.length*6,height:this.className.includes('--minor')?16:18}; },
+  })},
   contourLabelGroup: {markers:[], clearLayers() { this.markers=[]; }},
   L: {divIcon: options=>options, marker: (latlng,options)=>({addTo(group) { group.markers.push({latlng,options}); }})},
 };
 context.map = {
-  hasLayer: ()=>context.enabled, getZoom: ()=>context.zoom, getSize: ()=>({x:1000,y:1000}),
+  hasLayer: ()=>context.enabled, getZoom: ()=>context.zoom, getMaxZoom: ()=>context.maxZoom,
+  options:{zoomDelta:0.5}, getSize: ()=>({x:1000,y:1000}), getContainer: ()=>({append() {}}),
   latLngToContainerPoint: ([y,x])=>new Point(x,y), containerPointToLatLng: point=>({lat:point.y,lng:point.x}),
 };
 vm.createContext(context); vm.runInContext(source, context);
@@ -160,7 +165,8 @@ assert.equal(context.contourLabelGroup.markers.length,12);
 const labels = context.contourLabelGroup.markers;
 assert.equal(new Set(labels.map(label=>label.options.icon.html)).size,labels.length);
 for (const label of labels) {
-  assert.match(label.options.icon.html,/\d+ ft/);
+  assert.match(label.options.icon.html,/\d+(?:\.\d+)? m/);
+  assert.doesNotMatch(label.options.icon.html,/\.0 m|ft/);
   assert.equal(label.options.pane,'contour-labels-pane');
   assert.equal(label.options.interactive,false); assert.equal(label.options.keyboard,false);
   assert.ok(label.latlng.lng>=44 && label.latlng.lng<=956 && label.latlng.lat>=28 && label.latlng.lat<=972);
@@ -169,14 +175,35 @@ context.zoom=16; context.refreshContourLabels(); assert.equal(context.contourLab
 context.mobileMapPanels.matches=true; context.zoom=17; context.refreshContourLabels();
 assert.equal(context.contourLabelGroup.markers.length,0);
 context.zoom=18; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,8);
+context.contourLabelFeatures.push(...Array.from({length:18}, (_,i)=>line(250.5+i*5,70+i*45)));
+for (const zoom of [20,20.49]) {
+  context.zoom=zoom; context.refreshContourLabels();
+  assert.equal(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor),false);
+}
+for (const zoom of [20.5,21]) {
+  context.zoom=zoom; context.refreshContourLabels();
+  assert.ok(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor));
+  assert.ok(context.contourLabelGroup.markers.length>12,'old major cap starved close-zoom labels');
+  const firstMinor=context.contourLabelGroup.markers.findIndex(label=>!label.options.contourMajor);
+  assert.ok(context.contourLabelGroup.markers.slice(firstMinor).every(label=>!label.options.contourMajor));
+}
+context.maxZoom=22; context.map.options.zoomDelta=0.25; context.zoom=21.5;
+context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor),false);
+context.zoom=21.75; context.refreshContourLabels();
+assert.ok(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor));
 context.enabled=false; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
 context.enabled=true; context.contourLabelFeatures=[line(300,100,120),line(305,10)];
 context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
 context.contourLabelFeatures=[line(300,100),line(305,100)]; context.refreshContourLabels();
 const positions=context.contourLabelGroup.markers.map(label=>label.latlng);
 for (let i=0;i<positions.length;i++) for (let j=0;j<i;j++) {
-  assert.ok(Math.abs(positions[i].lng-positions[j].lng)>=68 || Math.abs(positions[i].lat-positions[j].lat)>=30);
+  const labels=context.contourLabelGroup.markers;
+  const width=(labels[i].options.icon.iconSize[0]+labels[j].options.icon.iconSize[0])/2;
+  assert.ok(Math.abs(positions[i].lng-positions[j].lng)>=width || Math.abs(positions[i].lat-positions[j].lat)>=18);
 }
+context.contourLabelFeatures=[{properties:{elevation:250.5},geometry:{type:'LineString',coordinates:[[-100,500],[1100,500]]}}];
+context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,1,'long crossing segment was lost at close zoom');
+assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>250.5 m</span>');
 """
         result = subprocess.run(
             [shutil.which("node"), "-e", script, str(ROOT)],

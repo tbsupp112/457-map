@@ -36,7 +36,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261104-1";
+const DATA_CACHE_VERSION = "20261109-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -81,6 +81,9 @@ let legendDismissedForSession = false;
 let mapWeatherControl = null;
 let mapWeatherView = null;
 let weatherPanelOpen = false;
+let mapCompassControl = null;
+let compassPanelOpen = false;
+const mapPanelOpenOrder = ["legend"];
 const mobileMapPanels = window.matchMedia("(max-width: 720px)");
 let layerControlDecorationFrame = null;
 const roadVisualLayersById = new Map();
@@ -112,22 +115,9 @@ const guidanceTracker = {
   target: null,
   isActive: false,
   isWaitingForLocation: false,
-  orientationPermission: "unknown",
-  lastPermissionResult: "not-requested",
   hideGuideButton: false,
-  orientationEvents: [],
-  isIosPermissionPath: false,
-  orientationEventFired: false,
-  sawWebkitCompassHeading: false,
-  sawFiniteAlpha: false,
-  androidAbsoluteSeen: false,
-  smoothedSin: null,
-  smoothedCos: null,
-  lastHeadingAt: 0,
-  lastVisualUpdateAt: 0,
   targetBearing: null,
   headingError: null,
-  headingTimeout: null,
   tintStartTimer: null,
   tintHideTimer: null,
   pillHideTimer: null,
@@ -137,6 +127,33 @@ const guidanceTracker = {
   highlightLayer: null,
   hasShownIosOrientationHint: false,
 };
+
+const headingPipeline = {
+  permission: "unknown",
+  lastPermissionResult: "not-requested",
+  permissionPromise: null,
+  orientationEvents: [],
+  screenOrientationTarget: null,
+  usesWindowOrientationChange: false,
+  isIosPermissionPath: false,
+  orientationEventFired: false,
+  sawWebkitCompassHeading: false,
+  sawFiniteAlpha: false,
+  androidAbsoluteSeen: false,
+  lastAndroidSensorHeading: null,
+  latestHeading: null,
+  latestHeadingAt: 0,
+  smoothedSin: null,
+  smoothedCos: null,
+  lastHeadingAt: 0,
+  lastVisualUpdateAt: 0,
+  freshnessTimeout: null,
+  staleNotified: false,
+  pageSuspended: false,
+};
+let compassDisplayedAngle = null;
+let guidanceStartGeneration = 0;
+let guidanceStartPending = false;
 
 const map = L.map("map", {
   zoomControl: true,
@@ -864,6 +881,7 @@ const layerControl = L.control
 decorateLayerControl(layerControl);
 installMapLegend();
 installMapWeatherControl();
+installMapCompassControl();
 const clearLayerControlHoverDelay = installLayerControlHoverDelay(layerControl);
 
 if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
@@ -912,12 +930,13 @@ map.on("movestart zoomstart", handleMapViewChangeStart);
 window.matchMedia("(max-width: 720px)").addEventListener("change", refreshTrailPresentation);
 window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPresentation);
 mobileMapPanels.addEventListener("change", () => {
-  if (mobileMapPanels.matches && weatherPanelOpen) dismissMapLegend();
+  if (mobileMapPanels.matches) retainMostRecentMobilePanel();
   refreshContourLabels();
 });
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
 window.addEventListener("pagehide", handlePageHide);
 window.addEventListener("pageshow", handlePageShow);
+document.addEventListener("visibilitychange", handleHeadingVisibilityChange);
 installMobileDoubleTapZoom();
 
 const locationStatus = document.getElementById("location-status");
@@ -945,6 +964,7 @@ guidanceDismiss.addEventListener("click", stopGuidance);
 map.on("popupopen", preparePointPopupPhoto);
 map.on("popupclose", () => {
   if (hidingPopupForRouteDetails) return;
+  if (guidanceStartPending && !guidanceTracker.isActive) cancelPendingGuidance();
   clearSelectedFeatureHighlight();
   closeMapRouteDetails({ restorePopup: false, restoreFocus: false });
 });
@@ -2026,7 +2046,7 @@ function applyTerrainData(key, data) {
 function refreshContourLabels() {
   contourLabelGroup.clearLayers();
   const isPhone = mobileMapPanels.matches;
-  if (!map.hasLayer(terrainLayers.contours) || map.getZoom() < (isPhone ? 18 : 17)) return;
+  if (!map.hasLayer(terrainLayers.contours) || map.getZoom() < (isPhone ? 18.5 : 17)) return;
   const showMinorLabels = map.getZoom() >= map.getMaxZoom() - map.options.zoomDelta;
   const size = map.getSize();
   const interior = { left: 44, right: size.x - 44, top: 28, bottom: size.y - 28 };
@@ -2036,6 +2056,7 @@ function refreshContourLabels() {
   const candidates = [];
   for (const feature of contourLabelFeatures) {
     const elevation = feature.properties.elevation;
+    if (!Number.isInteger(elevation)) continue;
     const major = elevation % 5 === 0;
     if (!major && !showMinorLabels) continue;
     const text = `${elevation} m`;
@@ -2139,7 +2160,7 @@ function contourRunPoint(run, distance) {
 
 function appendTerrainLegend(container) {
   for (const [key, group] of Object.entries(terrainLayers)) {
-    if (!map.hasLayer(group)) continue;
+    if (key === "contours" || !map.hasLayer(group)) continue;
     const section = L.DomUtil.create("div", "terrain-legend", container);
     const title = L.DomUtil.create("strong", "", section);
     title.textContent = getLayerDefinition(key).label;
@@ -2151,9 +2172,9 @@ function appendTerrainLegend(container) {
         swatch.style.backgroundColor = color;
         row.append(document.createTextNode(label));
       });
-    } else {
+    } else if (key === "soils") {
       const note = L.DomUtil.create("span", "", section);
-      note.textContent = key === "soils" ? "Purple outlines · tap for map unit" : "Brown lines · 0.5 m intervals; bold every 5 m";
+      note.textContent = "Purple outlines · tap for map unit";
     }
   }
 }
@@ -2202,23 +2223,25 @@ function installMapLegend() {
       text.textContent = label;
     });
     appendTerrainLegend(container);
-    dismiss.addEventListener("click", dismissMapLegend);
+    dismiss.addEventListener("click", () => dismissMapLegend({ restoreFocus: true }));
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
     return container;
   };
   control.addTo(map);
   mapLegendControl = control;
-  placeMapWeatherControl();
+  placeMapPanelControls();
 }
 
-function dismissMapLegend() {
+function dismissMapLegend({ restoreFocus = false } = {}) {
+  removeMapPanelFromOrder("legend");
   legendDismissedForSession = true;
   if (mapLegendControl) {
     mapLegendControl.remove();
     mapLegendControl = null;
   }
   installMapLegendRestoreControl();
+  if (restoreFocus) mapLegendRestoreControl?.getContainer()?.focus();
 }
 
 function installMapLegendRestoreControl() {
@@ -2236,13 +2259,44 @@ function installMapLegendRestoreControl() {
   };
   control.addTo(map);
   mapLegendRestoreControl = control;
-  placeMapWeatherControl();
+  placeMapPanelControls();
 }
 
 function showMapLegend() {
-  if (mobileMapPanels.matches) setMapWeatherOpen(false);
   legendDismissedForSession = false;
   installMapLegend();
+  recordMapPanelOpen("legend");
+  closeMobilePanelConflicts("legend");
+  mapLegendControl?.getContainer().querySelector(".map-legend-dismiss")?.focus();
+}
+
+function isMapPanelOpen(panel) {
+  if (panel === "legend") return Boolean(mapLegendControl && !legendDismissedForSession);
+  if (panel === "weather") return weatherPanelOpen;
+  if (panel === "compass") return compassPanelOpen;
+  return false;
+}
+
+function recordMapPanelOpen(panel) {
+  removeMapPanelFromOrder(panel);
+  mapPanelOpenOrder.push(panel);
+}
+
+function removeMapPanelFromOrder(panel) {
+  const index = mapPanelOpenOrder.indexOf(panel);
+  if (index >= 0) mapPanelOpenOrder.splice(index, 1);
+}
+
+function closeMobilePanelConflicts(keep) {
+  if (!mobileMapPanels.matches) return;
+  if (keep !== "compass") setMapCompassOpen(false);
+  if (keep !== "weather") setMapWeatherOpen(false);
+  if (keep !== "legend" && !legendDismissedForSession) dismissMapLegend();
+}
+
+function retainMostRecentMobilePanel() {
+  const keep = [...mapPanelOpenOrder].reverse().find(isMapPanelOpen);
+  if (keep) closeMobilePanelConflicts(keep);
 }
 
 function installMapWeatherControl() {
@@ -2290,25 +2344,186 @@ function installMapWeatherControl() {
   };
   control.addTo(map);
   mapWeatherControl = control;
-  placeMapWeatherControl();
+  placeMapPanelControls();
 }
 
 function setMapWeatherOpen(open) {
   weatherPanelOpen = Boolean(open && mapWeatherControl);
-  if (!mapWeatherControl) return;
+  if (!mapWeatherControl) {
+    removeMapPanelFromOrder("weather");
+    return;
+  }
   const container = mapWeatherControl.getContainer();
   container.querySelector(".map-weather-panel").hidden = !weatherPanelOpen;
   const toggle = container.querySelector(".map-weather-toggle");
   toggle.hidden = weatherPanelOpen;
   toggle.setAttribute("aria-expanded", String(weatherPanelOpen));
   mapWeatherView.setVisible(weatherPanelOpen);
-  if (weatherPanelOpen && mobileMapPanels.matches) dismissMapLegend();
+  if (weatherPanelOpen) {
+    recordMapPanelOpen("weather");
+    closeMobilePanelConflicts("weather");
+  } else {
+    removeMapPanelFromOrder("weather");
+  }
 }
 
-function placeMapWeatherControl() {
+function placeMapPanelControls() {
   const legend = (mapLegendControl || mapLegendRestoreControl)?.getContainer();
   const weather = mapWeatherControl?.getContainer();
+  const compass = mapCompassControl?.getContainer();
   if (legend?.isConnected && weather?.isConnected) legend.before(weather);
+  if (weather?.isConnected && compass?.isConnected) weather.before(compass);
+  else if (legend?.isConnected && compass?.isConnected) legend.before(compass);
+}
+
+function installMapCompassControl() {
+  const control = L.control({ position: "bottomleft" });
+  control.onAdd = () => {
+    const container = L.DomUtil.create("div", "map-compass-control");
+    const toggle = L.DomUtil.create("button", "map-compass-toggle", container);
+    toggle.type = "button";
+    toggle.setAttribute("aria-label", "Open compass");
+    toggle.setAttribute("aria-controls", "map-compass-panel");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.title = "Compass";
+    toggle.innerHTML = '<svg class="map-compass-toggle-rose" viewBox="0 0 40 32" aria-hidden="true"><circle cx="20" cy="16" r="12"/><path d="M20 4 23 16 20 14 17 16Z"/><path d="M20 28 17 16 20 18 23 16Z"/><text x="20" y="8">N</text></svg>';
+
+    const panel = L.DomUtil.create("section", "map-compass-panel", container);
+    panel.id = "map-compass-panel";
+    panel.hidden = true;
+    panel.setAttribute("aria-labelledby", "map-compass-title");
+    const title = L.DomUtil.create("h2", "weather-accessible-title", panel);
+    title.id = "map-compass-title";
+    title.textContent = "Compass";
+    const close = L.DomUtil.create("button", "map-compass-close", panel);
+    close.type = "button";
+    close.setAttribute("aria-label", "Close compass");
+    close.textContent = "×";
+    const rose = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    rose.classList.add("map-compass-rose");
+    rose.setAttribute("viewBox", "0 0 200 200");
+    rose.setAttribute("role", "img");
+    rose.setAttribute("aria-label", "North-up compass rose with device heading needle");
+    rose.innerHTML = '<circle class="compass-rose-halo" cx="100" cy="100" r="88"/><circle class="compass-rose-ring" cx="100" cy="100" r="83"/><path class="compass-rose-ticks" d="M100 17v13m58 12-9 9m34 49h-13m-12 58-9-9m-49 34v-13m-58-12 9-9m-34-49h13m12-58 9 9M141 28l-6 10M172 59l-10 6M172 141l-10-6M141 172l-6-10M59 172l6-10M28 141l10-6M28 59l10 6M59 28l6 10"/><path class="compass-rose-static-north" d="M100 36 111 100 100 91 89 100Z"/><path class="compass-rose-static-south" d="M100 164 89 100 100 109 111 100Z"/><path class="compass-rose-static-east" d="M164 100 100 111 109 100 100 89Z"/><path class="compass-rose-static-west" d="M36 100 100 89 91 100 100 111Z"/><circle class="compass-rose-center" cx="100" cy="100" r="4"/><g class="compass-heading-needle" visibility="hidden"><path d="M100 48 107 100 100 91 93 100Z"/><path class="compass-heading-needle-tail" d="M100 152 93 100 100 109 107 100Z"/></g><text class="compass-cardinal" x="100" y="12">N</text><text class="compass-cardinal" x="190" y="105">E</text><text class="compass-cardinal" x="100" y="198">S</text><text class="compass-cardinal" x="10" y="105">W</text>';
+    panel.append(rose);
+    const readout = L.DomUtil.create("p", "map-compass-readout", panel);
+    readout.setAttribute("role", "status");
+    readout.setAttribute("aria-live", "off");
+    readout.textContent = "North fixed · waiting for device heading";
+
+    toggle.addEventListener("click", () => {
+      setMapCompassOpen(!compassPanelOpen, {
+        requestAccess: !compassPanelOpen,
+        focusClose: !compassPanelOpen,
+      });
+    });
+    close.addEventListener("click", () => setMapCompassOpen(false, { restoreFocus: true }));
+    container.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && compassPanelOpen) {
+        event.preventDefault();
+        setMapCompassOpen(false, { restoreFocus: true });
+      }
+    });
+    L.DomEvent.disableClickPropagation(container);
+    L.DomEvent.disableScrollPropagation(container);
+    return container;
+  };
+  control.addTo(map);
+  mapCompassControl = control;
+  placeMapPanelControls();
+}
+
+function setMapCompassOpen(open, {
+  requestAccess = false,
+  restoreFocus = false,
+  focusClose = false,
+} = {}) {
+  compassPanelOpen = Boolean(open && mapCompassControl);
+  if (!mapCompassControl) {
+    removeMapPanelFromOrder("compass");
+    return;
+  }
+  const container = mapCompassControl.getContainer();
+  const panel = container.querySelector(".map-compass-panel");
+  const toggle = container.querySelector(".map-compass-toggle");
+  panel.hidden = !compassPanelOpen;
+  toggle.hidden = compassPanelOpen;
+  toggle.setAttribute("aria-expanded", String(compassPanelOpen));
+
+  if (compassPanelOpen) {
+    recordMapPanelOpen("compass");
+    closeMobilePanelConflicts("compass");
+    syncHeadingLifecycle();
+    if (requestAccess) {
+      setCompassUnavailableMessage("Requesting device heading permission…");
+      requestHeadingAccess().then((allowed) => {
+        if (!compassPanelOpen) return;
+        if (!allowed) {
+          setCompassUnavailableMessage(compassPermissionMessage());
+          return;
+        }
+        renderFreshCompassHeadingOrWaiting();
+      });
+    } else {
+      renderFreshCompassHeadingOrWaiting();
+    }
+    if (focusClose) container.querySelector(".map-compass-close")?.focus();
+    return;
+  }
+
+  removeMapPanelFromOrder("compass");
+  syncHeadingLifecycle();
+  if (restoreFocus && toggle.isConnected) toggle.focus();
+}
+
+function setCompassUnavailableMessage(message) {
+  if (!compassPanelOpen || !mapCompassControl) return;
+  const container = mapCompassControl.getContainer();
+  const needle = container.querySelector(".compass-heading-needle");
+  const readout = container.querySelector(".map-compass-readout");
+  needle.setAttribute("visibility", "hidden");
+  compassDisplayedAngle = null;
+  readout.dataset.live = "false";
+  readout.textContent = message;
+}
+
+function renderFreshCompassHeadingOrWaiting() {
+  const heading = getFreshHeading();
+  if (heading !== null) {
+    renderCompassHeading(heading);
+    return;
+  }
+  setCompassUnavailableMessage(compassPermissionMessage());
+}
+
+function compassPermissionMessage() {
+  if (headingPipeline.permission === "denied") return "North fixed · motion access denied";
+  if (headingPipeline.permission === "error") return "North fixed · motion access unavailable";
+  if (headingPipeline.permission === "unsupported") return "North fixed · live heading unavailable";
+  if (headingPipeline.latestHeadingAt) return "North fixed · heading is stale";
+  return "North fixed · waiting for device heading";
+}
+
+function renderCompassHeading(heading) {
+  if (!compassPanelOpen || !mapCompassControl) return;
+  const container = mapCompassControl.getContainer();
+  const needle = container.querySelector(".compass-heading-needle");
+  const readout = container.querySelector(".map-compass-readout");
+  const normalized = normalizeAngle(heading);
+  const displayAngle = compassDisplayedAngle === null
+    ? normalized
+    : compassDisplayedAngle + normalizeBearingError(normalized - normalizeAngle(compassDisplayedAngle));
+  compassDisplayedAngle = displayAngle;
+  needle.style.transform = `rotate(${displayAngle}deg)`;
+  needle.setAttribute("visibility", "visible");
+  readout.dataset.live = "true";
+  const degrees = Math.round(normalized) % 360;
+  readout.textContent = `${degrees}° · ${compassCardinal(normalized)}`;
+}
+
+function compassCardinal(heading) {
+  const directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+  return directions[Math.round(normalizeAngle(heading) / 22.5) % directions.length];
 }
 
 function refreshTrailPresentation() {
@@ -2753,6 +2968,7 @@ function canOfferCompassGuidance() {
 }
 
 function guidanceButtonLabel(targetId) {
+  if (guidanceStartPending && guidanceTracker.target?.id === targetId) return "Cancel guide request";
   if (!guidanceTracker.isActive || !guidanceTracker.target) return "Guide me";
   return guidanceTracker.target.id === targetId
     ? "Stop guiding"
@@ -2774,6 +2990,10 @@ function handleGuideButtonClick(event) {
   if (!button) return;
   event.preventDefault();
   event.stopPropagation();
+  if (guidanceStartPending && guidanceTracker.target?.id === button.dataset.landmarkId) {
+    cancelPendingGuidance();
+    return;
+  }
   if (
     guidanceTracker.isActive &&
     guidanceTracker.target?.id === button.dataset.landmarkId
@@ -2782,6 +3002,14 @@ function handleGuideButtonClick(event) {
     return;
   }
   startGuidance(button.dataset.landmarkId);
+}
+
+function cancelPendingGuidance() {
+  if (!guidanceStartPending) return;
+  guidanceStartPending = false;
+  guidanceStartGeneration += 1;
+  guidanceTracker.target = null;
+  clearGuidanceTargetHighlight();
 }
 
 function handleRouteDetailsClick(event) {
@@ -2842,8 +3070,8 @@ async function startGuidance(targetId) {
   const target = guidanceTracker.targets.get(targetId);
   if (!target) return;
 
-  showGuidanceTargetHighlight(target);
   if (guidanceTracker.isActive) {
+    showGuidanceTargetHighlight(target);
     guidanceTracker.target = target;
     if (latestPosition) {
       updateGuidanceFromPosition(latestPosition.latlng);
@@ -2854,8 +3082,12 @@ async function startGuidance(targetId) {
     return;
   }
 
+  const requestGeneration = ++guidanceStartGeneration;
   clearGuidanceTimers();
   guidanceTracker.target = target;
+  guidanceTracker.targetBearing = null;
+  guidanceTracker.headingError = null;
+  showGuidanceTargetHighlight(target);
   if (
     latestPosition &&
     distanceBetweenLatLngs(latestPosition.latlng, target.latlng) <= ARRIVAL_DISTANCE_METERS
@@ -2865,60 +3097,31 @@ async function startGuidance(targetId) {
     return;
   }
 
-  const permissionRequest = window.DeviceOrientationEvent?.requestPermission;
-  guidanceTracker.lastPermissionResult =
-    typeof permissionRequest === "function" ? "pending" : "not-required";
-  if (
-    typeof permissionRequest === "function" &&
-    guidanceTracker.orientationPermission !== "granted"
-  ) {
-    try {
-      const permission = await permissionRequest.call(window.DeviceOrientationEvent);
-      guidanceTracker.lastPermissionResult = permission;
-      if (permission !== "granted") {
-        declineCompassGuidance();
-        return;
-      }
-      guidanceTracker.orientationPermission = "granted";
-    } catch {
-      guidanceTracker.lastPermissionResult = "error";
-      declineCompassGuidance();
-      return;
-    }
-  } else if (guidanceTracker.orientationPermission === "granted") {
-    guidanceTracker.lastPermissionResult = "previously-granted";
+  guidanceStartPending = true;
+  const accessAllowed = await requestHeadingAccess();
+  if (requestGeneration !== guidanceStartGeneration || guidanceTracker.target !== target) return;
+  guidanceStartPending = false;
+  if (!accessAllowed) {
+    declineCompassGuidance();
+    return;
   }
 
   guidanceTracker.isActive = true;
   guidanceTracker.isWaitingForLocation = !latestPosition;
-  guidanceTracker.isIosPermissionPath = typeof permissionRequest === "function";
-  guidanceTracker.orientationEventFired = false;
-  guidanceTracker.sawWebkitCompassHeading = false;
-  guidanceTracker.sawFiniteAlpha = false;
-  guidanceTracker.androidAbsoluteSeen = false;
-  guidanceTracker.smoothedSin = null;
-  guidanceTracker.smoothedCos = null;
-  guidanceTracker.lastHeadingAt = 0;
-  guidanceTracker.lastVisualUpdateAt = 0;
   guidanceTracker.headingError = null;
   updateGuidancePill();
   renderGuidanceTint(GUIDANCE_MAX_ERROR_DEG, { centered: true });
-  attachOrientationListeners(guidanceTracker.isIosPermissionPath);
+  syncHeadingLifecycle({ restartTimeout: true });
   logGuidanceDiagnostic("start");
   if (latestPosition) {
     updateGuidanceFromPosition(latestPosition.latlng);
   } else {
     requestInitialLocation();
   }
-  guidanceTracker.headingTimeout = window.setTimeout(
-    handleGuidanceHeadingTimeout,
-    GUIDANCE_HEADING_TIMEOUT_MS,
-  );
   map.closePopup();
 }
 
 function declineCompassGuidance() {
-  guidanceTracker.orientationPermission = "denied";
   guidanceTracker.hideGuideButton = true;
   clearGuidanceTargetHighlight();
   const popup = map._popup;
@@ -2930,30 +3133,153 @@ function declineCompassGuidance() {
   }, 2500);
 }
 
-function attachOrientationListeners(isIosPermissionPath) {
-  detachOrientationListeners();
-  const eventNames = isIosPermissionPath
+function requestHeadingAccess() {
+  if (headingPipeline.permission === "granted" || headingPipeline.permission === "unsupported") {
+    syncHeadingLifecycle();
+    return Promise.resolve(true);
+  }
+  if (headingPipeline.permission === "denied" || headingPipeline.permission === "error") {
+    return Promise.resolve(false);
+  }
+  if (headingPipeline.permission === "pending" && headingPipeline.permissionPromise) {
+    return headingPipeline.permissionPromise;
+  }
+
+  const orientationApi = window.DeviceOrientationEvent;
+  if (!orientationApi) {
+    headingPipeline.permission = "unsupported";
+    headingPipeline.lastPermissionResult = "unsupported";
+    syncHeadingLifecycle();
+    return Promise.resolve(true);
+  }
+
+  const permissionRequest = orientationApi.requestPermission;
+  if (typeof permissionRequest !== "function") {
+    headingPipeline.permission = "granted";
+    headingPipeline.lastPermissionResult = "not-required";
+    headingPipeline.isIosPermissionPath = false;
+    syncHeadingLifecycle();
+    return Promise.resolve(true);
+  }
+
+  headingPipeline.permission = "pending";
+  headingPipeline.lastPermissionResult = "pending";
+  headingPipeline.isIosPermissionPath = true;
+  let request;
+  try {
+    // Called only by a deliberate compass or Guide me gesture.
+    request = permissionRequest.call(orientationApi);
+  } catch {
+    headingPipeline.permission = "error";
+    headingPipeline.lastPermissionResult = "error";
+    return Promise.resolve(false);
+  }
+
+  const permissionPromise = Promise.resolve(request)
+    .then((permission) => {
+      headingPipeline.lastPermissionResult = permission;
+      headingPipeline.permission = permission === "granted" ? "granted" : "denied";
+      syncHeadingLifecycle();
+      return headingPipeline.permission === "granted";
+    })
+    .catch(() => {
+      headingPipeline.permission = "error";
+      headingPipeline.lastPermissionResult = "error";
+      syncHeadingLifecycle();
+      return false;
+    })
+    .finally(() => {
+      if (headingPipeline.permissionPromise === permissionPromise) {
+        headingPipeline.permissionPromise = null;
+      }
+    });
+  headingPipeline.permissionPromise = permissionPromise;
+  return permissionPromise;
+}
+
+function hasActiveHeadingConsumer() {
+  return compassPanelOpen || guidanceTracker.isActive;
+}
+
+function syncHeadingLifecycle({ restartTimeout = false } = {}) {
+  const hasConsumer = hasActiveHeadingConsumer();
+  const pageHidden = headingPipeline.pageSuspended || document.visibilityState === "hidden";
+  if (!hasConsumer) {
+    window.clearTimeout(headingPipeline.freshnessTimeout);
+    headingPipeline.freshnessTimeout = null;
+    headingPipeline.staleNotified = false;
+    detachOrientationListeners();
+    return;
+  }
+  if (pageHidden) {
+    window.clearTimeout(headingPipeline.freshnessTimeout);
+    headingPipeline.freshnessTimeout = null;
+    detachOrientationListeners();
+    return;
+  }
+
+  if (headingPipeline.permission === "granted") attachOrientationListeners();
+  else detachOrientationListeners();
+
+  if (restartTimeout) {
+    window.clearTimeout(headingPipeline.freshnessTimeout);
+    headingPipeline.freshnessTimeout = null;
+    headingPipeline.staleNotified = false;
+  }
+  if (
+    headingPipeline.permission === "pending" ||
+    headingPipeline.permission === "unknown" ||
+    headingPipeline.permission === "denied" ||
+    headingPipeline.permission === "error" ||
+    headingPipeline.freshnessTimeout ||
+    headingPipeline.staleNotified
+  ) return;
+
+  const remainingFreshness = headingPipeline.latestHeadingAt
+    ? GUIDANCE_HEADING_TIMEOUT_MS - (performance.now() - headingPipeline.latestHeadingAt)
+    : GUIDANCE_HEADING_TIMEOUT_MS;
+  headingPipeline.freshnessTimeout = window.setTimeout(
+    handleHeadingFreshnessTimeout,
+    Math.max(0, remainingFreshness),
+  );
+}
+
+function attachOrientationListeners() {
+  if (headingPipeline.orientationEvents.length) return;
+  const eventNames = headingPipeline.isIosPermissionPath
     ? ["deviceorientation"]
     : ["deviceorientationabsolute", "deviceorientation"];
   eventNames.forEach((eventName) => {
     window.addEventListener(eventName, handleOrientationEvent, true);
   });
-  guidanceTracker.orientationEvents = eventNames;
+  headingPipeline.orientationEvents = eventNames;
+  const screenOrientation = window.screen?.orientation;
+  if (screenOrientation?.addEventListener) {
+    screenOrientation.addEventListener("change", handleHeadingScreenChange);
+    headingPipeline.screenOrientationTarget = screenOrientation;
+  } else {
+    window.addEventListener("orientationchange", handleHeadingScreenChange, true);
+    headingPipeline.usesWindowOrientationChange = true;
+  }
 }
 
 function detachOrientationListeners() {
-  guidanceTracker.orientationEvents.forEach((eventName) => {
+  headingPipeline.orientationEvents.forEach((eventName) => {
     window.removeEventListener(eventName, handleOrientationEvent, true);
   });
-  guidanceTracker.orientationEvents = [];
+  headingPipeline.orientationEvents = [];
+  headingPipeline.screenOrientationTarget?.removeEventListener?.("change", handleHeadingScreenChange);
+  headingPipeline.screenOrientationTarget = null;
+  if (headingPipeline.usesWindowOrientationChange) {
+    window.removeEventListener("orientationchange", handleHeadingScreenChange, true);
+    headingPipeline.usesWindowOrientationChange = false;
+  }
 }
 
 function handleOrientationEvent(event) {
-  guidanceTracker.orientationEventFired = true;
-  if (Number.isFinite(event.webkitCompassHeading)) {
-    guidanceTracker.sawWebkitCompassHeading = true;
-  }
-  if (Number.isFinite(event.alpha)) guidanceTracker.sawFiniteAlpha = true;
+  headingPipeline.orientationEventFired = true;
+  if (Number.isFinite(event.webkitCompassHeading)) headingPipeline.sawWebkitCompassHeading = true;
+  if (Number.isFinite(event.alpha)) headingPipeline.sawFiniteAlpha = true;
 
   let heading = null;
   let isAndroidHeading = false;
@@ -2961,13 +3287,13 @@ function handleOrientationEvent(event) {
   if (Number.isFinite(event.webkitCompassHeading)) {
     heading = event.webkitCompassHeading;
   } else if (event.type === "deviceorientationabsolute" && Number.isFinite(event.alpha)) {
-    guidanceTracker.androidAbsoluteSeen = true;
+    headingPipeline.androidAbsoluteSeen = true;
     heading = 360 - event.alpha;
     isAndroidHeading = true;
   } else if (
     event.type === "deviceorientation" &&
     event.absolute === true &&
-    !guidanceTracker.androidAbsoluteSeen &&
+    !headingPipeline.androidAbsoluteSeen &&
     Number.isFinite(event.alpha)
   ) {
     heading = 360 - event.alpha;
@@ -2978,43 +3304,124 @@ function handleOrientationEvent(event) {
   // Android absolute alpha is magnetic near Lake Luzerne. Field-verify this
   // correction while standing along a known bearing such as Mountain Drive.
   if (isAndroidHeading) {
-    const screenRotation = Number(screen.orientation?.angle) || 0;
-    heading += MAGNETIC_DECLINATION_DEG + screenRotation;
+    heading += MAGNETIC_DECLINATION_DEG;
+    headingPipeline.lastAndroidSensorHeading = heading;
+    heading += currentScreenRotation();
+  } else {
+    headingPipeline.lastAndroidSensorHeading = null;
   }
-  heading = normalizeAngle(heading);
+  smoothGuidanceHeading(normalizeAngle(heading));
+}
 
-  window.clearTimeout(guidanceTracker.headingTimeout);
-  guidanceTracker.headingTimeout = null;
-  smoothGuidanceHeading(heading);
+function currentScreenRotation() {
+  return Number(window.screen?.orientation?.angle ?? window.orientation) || 0;
+}
+
+function handleHeadingScreenChange() {
+  if (!Number.isFinite(headingPipeline.lastAndroidSensorHeading) || getFreshHeading() === null) return;
+  smoothGuidanceHeading(
+    normalizeAngle(headingPipeline.lastAndroidSensorHeading + currentScreenRotation()),
+  );
+}
+
+function getFreshHeading() {
+  if (!Number.isFinite(headingPipeline.latestHeadingAt) || headingPipeline.latestHeadingAt <= 0) return null;
+  if (performance.now() - headingPipeline.latestHeadingAt > GUIDANCE_HEADING_TIMEOUT_MS) return null;
+  return Number.isFinite(headingPipeline.latestHeading) ? headingPipeline.latestHeading : null;
+}
+
+function handleHeadingFreshnessTimeout() {
+  headingPipeline.freshnessTimeout = null;
+  if (!hasActiveHeadingConsumer() || headingPipeline.pageSuspended || document.visibilityState === "hidden") return;
+  if (getFreshHeading() !== null) {
+    syncHeadingLifecycle();
+    return;
+  }
+
+  const hadHeading = headingPipeline.latestHeadingAt > 0;
+  headingPipeline.latestHeading = null;
+  headingPipeline.smoothedSin = null;
+  headingPipeline.smoothedCos = null;
+  headingPipeline.staleNotified = true;
+  if (compassPanelOpen) {
+    setCompassUnavailableMessage(hadHeading
+      ? "North fixed · heading stale"
+      : "North fixed · no live heading");
+  }
+  if (guidanceTracker.isActive) handleGuidanceHeadingTimeout();
+}
+
+function handleHeadingVisibilityChange() {
+  if (document.visibilityState === "hidden") {
+    window.clearTimeout(headingPipeline.freshnessTimeout);
+    headingPipeline.freshnessTimeout = null;
+    detachOrientationListeners();
+    return;
+  }
+  if (headingPipeline.pageSuspended) return;
+
+  if (headingPipeline.latestHeadingAt && getFreshHeading() === null && !headingPipeline.staleNotified) {
+    headingPipeline.latestHeading = null;
+    headingPipeline.smoothedSin = null;
+    headingPipeline.smoothedCos = null;
+    headingPipeline.staleNotified = true;
+    if (compassPanelOpen) setCompassUnavailableMessage("North fixed · heading stale");
+    if (guidanceTracker.isActive) handleGuidanceHeadingTimeout();
+  }
+  syncHeadingLifecycle();
+  if (compassPanelOpen && headingPipeline.permission !== "pending") {
+    renderFreshCompassHeadingOrWaiting();
+  }
 }
 
 function smoothGuidanceHeading(heading) {
   const now = performance.now();
   const radians = (heading * Math.PI) / 180;
-  if (guidanceTracker.smoothedSin === null) {
-    guidanceTracker.smoothedSin = Math.sin(radians);
-    guidanceTracker.smoothedCos = Math.cos(radians);
+  if (
+    headingPipeline.smoothedSin === null ||
+    (headingPipeline.latestHeadingAt && now - headingPipeline.latestHeadingAt > GUIDANCE_HEADING_TIMEOUT_MS)
+  ) {
+    headingPipeline.smoothedSin = Math.sin(radians);
+    headingPipeline.smoothedCos = Math.cos(radians);
   } else {
-    const elapsed = Math.max(0, now - guidanceTracker.lastHeadingAt);
+    const elapsed = Math.max(0, now - headingPipeline.lastHeadingAt);
     const weight = 1 - Math.exp(-elapsed / GUIDANCE_SMOOTHING_TIME_MS);
-    guidanceTracker.smoothedSin +=
-      weight * (Math.sin(radians) - guidanceTracker.smoothedSin);
-    guidanceTracker.smoothedCos +=
-      weight * (Math.cos(radians) - guidanceTracker.smoothedCos);
+    headingPipeline.smoothedSin +=
+      weight * (Math.sin(radians) - headingPipeline.smoothedSin);
+    headingPipeline.smoothedCos +=
+      weight * (Math.cos(radians) - headingPipeline.smoothedCos);
   }
-  guidanceTracker.lastHeadingAt = now;
+  headingPipeline.lastHeadingAt = now;
+  headingPipeline.latestHeadingAt = now;
+  headingPipeline.staleNotified = false;
+  const filteredHeading = normalizeAngle(
+    (Math.atan2(headingPipeline.smoothedSin, headingPipeline.smoothedCos) * 180) / Math.PI,
+  );
+  headingPipeline.latestHeading = filteredHeading;
+  window.clearTimeout(headingPipeline.freshnessTimeout);
+  headingPipeline.freshnessTimeout = null;
+  syncHeadingLifecycle();
+
+  if (compassPanelOpen) renderCompassHeading(filteredHeading);
+  const recoveringGuidance = Boolean(
+    guidanceTracker.unavailableEndTimer || guidanceTracker.unavailableHintTimer,
+  );
+  if (recoveringGuidance) {
+    window.clearTimeout(guidanceTracker.unavailableEndTimer);
+    window.clearTimeout(guidanceTracker.unavailableHintTimer);
+    guidanceTracker.unavailableEndTimer = null;
+    guidanceTracker.unavailableHintTimer = null;
+    if (guidanceTracker.isActive) updateGuidancePill();
+  }
 
   if (
+    !guidanceTracker.isActive ||
     guidanceTracker.targetBearing === null ||
-    now - guidanceTracker.lastVisualUpdateAt < GUIDANCE_VISUAL_INTERVAL_MS
+    now - headingPipeline.lastVisualUpdateAt < GUIDANCE_VISUAL_INTERVAL_MS
   ) {
     return;
   }
-  guidanceTracker.lastVisualUpdateAt = now;
-  const filteredHeading = normalizeAngle(
-    (Math.atan2(guidanceTracker.smoothedSin, guidanceTracker.smoothedCos) * 180) /
-      Math.PI,
-  );
+  headingPipeline.lastVisualUpdateAt = now;
   renderGuidanceTint(normalizeBearingError(guidanceTracker.targetBearing - filteredHeading));
 }
 
@@ -3029,11 +3436,8 @@ function updateGuidanceFromPosition(latlng) {
   guidanceTracker.isWaitingForLocation = false;
   guidanceTracker.targetBearing = calculateTrueBearing(latlng, guidanceTracker.target.latlng);
   updateGuidancePill();
-  if (guidanceTracker.smoothedSin !== null) {
-    const filteredHeading = normalizeAngle(
-      (Math.atan2(guidanceTracker.smoothedSin, guidanceTracker.smoothedCos) * 180) /
-        Math.PI,
-    );
+  const filteredHeading = getFreshHeading();
+  if (filteredHeading !== null) {
     renderGuidanceTint(
       normalizeBearingError(guidanceTracker.targetBearing - filteredHeading),
     );
@@ -3174,12 +3578,12 @@ function guidanceTurnInstruction(error) {
 }
 
 function handleGuidanceHeadingTimeout() {
-  if (!guidanceTracker.isActive || guidanceTracker.smoothedSin !== null) return;
+  if (!guidanceTracker.isActive || getFreshHeading() !== null) return;
   logGuidanceDiagnostic("timeout");
-  detachOrientationListeners();
-  guidanceTracker.headingTimeout = null;
+  guidanceTracker.headingError = null;
+  renderGuidanceTint(GUIDANCE_MAX_ERROR_DEG, { centered: true });
   setGuidancePill("Compass unavailable");
-  if (guidanceTracker.isIosPermissionPath && !guidanceTracker.hasShownIosOrientationHint) {
+  if (headingPipeline.isIosPermissionPath && !guidanceTracker.hasShownIosOrientationHint) {
     guidanceTracker.hasShownIosOrientationHint = true;
     guidanceTracker.unavailableHintTimer = window.setTimeout(() => {
       setGuidancePill("Check Settings \u2192 Safari \u2192 Motion & Orientation Access");
@@ -3193,18 +3597,23 @@ function handleGuidanceHeadingTimeout() {
 
 function logGuidanceDiagnostic(phase) {
   console.info(
-    `[457 guidance] ${phase} events=${guidanceTracker.orientationEvents.join(",") || "none"} ` +
-      `permission=${guidanceTracker.lastPermissionResult} ` +
-      `event=${guidanceTracker.orientationEventFired} ` +
-      `webkit=${guidanceTracker.sawWebkitCompassHeading} alpha=${guidanceTracker.sawFiniteAlpha}`,
+    `[457 guidance] ${phase} events=${headingPipeline.orientationEvents.join(",") || "none"} ` +
+      `permission=${headingPipeline.lastPermissionResult} ` +
+      `event=${headingPipeline.orientationEventFired} ` +
+      `webkit=${headingPipeline.sawWebkitCompassHeading} alpha=${headingPipeline.sawFiniteAlpha}`,
   );
 }
 
 function showGuidanceArrival() {
-  detachOrientationListeners();
-  window.clearTimeout(guidanceTracker.headingTimeout);
-  guidanceTracker.headingTimeout = null;
+  window.clearTimeout(guidanceTracker.unavailableHintTimer);
+  window.clearTimeout(guidanceTracker.unavailableEndTimer);
+  guidanceTracker.unavailableHintTimer = null;
+  guidanceTracker.unavailableEndTimer = null;
   guidanceTracker.isActive = false;
+  guidanceTracker.isWaitingForLocation = false;
+  guidanceTracker.targetBearing = null;
+  guidanceTracker.headingError = null;
+  syncHeadingLifecycle();
   renderGuidanceTint(0);
   setGuidancePill("Arrived");
   window.clearTimeout(guidanceTracker.tintHideTimer);
@@ -3220,14 +3629,14 @@ function showGuidanceArrival() {
 }
 
 function stopGuidance() {
-  detachOrientationListeners();
+  guidanceStartPending = false;
+  guidanceStartGeneration += 1;
   clearGuidanceTimers();
   guidanceTracker.isActive = false;
   guidanceTracker.isWaitingForLocation = false;
   guidanceTracker.targetBearing = null;
   guidanceTracker.headingError = null;
-  guidanceTracker.smoothedSin = null;
-  guidanceTracker.smoothedCos = null;
+  syncHeadingLifecycle();
   guidanceTint.classList.remove(
     "guidance-tint--active",
     "guidance-tint--starting",
@@ -3259,7 +3668,6 @@ function clearGuidanceTargetHighlight() {
 
 function clearGuidanceTimers() {
   [
-    "headingTimeout",
     "tintStartTimer",
     "tintHideTimer",
     "pillHideTimer",
@@ -3543,11 +3951,16 @@ function handleMapViewChangeStart() {
 
 function handlePageHide() {
   saveMapPreferences();
+  headingPipeline.pageSuspended = true;
+  window.clearTimeout(headingPipeline.freshnessTimeout);
+  headingPipeline.freshnessTimeout = null;
+  detachOrientationListeners();
+  guidanceStartGeneration += 1;
+  guidanceStartPending = false;
   if (watchId !== null && navigator.geolocation) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
-  detachOrientationListeners();
   clearGuidanceTimers();
   clearGuidanceTargetHighlight();
   guidanceTracker.isActive = false;
@@ -3578,9 +3991,15 @@ function handlePageHide() {
 }
 
 function handlePageShow(event) {
+  headingPipeline.pageSuspended = false;
   if (event.persisted && latestPosition && watchId === null && navigator.geolocation) {
     startLocationWatch();
   }
+  if (headingPipeline.latestHeadingAt && getFreshHeading() === null && !headingPipeline.staleNotified) {
+    handleHeadingFreshnessTimeout();
+  }
+  syncHeadingLifecycle();
+  if (compassPanelOpen) renderFreshCompassHeadingOrWaiting();
 }
 
 function installMobileDoubleTapZoom() {

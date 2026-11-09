@@ -171,11 +171,19 @@ for (const label of labels) {
   assert.equal(label.options.interactive,false); assert.equal(label.options.keyboard,false);
   assert.ok(label.latlng.lng>=44 && label.latlng.lng<=956 && label.latlng.lat>=28 && label.latlng.lat<=972);
 }
-context.zoom=16; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
+context.zoom=16.99; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0);
+context.zoom=17; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,12);
 context.mobileMapPanels.matches=true; context.zoom=17; context.refreshContourLabels();
 assert.equal(context.contourLabelGroup.markers.length,0);
-context.zoom=18; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,8);
-context.contourLabelFeatures.push(...Array.from({length:18}, (_,i)=>line(250.5+i*5,70+i*45)));
+for (const zoom of [18,18.49]) {
+  context.zoom=zoom; context.refreshContourLabels();
+  assert.equal(context.contourLabelGroup.markers.length,0);
+}
+context.zoom=18.5; context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,8);
+context.contourLabelFeatures.push(
+  ...Array.from({length:18}, (_,i)=>line(250.5+i*5,70+i*45)),
+  ...Array.from({length:18}, (_,i)=>line(251+i*5,80+i*45)),
+);
 for (const zoom of [20,20.49]) {
   context.zoom=zoom; context.refreshContourLabels();
   assert.equal(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor),false);
@@ -184,9 +192,15 @@ for (const zoom of [20.5,21]) {
   context.zoom=zoom; context.refreshContourLabels();
   assert.ok(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor));
   assert.ok(context.contourLabelGroup.markers.length>12,'old major cap starved close-zoom labels');
+  assert.ok(context.contourLabelGroup.markers.every(label=>!label.options.icon.html.match(/\d+\.5 m/)), 'half-metre labels must be omitted');
   const firstMinor=context.contourLabelGroup.markers.findIndex(label=>!label.options.contourMajor);
   assert.ok(context.contourLabelGroup.markers.slice(firstMinor).every(label=>!label.options.contourMajor));
 }
+context.contourLabelFeatures=[line(250,100),line(251,160),line(250.5,220),line(252,280),line(253,340),line(254,400),line(255,460),line(251,620)];
+context.zoom=20.5; context.refreshContourLabels();
+const closeLabels=context.contourLabelGroup.markers.map(label=>label.options.icon.html);
+for (const elevation of [250,251,252,253,254,255]) assert.ok(closeLabels.includes(`<span>${elevation} m</span>`),`missing whole-metre level ${elevation}`);
+assert.equal(closeLabels.some(label=>/\d+\.5 m/.test(label)),false,'fragment order must not select half-metre levels');
 context.maxZoom=22; context.map.options.zoomDelta=0.25; context.zoom=21.5;
 context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.some(label=>!label.options.contourMajor),false);
 context.zoom=21.75; context.refreshContourLabels();
@@ -202,8 +216,10 @@ for (let i=0;i<positions.length;i++) for (let j=0;j<i;j++) {
   assert.ok(Math.abs(positions[i].lng-positions[j].lng)>=width || Math.abs(positions[i].lat-positions[j].lat)>=18);
 }
 context.contourLabelFeatures=[{properties:{elevation:250.5},geometry:{type:'LineString',coordinates:[[-100,500],[1100,500]]}}];
+context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,0,'half-metre line should not receive a label');
+context.contourLabelFeatures=[{properties:{elevation:251},geometry:{type:'LineString',coordinates:[[-100,500],[1100,500]]}}];
 context.refreshContourLabels(); assert.equal(context.contourLabelGroup.markers.length,1,'long crossing segment was lost at close zoom');
-assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>250.5 m</span>');
+assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>251 m</span>');
 """
         result = subprocess.run(
             [shutil.which("node"), "-e", script, str(ROOT)],
@@ -213,7 +229,46 @@ assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>250.5
         app = (ROOT / "app.js").read_text(encoding="utf-8")
         self.assertIn('feature.properties?.elevation_unit === "m"', app)
         self.assertIn("elevation % 5 === 0", app)
+        self.assertIn("Number.isInteger(elevation)", app)
+        self.assertIn("map.getZoom() < (isPhone ? 18.5 : 17)", app)
+        legend = app[app.index("function appendTerrainLegend("):app.index("function legendRows(")]
+        self.assertIn('key === "contours"', legend)
+        self.assertNotIn("Brown lines", legend)
         self.assertIn('map.getPane(MAP_PANES.contourLabels).style.pointerEvents = "none";', app)
+
+    def test_compass_and_guidance_share_one_heading_lifecycle(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "styles.css").read_text(encoding="utf-8")
+
+        for contract in (
+            "function installMapCompassControl()",
+            "document.createElementNS(\"http://www.w3.org/2000/svg\", \"svg\")",
+            "function requestHeadingAccess()",
+            "request = permissionRequest.call(orientationApi);",
+            "function syncHeadingLifecycle(",
+            "function getFreshHeading()",
+            "latestHeadingAt: 0",
+            "function handleHeadingFreshnessTimeout()",
+            "guidanceStartPending",
+            "function handleHeadingVisibilityChange()",
+            "function handleHeadingScreenChange()",
+        ):
+            self.assertIn(contract, app)
+        self.assertEqual(
+            1,
+            app.count('window.addEventListener(eventName, handleOrientationEvent, true);'),
+            "both consumers should use the single orientation listener pipeline",
+        )
+        compass_open = app[app.index("function setMapCompassOpen("):app.index("function setCompassUnavailableMessage(")]
+        self.assertIn('toggle.setAttribute("aria-expanded", String(compassPanelOpen));', compass_open)
+        self.assertNotIn("requestInitialLocation", compass_open)
+        self.assertNotIn("navigator.geolocation", compass_open)
+        self.assertIn("North fixed · heading stale", app)
+        self.assertIn("North fixed · motion access denied", app)
+        self.assertIn("weather.before(compass)", app, "compass should precede weather in the control stack")
+        self.assertIn("legend.before(weather)", app, "weather should precede legend in the control stack")
+        self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
+        self.assertIn(".compass-heading-needle { transition: none; }", styles)
 
     def test_guidance_visibility_contract_has_full_turn_range(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

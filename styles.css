@@ -388,6 +388,25 @@ button { font: inherit; }
   visibility: hidden;
 }
 
+.topographic-ground-tile {
+  background-color: #f2f0e9;
+  pointer-events: none;
+}
+
+.topographic-source-status {
+  max-width: min(240px, calc(100vw - 72px));
+  pointer-events: none;
+  padding: 7px 9px;
+  border: 1px solid rgba(116, 87, 54, 0.36);
+  border-radius: 6px;
+  color: #493522;
+  background: rgba(255, 250, 239, 0.96);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.24);
+  font: 12px/1.35 system-ui, sans-serif;
+}
+
+.topographic-source-status[hidden] { display: none; }
+
 .leaflet-control-attribution {
   max-width: 65vw;
   font-size: 9px !important;
@@ -989,14 +1008,14 @@ button { font: inherit; }
 }
 .map-compass-toggle[hidden] { display: none; }
 .map-compass-toggle-rose { width: 34px; height: 28px; overflow: visible; }
-.map-compass-toggle-rose circle,
-.map-compass-toggle-rose path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
-.map-compass-toggle-rose path:first-of-type { fill: #a75c3c; stroke: #f2e4c5; }
 .map-compass-toggle-heading {
   transform-box: view-box;
   transform-origin: 50% 50%;
   transition: transform 140ms ease-out;
 }
+.map-compass-toggle-arrow { fill: #a75c3c; stroke: #f2e4c5; stroke-width: 1.5; stroke-linejoin: round; }
+.map-compass-toggle-highlight { fill: none; stroke: #f2e4c5; stroke-width: 0.75; stroke-linecap: round; opacity: 0.88; }
+.map-compass-toggle-hub { fill: #34352d; stroke: #f2e4c5; stroke-width: 0.85; }
 .map-compass-toggle[data-heading-state="inactive"] .map-compass-toggle-heading path:first-of-type,
 .map-compass-toggle[data-heading-state="unavailable"] .map-compass-toggle-heading path:first-of-type {
   fill: #9aa798;
@@ -1023,31 +1042,40 @@ button { font: inherit; }
   width: min(184px, calc(100vw - 100px));
   height: auto;
   overflow: visible;
+  pointer-events: none;
   filter: drop-shadow(0 1px 2px rgba(12, 17, 14, 0.92));
 }
-.compass-rose-halo { fill: none; stroke: rgba(18, 25, 21, 0.8); stroke-width: 8; }
+.compass-rose-focus-ring {
+  fill: none;
+  stroke: var(--owned);
+  stroke-width: 2.5;
+  opacity: 0;
+  pointer-events: none;
+}
+.map-compass-rose:focus { outline: none; }
+.map-compass-rose:focus .compass-rose-focus-ring { opacity: 0.96; }
+.compass-rose-halo { fill: none; stroke: rgba(18, 25, 21, 0.78); stroke-width: 3.5; }
 .compass-rose-ring { fill: none; stroke: #eee2c5; stroke-width: 1.5; }
-.compass-rose-ticks { fill: none; stroke: #e8d9b8; stroke-width: 1.4; stroke-linecap: round; }
-.compass-rose-static-north,
-.compass-rose-static-south,
-.compass-rose-static-east,
-.compass-rose-static-west {
+.compass-rose-ticks { fill: none; stroke: #e8d9b8; stroke-linecap: round; }
+.compass-rose-tick { filter: drop-shadow(0 0 0.8px rgba(18, 25, 21, 0.95)); }
+.compass-rose-tick--cardinal { stroke-width: 2; }
+.compass-rose-tick--intercardinal { stroke-width: 1.65; }
+.compass-rose-tick--minor { stroke-width: 1.35; }
+.compass-rose-static-arm {
+  fill: #87734f;
   stroke: #f2e4c8;
   stroke-width: 3;
   stroke-linejoin: round;
   paint-order: stroke fill;
 }
-.compass-rose-static-north { fill: #34352d; }
-.compass-rose-static-south { fill: #b99a6a; }
-.compass-rose-static-east,
-.compass-rose-static-west { fill: #87734f; }
 .compass-rose-center { fill: #292c27; stroke: #f0e2c5; stroke-width: 1.5; }
 .compass-cardinal {
   fill: #f3e8cf;
   stroke: rgba(18, 25, 21, 0.9);
-  stroke-width: 2.5;
+  stroke-width: 2.2;
   paint-order: stroke fill;
-  font: 700 13px Georgia, serif;
+  font: 700 13px Georgia, "Times New Roman", serif;
+  letter-spacing: 0.04em;
   text-anchor: middle;
 }
 .compass-heading-needle {
@@ -1055,14 +1083,28 @@ button { font: inherit; }
   transform-origin: 50% 50%;
   transition: transform 140ms ease-out;
 }
-.compass-heading-needle path {
+.compass-heading-needle-forward {
   fill: #a34f35;
   stroke: #f3e5c8;
   stroke-width: 3;
   stroke-linejoin: round;
   paint-order: stroke fill;
 }
-.compass-heading-needle .compass-heading-needle-tail { fill: #d5c4a0; }
+.compass-heading-needle .compass-heading-needle-tail {
+  fill: #d5c4a0;
+  stroke: #f3e5c8;
+  stroke-width: 2.1;
+  stroke-linejoin: round;
+  paint-order: stroke fill;
+}
+.compass-heading-needle-highlight {
+  fill: none;
+  stroke: #f2e4c5;
+  stroke-width: 1.35;
+  stroke-linecap: round;
+  opacity: 0.78;
+  pointer-events: none;
+}
 .map-compass-readout {
   min-height: 1.3em;
   margin: 1px 0 0;
@@ -1071,6 +1113,8 @@ button { font: inherit; }
   font-weight: 700;
   line-height: 1.3;
   text-align: center;
+  -webkit-text-stroke: 0.3px rgba(18, 25, 21, 0.55);
+  text-shadow: 0 1px 3px rgba(15, 20, 17, 0.95), 0 0 6px rgba(15, 20, 17, 0.82);
 }
 .map-compass-close {
   position: absolute;
@@ -1095,7 +1139,19 @@ button { font: inherit; }
   outline: 2px solid var(--owned);
   outline-offset: 2px;
 }
+.map-compass-rose:focus { outline: none; }
 .map-compass-control button { touch-action: manipulation; }
+
+@media (max-width: 720px) {
+  .map-compass-rose { pointer-events: none; cursor: pointer; }
+  .map-compass-rose circle,
+  .map-compass-rose line,
+  .map-compass-rose path,
+  .map-compass-rose text { pointer-events: visiblePainted; }
+  .map-compass-rose .compass-rose-focus-ring { pointer-events: none; }
+  .map-compass-readout { pointer-events: auto; cursor: pointer; }
+  .map-compass-close { display: none; }
+}
 
 .minor-landmark-marker:hover,
 .minor-landmark-marker:focus-visible {
@@ -1379,4 +1435,45 @@ button { font: inherit; }
   width: 10px;
   height: 10px;
   display: inline-block;
+}
+.terrain-aspect-key-caption {
+  display: block;
+  margin-top: 3px;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.terrain-aspect-key {
+  width: 96px;
+  margin: 2px auto 0;
+}
+.terrain-aspect-key svg {
+  width: 96px;
+  height: 96px;
+  display: block;
+  overflow: visible;
+}
+.terrain-aspect-sector { stroke-linejoin: round; }
+.terrain-aspect-direction {
+  font: 700 9.5px/1 system-ui, sans-serif;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+.terrain-aspect-center {
+  fill: #f5f1e8;
+  stroke: #7f877e;
+  stroke-width: 1;
+  pointer-events: none;
+}
+.terrain-aspect-key-text {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }

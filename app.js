@@ -37,7 +37,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261109-2";
+const DATA_CACHE_VERSION = "20261109-6";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -86,6 +86,8 @@ let mapCompassControl = null;
 let compassPanelOpen = false;
 let mobileHeadingSessionActive = false;
 let compassToggleDisplayedAngle = null;
+let topographicStatusNode = null;
+let contourSourceState = "pending";
 const mapPanelOpenOrder = ["legend"];
 const mobileMapPanels = window.matchMedia("(max-width: 720px)");
 let layerControlDecorationFrame = null;
@@ -180,14 +182,22 @@ const terrainLayers = Object.fromEntries(
   ["terrainSlope", "terrainAspect", "soils", "contours"].map((key) => [key, L.layerGroup()]),
 );
 const terrainLegends = new Map();
+const ASPECT_DIRECTIONS = Object.freeze([
+  ["N", 0], ["NE", 45], ["E", 90], ["SE", 135],
+  ["S", 180], ["SW", 225], ["W", 270], ["NW", 315],
+].map(([label, bearing]) => Object.freeze({ label, bearing })));
 const LAYER_DEFINITIONS = [
   ...[
     { key: "terrainSlope", label: "Slope", order: 11, sources: ["terrainSlope"] },
     { key: "terrainAspect", label: "Slope direction (aspect)", order: 12, sources: ["terrainAspect"] },
     { key: "soils", label: "Soil map units", order: 13, sources: ["soils"] },
-    { key: "contours", label: "Elevation contours", order: 31, sources: ["contours"] },
-  ].map(({ key, label, order, sources }) => ({
+    {
+      key: "contours", label: null, order: 31, sources: ["contours"],
+      baseOnly: true, optionalSources: ["contours"],
+    },
+  ].map(({ key, label, order, sources, baseOnly = false, optionalSources = [] }) => ({
     key, label, group: "80-terrain", order, sources,
+    baseOnly, optionalSources,
     audiences: ALL_AUDIENCES,
     defaultVisible: { visitor: false, owner: false },
     render: { kind: "geojson", panes: [
@@ -468,6 +478,10 @@ const LAYER_DEFINITIONS = [
   },
 ];
 
+const OPTIONAL_MANIFEST_SOURCE_KEYS = new Set(
+  LAYER_DEFINITIONS.flatMap((definition) => definition.optionalSources || []),
+);
+
 const paneDefinitions = LAYER_DEFINITIONS
   .filter((definition) => definition.audiences.includes(activeAudience))
   .flatMap((definition) => definition.render.panes)
@@ -553,18 +567,20 @@ const nysAerial = L.tileLayer(
   },
 );
 
-const topoMap = L.tileLayer(
-  "https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
-  {
-    maxZoom: DEFAULT_MAX_ZOOM,
-    maxNativeZoom: 17,
-    subdomains: "abc",
-    attribution:
-      "Map data © OpenStreetMap contributors, SRTM | Map style © OpenTopoMap (CC-BY-SA)",
-  },
-);
+const topographicGround = L.gridLayer({
+  maxZoom: DEFAULT_MAX_ZOOM,
+  updateWhenIdle: true,
+  interactive: false,
+});
+topographicGround.createTile = function createTopographicGroundTile() {
+  const tile = document.createElement("div");
+  tile.className = "topographic-ground-tile";
+  tile.setAttribute("aria-hidden", "true");
+  return tile;
+};
 
-(savedMapPreferences.baseMap === "topo" ? topoMap : nysAerial).addTo(map);
+(savedMapPreferences.baseMap === "topo" ? topographicGround : nysAerial).addTo(map);
+syncTopographicContours();
 
 const outsideMaskLayer = L.geoJSON(null, {
   pane: MAP_PANES.outsideShading,
@@ -875,7 +891,7 @@ const layerControl = L.control
   .layers(
     {
       "Satellite map": nysAerial,
-      "Topo map": topoMap,
+      "Topographic map": topographicGround,
     },
     controlOverlayEntries,
     { collapsed: true, position: "topright" },
@@ -883,6 +899,7 @@ const layerControl = L.control
   .addTo(map);
 
 decorateLayerControl(layerControl);
+installTopographicStatusControl();
 installMapLegend();
 installMapWeatherControl();
 installMapCompassControl();
@@ -902,6 +919,7 @@ if (activeAudience === "owner" && camSitesGroup && window.CamCapture) {
 }
 
 map.on("baselayerchange overlayadd overlayremove moveend", handleMapPreferenceEvent);
+map.on("baselayerchange", syncTopographicContours);
 map.on("baselayerchange", refreshTrailPresentation);
 map.on("baselayerchange overlayadd overlayremove", scheduleLayerControlDecoration);
 map.on("overlayadd overlayremove", installMapLegend);
@@ -1336,12 +1354,14 @@ let hasShownRequiredDataNotice = false;
 
 async function loadLayerRegistry() {
   let manifest;
+  let invalidOptionalSources;
   try {
     const response = await fetch(versionedDataUrl("data/manifest.json"));
     if (!response.ok) throw new Error(`network response ${response.status}`);
     manifest = await response.json();
-    validateDataManifest(manifest);
+    invalidOptionalSources = validateDataManifest(manifest);
   } catch (error) {
+    setContourSourceState("unavailable");
     console.error("Required data manifest data/manifest.json could not be loaded.", error);
     showRequiredDataNotice();
     finishInitialViewWithoutBoundary();
@@ -1355,7 +1375,12 @@ async function loadLayerRegistry() {
   const loadSourceByKey = (key) => {
     if (!sourcePromises.has(key)) {
       const source = manifestSources.get(key);
-      sourcePromises.set(key, loadManifestSource(source));
+      sourcePromises.set(
+        key,
+        invalidOptionalSources.has(key) || !source
+          ? Promise.resolve(null)
+          : loadManifestSource(source),
+      );
     }
     return sourcePromises.get(key);
   };
@@ -1368,8 +1393,9 @@ async function loadLayerRegistry() {
     try {
       definition.applyData(dataBySource);
     } catch (error) {
+      if (definition.key === "contours") setContourSourceState("unavailable");
       console.error(`Could not render registered layer ${definition.key}.`, error);
-      if (definition.sources.some((key) => manifestSources.get(key)?.required)) {
+      if (definition.sources.some((key) => manifestSourceIsRequired(manifestSources.get(key)))) {
         showRequiredDataNotice();
       }
     }
@@ -1388,27 +1414,47 @@ function validateDataManifest(manifest) {
     throw new Error("manifest must contain a sources array");
   }
   const sourceKeys = new Set();
+  const invalidOptionalSources = new Set();
   manifest.sources.forEach((source) => {
     if (!source?.key || !source.path || !source.format) {
+      if (OPTIONAL_MANIFEST_SOURCE_KEYS.has(source?.key)) {
+        invalidOptionalSources.add(source.key);
+        return;
+      }
       throw new Error("every manifest source needs key, path, and format");
     }
-    if (sourceKeys.has(source.key)) throw new Error(`duplicate manifest source ${source.key}`);
+    if (sourceKeys.has(source.key)) {
+      if (OPTIONAL_MANIFEST_SOURCE_KEYS.has(source.key)) {
+        invalidOptionalSources.add(source.key);
+        return;
+      }
+      throw new Error(`duplicate manifest source ${source.key}`);
+    }
     sourceKeys.add(source.key);
   });
   LAYER_DEFINITIONS.forEach((definition) => {
     definition.sources.forEach((key) => {
       if (!sourceKeys.has(key)) {
+        if (definition.optionalSources?.includes(key)) {
+          invalidOptionalSources.add(key);
+          return;
+        }
         throw new Error(`layer ${definition.key} references unknown source ${key}`);
       }
     });
   });
+  return invalidOptionalSources;
+}
+
+function manifestSourceIsRequired(source) {
+  return Boolean(source?.required && !OPTIONAL_MANIFEST_SOURCE_KEYS.has(source.key));
 }
 
 async function loadManifestSource(source) {
   try {
     const response = await fetch(versionedDataUrl(source.path));
     if (!response.ok) {
-      if (!source.required && response.status === 404) return null;
+      if (!manifestSourceIsRequired(source) && response.status === 404) return null;
       throw new Error(`network response ${response.status}`);
     }
     let data;
@@ -1423,10 +1469,11 @@ async function loadManifestSource(source) {
     const classification = String(error.message).startsWith("malformed")
       ? "Malformed"
       : "Unavailable";
-    const message = `${classification} ${source.required ? "required" : "optional"} map source ${source.path}.`;
-    if (source.required) console.error(message, error);
+    const required = manifestSourceIsRequired(source);
+    const message = `${classification} ${required ? "required" : "optional"} map source ${source.path}.`;
+    if (required) console.error(message, error);
     else console.warn(message, error);
-    if (source.required) showRequiredDataNotice();
+    if (required) showRequiredDataNotice();
     return null;
   }
 }
@@ -2001,10 +2048,48 @@ function createLegendLandmark({ minor = false } = {}) {
   return svg;
 }
 
+function installTopographicStatusControl() {
+  const control = L.control({ position: "topleft" });
+  control.onAdd = () => {
+    const node = L.DomUtil.create("div", "topographic-source-status");
+    node.setAttribute("role", "status");
+    node.setAttribute("aria-live", "polite");
+    node.textContent = "Contours unavailable. Check data/manifest.json or data/terrain/contours.geojson.";
+    node.hidden = true;
+    L.DomEvent.disableClickPropagation(node);
+    topographicStatusNode = node;
+    return node;
+  };
+  control.addTo(map);
+  updateTopographicStatusNotice();
+}
+
+function setContourSourceState(state) {
+  contourSourceState = state;
+  updateTopographicStatusNotice();
+}
+
+function updateTopographicStatusNotice() {
+  if (!topographicStatusNode) return;
+  topographicStatusNode.hidden = !(
+    contourSourceState === "unavailable" && map.hasLayer(topographicGround)
+  );
+}
+
+function syncTopographicContours() {
+  const shouldShowContours = map.hasLayer(topographicGround);
+  const contoursAreVisible = map.hasLayer(terrainLayers.contours);
+  if (shouldShowContours && !contoursAreVisible) map.addLayer(terrainLayers.contours);
+  if (!shouldShowContours && contoursAreVisible) map.removeLayer(terrainLayers.contours);
+  refreshContourLabels();
+  updateTopographicStatusNotice();
+}
+
 function applyTerrainData(key, data) {
   const group = terrainLayers[key];
   group.clearLayers();
   if (key === "contours") {
+    setContourSourceState("unavailable");
     contourLabelFeatures = (data?.features || []).filter((feature) => {
       const elevation = feature.properties?.elevation;
       return feature.properties?.elevation_unit === "m"
@@ -2019,7 +2104,7 @@ function applyTerrainData(key, data) {
     L.imageOverlay(versionedDataUrl(properties.image_path), properties.bounds, {
       pane: MAP_PANES[key], opacity: 0.58, interactive: false,
     }).addTo(group);
-    terrainLegends.set(key, properties.legend || []);
+    terrainLegends.set(key, Array.isArray(properties.legend) ? properties.legend : []);
   } else {
     L.geoJSON(data, {
       pane: MAP_PANES[key],
@@ -2028,6 +2113,7 @@ function applyTerrainData(key, data) {
         : { color: "#8b4b85", weight: 1.5, fillColor: "#ba88b5", fillOpacity: 0.16 },
       interactive: false,
     }).addTo(group);
+    if (key === "contours") setContourSourceState("available");
     if (key === "soils") L.geoJSON(data, {
       pane: MAP_PANES.soilInteractions,
       renderer: L.svg({ pane: MAP_PANES.soilInteractions }),
@@ -2163,6 +2249,108 @@ function contourRunPoint(run, distance) {
   return run[run.length - 1];
 }
 
+function aspectCompassPoint(bearing, radius) {
+  const radians = (bearing * Math.PI) / 180;
+  return {
+    x: 48 + Math.sin(radians) * radius,
+    y: 48 - Math.cos(radians) * radius,
+  };
+}
+
+function createAspectCompassSectors(entries) {
+  const colorsByDirection = new Map(
+    (Array.isArray(entries) ? entries : [])
+      .filter((entry) => entry && typeof entry.label === "string")
+      .map(({ label, color }) => [label, color]),
+  );
+  const format = (value) => Number(value.toFixed(2));
+  return ASPECT_DIRECTIONS.flatMap(({ label, bearing }) => {
+    const color = colorsByDirection.get(label);
+    if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return [];
+    const startBearing = bearing - 22.5;
+    const endBearing = bearing + 22.5;
+    const outerStart = aspectCompassPoint(startBearing, 43);
+    const outerEnd = aspectCompassPoint(endBearing, 43);
+    const innerStart = aspectCompassPoint(startBearing, 15);
+    const innerEnd = aspectCompassPoint(endBearing, 15);
+    const labelPoint = aspectCompassPoint(bearing, 29);
+    const path = [
+      `M ${format(outerStart.x)} ${format(outerStart.y)}`,
+      `A 43 43 0 0 1 ${format(outerEnd.x)} ${format(outerEnd.y)}`,
+      `L ${format(innerEnd.x)} ${format(innerEnd.y)}`,
+      `A 15 15 0 0 0 ${format(innerStart.x)} ${format(innerStart.y)}`,
+      "Z",
+    ].join(" ");
+    return [{
+      label,
+      color,
+      bearing,
+      startBearing,
+      endBearing,
+      wrapsNorth: startBearing < 0 || endBearing > 360,
+      labelPoint: { x: format(labelPoint.x), y: format(labelPoint.y) },
+      path,
+    }];
+  });
+}
+
+function aspectDirectionTextColor(color) {
+  const match = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!match) return "#242923";
+  const channels = [0, 2, 4].map((index) => {
+    const value = Number.parseInt(match[1].slice(index, index + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  return luminance > 0.18 ? "#242923" : "#fffdf5";
+}
+
+function appendAspectCompassKey(container, sectors) {
+  const key = L.DomUtil.create("div", "terrain-aspect-key", container);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 96 96");
+  svg.setAttribute("aria-hidden", "true");
+  sectors.forEach((sector) => {
+    const wedge = document.createElementNS(svg.namespaceURI, "path");
+    wedge.setAttribute("class", "terrain-aspect-sector");
+    wedge.setAttribute("d", sector.path);
+    wedge.setAttribute("fill", sector.color);
+    wedge.setAttribute("stroke", "#f5f1e8");
+    wedge.setAttribute("stroke-width", "1.2");
+    wedge.setAttribute("data-direction", sector.label);
+    wedge.setAttribute("data-color", sector.color);
+    wedge.setAttribute("data-bearing", String(sector.bearing));
+    wedge.setAttribute("data-start-bearing", String(sector.startBearing));
+    wedge.setAttribute("data-end-bearing", String(sector.endBearing));
+    wedge.setAttribute("data-wraps-north", String(sector.wrapsNorth));
+    const label = document.createElementNS(svg.namespaceURI, "text");
+    label.setAttribute("class", "terrain-aspect-direction");
+    label.setAttribute("x", String(sector.labelPoint.x));
+    label.setAttribute("y", String(sector.labelPoint.y));
+    label.setAttribute("fill", aspectDirectionTextColor(sector.color));
+    label.setAttribute("data-direction", sector.label);
+    label.textContent = sector.label;
+    svg.append(wedge, label);
+  });
+  const center = document.createElementNS(svg.namespaceURI, "circle");
+  center.setAttribute("class", "terrain-aspect-center");
+  center.setAttribute("cx", "48");
+  center.setAttribute("cy", "48");
+  center.setAttribute("r", "11");
+  svg.append(center);
+  key.append(svg);
+
+  const accessiblePairs = document.createElement("ul");
+  accessiblePairs.className = "terrain-aspect-key-text";
+  accessiblePairs.setAttribute("aria-label", "Downslope direction color pairs");
+  sectors.forEach(({ label, color }) => {
+    const pair = document.createElement("li");
+    pair.textContent = `${label}: ${color}`;
+    accessiblePairs.append(pair);
+  });
+  key.append(accessiblePairs);
+}
+
 function appendTerrainLegend(container) {
   for (const [key, group] of Object.entries(terrainLayers)) {
     if (key === "contours" || !map.hasLayer(group)) continue;
@@ -2170,7 +2358,17 @@ function appendTerrainLegend(container) {
     const title = L.DomUtil.create("strong", "", section);
     title.textContent = getLayerDefinition(key).label;
     const entries = terrainLegends.get(key);
-    if (entries?.length) {
+    if (key === "terrainAspect") {
+      const sectors = createAspectCompassSectors(entries || []);
+      if (sectors.length === ASPECT_DIRECTIONS.length) {
+        const caption = L.DomUtil.create("span", "terrain-aspect-key-caption", section);
+        caption.textContent = "Downslope direction";
+        appendAspectCompassKey(section, sectors);
+      } else {
+        const note = L.DomUtil.create("span", "", section);
+        note.textContent = "Aspect direction colors unavailable.";
+      }
+    } else if (entries?.length) {
       entries.forEach(({ label, color }) => {
         const row = L.DomUtil.create("span", "terrain-legend-item", section);
         const swatch = L.DomUtil.create("i", "", row);
@@ -2381,6 +2579,58 @@ function placeMapPanelControls() {
   else if (legend?.isConnected && compass?.isConnected) legend.before(compass);
 }
 
+function mapCompassRoseArtwork() {
+  const ticks = Array.from({ length: 16 }, (_, index) => {
+    const angle = index * 22.5;
+    const radians = angle * Math.PI / 180;
+    const outerRadius = 82;
+    const tickLength = angle % 90 === 0 ? 14 : angle % 45 === 0 ? 10 : 7;
+    const innerRadius = outerRadius - tickLength;
+    const coordinate = (radius, sine) => Number((100 + radius * sine).toFixed(2));
+    const x1 = coordinate(innerRadius, Math.sin(radians));
+    const y1 = coordinate(innerRadius, -Math.cos(radians));
+    const x2 = coordinate(outerRadius, Math.sin(radians));
+    const y2 = coordinate(outerRadius, -Math.cos(radians));
+    const kind = angle % 90 === 0 ? "cardinal" : angle % 45 === 0 ? "intercardinal" : "minor";
+    return `<line class="compass-rose-tick compass-rose-tick--${kind}" data-angle="${angle}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`;
+  }).join("");
+  const arms = [0, 90, 180, 270].map((angle) =>
+    `<path class="compass-rose-static-arm" data-bearing="${angle}" d="M100 34 109 92 100 86 91 92Z" transform="rotate(${angle} 100 100)"/>`,
+  ).join("");
+
+  return '<circle class="compass-rose-focus-ring" cx="100" cy="100" r="88"/><circle class="compass-rose-halo" cx="100" cy="100" r="83"/><circle class="compass-rose-ring" cx="100" cy="100" r="83"/>' +
+    `<g class="compass-rose-ticks">${ticks}</g><g class="compass-rose-arms">${arms}</g>` +
+    '<g class="compass-heading-needle" visibility="hidden"><path class="compass-heading-needle-tail" d="M100 120 103 99 100 104 97 99Z"/><path class="compass-heading-needle-forward" d="M100 43 108 100 100 92 92 100Z"/><path class="compass-heading-needle-highlight" d="M99.2 51c.45 9.5.65 18.1.75 27.8"/></g>' +
+    '<circle class="compass-rose-center" cx="100" cy="100" r="4"/><text class="compass-cardinal" x="100" y="12">N</text><text class="compass-cardinal" x="190" y="105">E</text><text class="compass-cardinal" x="100" y="198">S</text><text class="compass-cardinal" x="10" y="105">W</text>';
+}
+
+function syncCompassDismissSurface(container = mapCompassControl?.getContainer()) {
+  const rose = container?.querySelector(".map-compass-rose");
+  if (!rose) return;
+  const close = container.querySelector(".map-compass-close");
+  if (mobileMapPanels.matches) {
+    const focusNeedsMobileDismissTarget = document.activeElement === close || document.activeElement === document.body;
+    rose.setAttribute("role", "button");
+    rose.setAttribute("tabindex", "0");
+    rose.setAttribute("aria-label", "Minimize compass");
+    if (focusNeedsMobileDismissTarget && compassPanelOpen) {
+      window.requestAnimationFrame(() => {
+        if (compassPanelOpen && mobileMapPanels.matches && rose.isConnected) rose.focus();
+      });
+    }
+    return;
+  }
+  const focusNeedsDesktopCloseTarget = document.activeElement === rose || document.activeElement === document.body;
+  rose.setAttribute("role", "img");
+  rose.setAttribute("aria-label", "North-up compass rose with device heading needle");
+  rose.removeAttribute("tabindex");
+  if (focusNeedsDesktopCloseTarget && compassPanelOpen) {
+    window.requestAnimationFrame(() => {
+      if (compassPanelOpen && !mobileMapPanels.matches && close?.isConnected) close.focus();
+    });
+  }
+}
+
 function installMapCompassControl() {
   const control = L.control({ position: "bottomleft" });
   control.onAdd = () => {
@@ -2391,7 +2641,7 @@ function installMapCompassControl() {
     toggle.setAttribute("aria-controls", "map-compass-panel");
     toggle.setAttribute("aria-expanded", "false");
     toggle.title = "Compass";
-    toggle.innerHTML = '<svg class="map-compass-toggle-rose" viewBox="0 0 40 32" aria-hidden="true"><circle cx="20" cy="16" r="12"/><g class="map-compass-toggle-heading" aria-hidden="true"><path d="M20 4 23 16 20 14 17 16Z"/><path d="M20 28 17 16 20 18 23 16Z"/></g><text x="20" y="8">N</text></svg>';
+    toggle.innerHTML = '<svg class="map-compass-toggle-rose" viewBox="0 0 40 32" aria-hidden="true"><g class="map-compass-toggle-heading" aria-hidden="true"><g class="map-compass-toggle-artwork" transform="translate(0 6)"><path class="map-compass-toggle-arrow" d="M20 1.8 26.5 17.1 21.15 15.4 20 18.2 18.85 15.4 13.5 17.1Z"/><path class="map-compass-toggle-highlight" d="M19.25 5.2c.25 2.35.44 4.54.48 6.76"/><circle class="map-compass-toggle-hub" cx="20" cy="17.2" r="1.45"/></g></g></svg>';
 
     const panel = L.DomUtil.create("section", "map-compass-panel", container);
     panel.id = "map-compass-panel";
@@ -2409,12 +2659,79 @@ function installMapCompassControl() {
     rose.setAttribute("viewBox", "0 0 200 200");
     rose.setAttribute("role", "img");
     rose.setAttribute("aria-label", "North-up compass rose with device heading needle");
-    rose.innerHTML = '<circle class="compass-rose-halo" cx="100" cy="100" r="88"/><circle class="compass-rose-ring" cx="100" cy="100" r="83"/><path class="compass-rose-ticks" d="M100 17v13m58 12-9 9m34 49h-13m-12 58-9-9m-49 34v-13m-58-12 9-9m-34-49h13m12-58 9 9M141 28l-6 10M172 59l-10 6M172 141l-10-6M141 172l-6-10M59 172l6-10M28 141l10-6M28 59l10 6M59 28l6 10"/><path class="compass-rose-static-north" d="M100 36 111 100 100 91 89 100Z"/><path class="compass-rose-static-south" d="M100 164 89 100 100 109 111 100Z"/><path class="compass-rose-static-east" d="M164 100 100 111 109 100 100 89Z"/><path class="compass-rose-static-west" d="M36 100 100 89 91 100 100 111Z"/><circle class="compass-rose-center" cx="100" cy="100" r="4"/><g class="compass-heading-needle" visibility="hidden"><path d="M100 48 107 100 100 91 93 100Z"/><path class="compass-heading-needle-tail" d="M100 152 93 100 100 109 107 100Z"/></g><text class="compass-cardinal" x="100" y="12">N</text><text class="compass-cardinal" x="190" y="105">E</text><text class="compass-cardinal" x="100" y="198">S</text><text class="compass-cardinal" x="10" y="105">W</text>';
+    rose.innerHTML = mapCompassRoseArtwork();
     panel.append(rose);
     const readout = L.DomUtil.create("p", "map-compass-readout", panel);
     readout.setAttribute("role", "status");
     readout.setAttribute("aria-live", "off");
     readout.textContent = "North fixed · waiting for device heading";
+
+    let compassPointerGesture = null;
+    const compassDismissTarget = (target) => target instanceof Element
+      ? target.closest(".map-compass-rose, .map-compass-readout")
+      : null;
+    const pointerDown = (event) => {
+      if (!mobileMapPanels.matches) return;
+      const surface = compassDismissTarget(event.target);
+      if (compassPointerGesture) {
+        if (event.pointerId !== compassPointerGesture.pointerId) compassPointerGesture.multiPointer = true;
+        return;
+      }
+      if (surface) {
+        compassPointerGesture = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          moved: false,
+          multiPointer: false,
+          complete: false,
+          endedOnSurface: false,
+        };
+      }
+    };
+    const pointerMove = (event) => {
+      if (!compassPointerGesture || compassPointerGesture.pointerId !== event.pointerId) return;
+      const distance = Math.hypot(event.clientX - compassPointerGesture.startX, event.clientY - compassPointerGesture.startY);
+      if (distance > 8) compassPointerGesture.moved = true;
+    };
+    const pointerUp = (event) => {
+      const gesture = compassPointerGesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      gesture.complete = true;
+      gesture.endedOnSurface = Boolean(compassDismissTarget(event.target));
+      window.setTimeout(() => {
+        if (compassPointerGesture === gesture) compassPointerGesture = null;
+      }, 0);
+    };
+    const pointerCancel = (event) => {
+      if (!compassPointerGesture || compassPointerGesture.pointerId !== event.pointerId) return;
+      compassPointerGesture = null;
+    };
+    window.addEventListener("pointerdown", pointerDown, true);
+    window.addEventListener("pointermove", pointerMove, true);
+    window.addEventListener("pointerup", pointerUp, true);
+    window.addEventListener("pointercancel", pointerCancel, true);
+
+    const minimizeFromCompassSurface = (event) => {
+      if (!mobileMapPanels.matches) return;
+      if (event.type === "click" && event.detail !== 0) {
+        const gesture = compassPointerGesture;
+        if (!gesture?.complete || gesture.moved || gesture.multiPointer || !gesture.endedOnSurface) {
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+        compassPointerGesture = null;
+      }
+      setMapCompassOpen(false, { restoreFocus: true });
+    };
+    rose.addEventListener("click", minimizeFromCompassSurface);
+    readout.addEventListener("click", minimizeFromCompassSurface);
+    rose.addEventListener("keydown", (event) => {
+      if (!mobileMapPanels.matches || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      setMapCompassOpen(false, { restoreFocus: true });
+    });
 
     toggle.addEventListener("click", () => {
       setMapCompassOpen(!compassPanelOpen, {
@@ -2431,6 +2748,7 @@ function installMapCompassControl() {
     });
     L.DomEvent.disableClickPropagation(container);
     L.DomEvent.disableScrollPropagation(container);
+    syncCompassDismissSurface(container);
     return container;
   };
   control.addTo(map);
@@ -2477,7 +2795,12 @@ function setMapCompassOpen(open, {
     } else {
       renderFreshCompassHeadingOrWaiting();
     }
-    if (focusClose) container.querySelector(".map-compass-close")?.focus();
+    if (focusClose) {
+      const focusTarget = mobileMapPanels.matches
+        ? container.querySelector(".map-compass-rose")
+        : container.querySelector(".map-compass-close");
+      focusTarget?.focus();
+    }
     return;
   }
 
@@ -2496,6 +2819,7 @@ function activateMobileHeadingSession() {
 }
 
 function handleCompassViewportChange() {
+  syncCompassDismissSurface();
   syncHeadingLifecycle();
   updateMinimizedCompassHeading();
   if (compassPanelOpen && headingPipeline.permission !== "pending") {
@@ -3855,6 +4179,7 @@ function getAudienceLayerDefinitions({ panelOnly = false } = {}) {
 
 function initializeRegistryLayers() {
   getAudienceLayerDefinitions().forEach((definition) => {
+    if (definition.baseOnly) return;
     const layer = definition.getLayer();
     if (!layer) return;
     const savedValue = savedMapPreferences.overlays?.[definition.key];
@@ -3989,7 +4314,7 @@ function resetMapToDefaults() {
   stopGuidance();
   showMapLegend();
   map.closePopup();
-  if (map.hasLayer(topoMap)) map.removeLayer(topoMap);
+  if (map.hasLayer(topographicGround)) map.removeLayer(topographicGround);
   if (!map.hasLayer(nysAerial)) map.addLayer(nysAerial);
 
   getAudienceLayerDefinitions({ panelOnly: true }).forEach((definition) => {
@@ -4013,7 +4338,7 @@ function saveMapPreferences() {
   if (!preferencesReady) return;
 
   const preferences = {
-    baseMap: map.hasLayer(topoMap) ? "topo" : "aerial",
+    baseMap: map.hasLayer(topographicGround) ? "topo" : "aerial",
     overlays: Object.fromEntries(
       getAudienceLayerDefinitions({ panelOnly: true }).map((definition) => [
         definition.key,

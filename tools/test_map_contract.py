@@ -249,11 +249,20 @@ assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>251 m
             "function getFreshHeading()",
             "latestHeadingAt: 0",
             "function handleHeadingFreshnessTimeout()",
+            "const PREFERRED_ABSOLUTE_HEADING_WINDOW_MS = 1200;",
+            "lastNativeAbsoluteAt",
+            "function activateMobileHeadingSession()",
+            "function updateMinimizedCompassHeading(",
+            "function handleCompassViewportChange()",
+            "mobileHeadingSessionActive && mobileMapPanels.matches",
+            "awaitingFreshEventAfterResume",
             "guidanceStartPending",
             "function handleHeadingVisibilityChange()",
             "function handleHeadingScreenChange()",
         ):
             self.assertIn(contract, app)
+        self.assertNotIn("androidAbsoluteSeen", app)
+        self.assertIn("event.absolute === true", app)
         self.assertEqual(
             1,
             app.count('window.addEventListener(eventName, handleOrientationEvent, true);'),

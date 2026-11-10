@@ -992,6 +992,16 @@ button { font: inherit; }
 .map-compass-toggle-rose circle,
 .map-compass-toggle-rose path { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linejoin: round; }
 .map-compass-toggle-rose path:first-of-type { fill: #a75c3c; stroke: #f2e4c5; }
+.map-compass-toggle-heading {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  transition: transform 140ms ease-out;
+}
+.map-compass-toggle[data-heading-state="inactive"] .map-compass-toggle-heading path:first-of-type,
+.map-compass-toggle[data-heading-state="unavailable"] .map-compass-toggle-heading path:first-of-type {
+  fill: #9aa798;
+  stroke: #e0e6d9;
+}
 .map-compass-toggle-rose text { fill: currentColor; font: 700 6px system-ui, sans-serif; text-anchor: middle; }
 .map-compass-panel {
   position: absolute;
@@ -1341,6 +1351,7 @@ button { font: inherit; }
 
   .location-dot--near { animation: none; }
   .compass-heading-needle { transition: none; }
+  .map-compass-toggle-heading { transition: none; }
 }
 /* Optional terrain keys stay compact and scroll with the map legend. */
 .map-legend {

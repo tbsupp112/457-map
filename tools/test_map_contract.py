@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -278,6 +280,124 @@ assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>251 m
         self.assertIn("legend.before(weather)", app, "weather should precede legend in the control stack")
         self.assertIn("@media (prefers-reduced-motion: reduce)", styles)
         self.assertIn(".compass-heading-needle { transition: none; }", styles)
+
+    def test_compass_design_uses_even_geometry_and_mobile_only_dismissal(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "styles.css").read_text(encoding="utf-8")
+        artwork = app[app.index("function mapCompassRoseArtwork()"):app.index("function syncCompassDismissSurface(")]
+        script = artwork + '\nconsole.log(`<svg xmlns="http://www.w3.org/2000/svg">${mapCompassRoseArtwork()}</svg>`);'
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script],
+            capture_output=True, text=True, timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        svg = ET.fromstring(result.stdout)
+        namespace = {"svg": "http://www.w3.org/2000/svg"}
+        ticks = svg.findall(".//svg:line[@data-angle]", namespace)
+        self.assertEqual(16, len(ticks))
+        for index, tick in enumerate(ticks):
+            expected = index * 22.5
+            self.assertAlmostEqual(expected, float(tick.get("data-angle")), places=4)
+            dx = float(tick.get("x2")) - 100
+            dy = float(tick.get("y2")) - 100
+            actual = math.degrees(math.atan2(dx, -dy)) % 360
+            error = abs((actual - expected + 180) % 360 - 180)
+            self.assertLessEqual(error, 0.02)
+            self.assertAlmostEqual(82, math.hypot(dx, dy), places=2)
+
+        arms = svg.findall(".//svg:path[@data-bearing]", namespace)
+        self.assertEqual(["0", "90", "180", "270"], [arm.get("data-bearing") for arm in arms])
+        self.assertEqual(1, len({arm.get("d") for arm in arms}), "all cardinal arms use the same construction")
+        self.assertEqual(
+            ["rotate(0 100 100)", "rotate(90 100 100)", "rotate(180 100 100)", "rotate(270 100 100)"],
+            [arm.get("transform") for arm in arms],
+        )
+
+        self.assertIn('rose.setAttribute("role", "button");', app)
+        self.assertIn('rose.setAttribute("aria-label", "Minimize compass");', app)
+        self.assertIn('document.activeElement === close || document.activeElement === document.body;', app)
+        self.assertIn(".map-compass-rose:focus { outline: none; }", styles)
+        self.assertIn(".map-compass-rose:focus .compass-rose-focus-ring", styles)
+        self.assertIn('event.key !== "Enter" && event.key !== " "', app)
+        self.assertIn("gesture.multiPointer", app)
+        self.assertIn("distance > 8", app)
+        self.assertRegex(styles, r"\.map-compass-rose\s*\{[^}]*pointer-events:\s*none;")
+        mobile_start = styles.index("@media (max-width: 720px)")
+        mobile_end = styles.index("@media", mobile_start + 1)
+        mobile_styles = styles[mobile_start:mobile_end]
+        self.assertIn(".map-compass-rose { pointer-events: none;", mobile_styles)
+        self.assertIn(".map-compass-rose circle,", mobile_styles)
+        self.assertIn(".map-compass-rose text { pointer-events: visiblePainted; }", mobile_styles)
+        self.assertIn(".map-compass-readout { pointer-events: auto;", mobile_styles)
+        self.assertIn(".map-compass-close { display: none; }", mobile_styles)
+
+    def test_topographic_map_owns_contours_without_retired_provider_or_overlay(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        styles = (ROOT / "styles.css").read_text(encoding="utf-8")
+
+        self.assertIn('"Satellite map": nysAerial', app)
+        self.assertIn('"Topographic map": topographicGround', app)
+        self.assertIn("const topographicGround = L.gridLayer({", app)
+        self.assertIn("topographicGround.createTile = function createTopographicGroundTile()", app)
+        self.assertNotIn("opentopomap.org", app.lower())
+        self.assertNotIn("OpenTopoMap", app)
+        self.assertNotIn('label: "Elevation contours"', app)
+        self.assertIn('baseOnly: true, optionalSources: ["contours"]', app)
+        self.assertIn("if (definition.baseOnly) return;", app)
+        self.assertIn('savedMapPreferences.baseMap === "topo" ? topographicGround : nysAerial', app)
+        self.assertIn('baseMap: map.hasLayer(topographicGround) ? "topo" : "aerial"', app)
+        self.assertIn('map.on("baselayerchange", syncTopographicContours);', app)
+        self.assertIn("function syncTopographicContours()", app)
+        self.assertIn("Contours unavailable. Check data/manifest.json or data/terrain/contours.geojson.", app)
+        self.assertIn("invalidOptionalSources.has(key) || !source", app)
+        self.assertIn('const control = L.control({ position: "topleft" });', app)
+        self.assertRegex(styles, r"\.topographic-source-status\s*\{[^}]*pointer-events:\s*none;")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for aspect compass geometry checks")
+    def test_aspect_compass_uses_metadata_palette_and_eight_north_up_sectors(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        aspect = json.loads((ROOT / "data" / "terrain" / "aspect.geojson").read_text(encoding="utf-8"))
+        entries = aspect["features"][0]["properties"]["legend"]
+        source = app[
+            app.index("const ASPECT_DIRECTIONS ="):app.index("const LAYER_DEFINITIONS =")
+        ] + app[
+            app.index("function aspectCompassPoint("):app.index("function aspectDirectionTextColor(")
+        ]
+        script = source + r"""
+const entries = JSON.parse(process.argv[1]);
+console.log(JSON.stringify(createAspectCompassSectors(entries)));
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", script, json.dumps(entries)],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
+        sectors = json.loads(result.stdout)
+        self.assertEqual(
+            ["N", "NE", "E", "SE", "S", "SW", "W", "NW"],
+            [sector["label"] for sector in sectors],
+        )
+        metadata_colors = {entry["label"]: entry["color"] for entry in entries}
+        for index, sector in enumerate(sectors):
+            bearing = index * 45
+            self.assertEqual(bearing, sector["bearing"])
+            self.assertEqual(bearing - 22.5, sector["startBearing"])
+            self.assertEqual(bearing + 22.5, sector["endBearing"])
+            self.assertEqual(metadata_colors[sector["label"]], sector["color"])
+            radians = math.radians(bearing)
+            self.assertAlmostEqual(48 + math.sin(radians) * 29, sector["labelPoint"]["x"], delta=0.01)
+            self.assertAlmostEqual(48 - math.cos(radians) * 29, sector["labelPoint"]["y"], delta=0.01)
+            self.assertTrue(sector["path"])
+        self.assertTrue(sectors[0]["wrapsNorth"])
+        self.assertEqual(-22.5, sectors[0]["startBearing"])
+        self.assertEqual(22.5, sectors[0]["endBearing"])
+        self.assertIn('wedge.setAttribute("d", sector.path);', app)
+        self.assertIn('wedge.setAttribute("data-color", sector.color);', app)
+        self.assertIn('pair.textContent = `${label}: ${color}`;', app)
+        self.assertIn('accessiblePairs.className = "terrain-aspect-key-text";', app)
+        self.assertIn('caption.textContent = "Downslope direction";', app)
 
     def test_guidance_visibility_contract_has_full_turn_range(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

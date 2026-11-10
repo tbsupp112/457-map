@@ -16,6 +16,7 @@ const OFF_PROPERTY_VIBRATION_MS = 35;
 const ARRIVAL_DISTANCE_METERS = 7.62;
 const MAGNETIC_DECLINATION_DEG = -13.5;
 const GUIDANCE_HEADING_TIMEOUT_MS = 3000;
+const PREFERRED_ABSOLUTE_HEADING_WINDOW_MS = 1200;
 const GUIDANCE_UNAVAILABLE_HOLD_MS = 4000;
 const GUIDANCE_IOS_HINT_DELAY_MS = 1800;
 const GUIDANCE_SMOOTHING_TIME_MS = 250;
@@ -36,7 +37,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261109-1";
+const DATA_CACHE_VERSION = "20261109-2";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -83,6 +84,8 @@ let mapWeatherView = null;
 let weatherPanelOpen = false;
 let mapCompassControl = null;
 let compassPanelOpen = false;
+let mobileHeadingSessionActive = false;
+let compassToggleDisplayedAngle = null;
 const mapPanelOpenOrder = ["legend"];
 const mobileMapPanels = window.matchMedia("(max-width: 720px)");
 let layerControlDecorationFrame = null;
@@ -139,7 +142,7 @@ const headingPipeline = {
   orientationEventFired: false,
   sawWebkitCompassHeading: false,
   sawFiniteAlpha: false,
-  androidAbsoluteSeen: false,
+  lastNativeAbsoluteAt: 0,
   lastAndroidSensorHeading: null,
   latestHeading: null,
   latestHeadingAt: 0,
@@ -149,6 +152,7 @@ const headingPipeline = {
   lastVisualUpdateAt: 0,
   freshnessTimeout: null,
   staleNotified: false,
+  awaitingFreshEventAfterResume: false,
   pageSuspended: false,
 };
 let compassDisplayedAngle = null;
@@ -932,6 +936,7 @@ window.matchMedia("(pointer: coarse)").addEventListener("change", refreshTrailPr
 mobileMapPanels.addEventListener("change", () => {
   if (mobileMapPanels.matches) retainMostRecentMobilePanel();
   refreshContourLabels();
+  handleCompassViewportChange();
 });
 document.querySelector(".home-link").addEventListener("click", saveMapPreferences);
 window.addEventListener("pagehide", handlePageHide);
@@ -2386,7 +2391,7 @@ function installMapCompassControl() {
     toggle.setAttribute("aria-controls", "map-compass-panel");
     toggle.setAttribute("aria-expanded", "false");
     toggle.title = "Compass";
-    toggle.innerHTML = '<svg class="map-compass-toggle-rose" viewBox="0 0 40 32" aria-hidden="true"><circle cx="20" cy="16" r="12"/><path d="M20 4 23 16 20 14 17 16Z"/><path d="M20 28 17 16 20 18 23 16Z"/><text x="20" y="8">N</text></svg>';
+    toggle.innerHTML = '<svg class="map-compass-toggle-rose" viewBox="0 0 40 32" aria-hidden="true"><circle cx="20" cy="16" r="12"/><g class="map-compass-toggle-heading" aria-hidden="true"><path d="M20 4 23 16 20 14 17 16Z"/><path d="M20 28 17 16 20 18 23 16Z"/></g><text x="20" y="8">N</text></svg>';
 
     const panel = L.DomUtil.create("section", "map-compass-panel", container);
     panel.id = "map-compass-panel";
@@ -2431,6 +2436,7 @@ function installMapCompassControl() {
   control.addTo(map);
   mapCompassControl = control;
   placeMapPanelControls();
+  updateMinimizedCompassHeading(null);
 }
 
 function setMapCompassOpen(open, {
@@ -2457,6 +2463,10 @@ function setMapCompassOpen(open, {
     if (requestAccess) {
       setCompassUnavailableMessage("Requesting device heading permission…");
       requestHeadingAccess().then((allowed) => {
+        if (allowed && headingPipeline.permission === "granted") {
+          activateMobileHeadingSession();
+        }
+        updateMinimizedCompassHeading();
         if (!compassPanelOpen) return;
         if (!allowed) {
           setCompassUnavailableMessage(compassPermissionMessage());
@@ -2473,7 +2483,81 @@ function setMapCompassOpen(open, {
 
   removeMapPanelFromOrder("compass");
   syncHeadingLifecycle();
+  updateMinimizedCompassHeading();
   if (restoreFocus && toggle.isConnected) toggle.focus();
+}
+
+function activateMobileHeadingSession() {
+  if (headingPipeline.permission !== "granted") return false;
+  mobileHeadingSessionActive = true;
+  syncHeadingLifecycle();
+  updateMinimizedCompassHeading();
+  return true;
+}
+
+function handleCompassViewportChange() {
+  syncHeadingLifecycle();
+  updateMinimizedCompassHeading();
+  if (compassPanelOpen && headingPipeline.permission !== "pending") {
+    renderFreshCompassHeadingOrWaiting();
+  }
+}
+
+function minimizedCompassStatus(heading) {
+  if (headingPipeline.permission === "denied") return "Motion access denied";
+  if (headingPipeline.permission === "error") return "Motion access unavailable";
+  if (headingPipeline.permission === "unsupported") return "Live heading unavailable";
+  if (headingPipeline.permission === "pending") return "Motion access pending";
+  if (headingPipeline.awaitingFreshEventAfterResume) return "Waiting for a fresh heading";
+  if (mobileHeadingSessionActive && !mobileMapPanels.matches) return "Heading inactive at desktop size";
+  if (mobileHeadingSessionActive && mobileMapPanels.matches && heading !== null) {
+    return `Live heading ${Math.round(normalizeAngle(heading)) % 360}° ${compassCardinal(heading)}`;
+  }
+  if (
+    mobileHeadingSessionActive &&
+    mobileMapPanels.matches &&
+    headingPipeline.staleNotified &&
+    headingPipeline.latestHeadingAt > 0
+  ) {
+    return "Heading stale";
+  }
+  if (mobileHeadingSessionActive && mobileMapPanels.matches) return "No live heading";
+  if (headingPipeline.staleNotified || headingPipeline.latestHeadingAt > 0) return "Heading stale";
+  return "Heading not enabled";
+}
+
+function updateMinimizedCompassHeading(heading = getFreshHeading()) {
+  if (!mapCompassControl) return;
+  const toggle = mapCompassControl.getContainer().querySelector(".map-compass-toggle");
+  const needle = toggle?.querySelector(".map-compass-toggle-heading");
+  if (!toggle || !needle) return;
+
+  const isLive = Boolean(
+    mobileHeadingSessionActive &&
+    mobileMapPanels.matches &&
+    headingPipeline.permission === "granted" &&
+    Number.isFinite(heading),
+  );
+  if (isLive) {
+    const normalized = normalizeAngle(heading);
+    const displayAngle = compassToggleDisplayedAngle === null
+      ? normalized
+      : compassToggleDisplayedAngle + normalizeBearingError(normalized - normalizeAngle(compassToggleDisplayedAngle));
+    compassToggleDisplayedAngle = displayAngle;
+    needle.style.transform = `rotate(${displayAngle}deg)`;
+  } else {
+    compassToggleDisplayedAngle = null;
+    needle.style.transform = "rotate(0deg)";
+  }
+
+  const status = minimizedCompassStatus(isLive ? heading : null);
+  toggle.dataset.headingState = isLive
+    ? "live"
+    : mobileHeadingSessionActive && !mobileMapPanels.matches
+      ? "inactive"
+      : "unavailable";
+  toggle.setAttribute("aria-label", `Open compass — ${status}`);
+  toggle.title = `Compass · ${status}`;
 }
 
 function setCompassUnavailableMessage(message) {
@@ -2485,6 +2569,7 @@ function setCompassUnavailableMessage(message) {
   compassDisplayedAngle = null;
   readout.dataset.live = "false";
   readout.textContent = message;
+  updateMinimizedCompassHeading();
 }
 
 function renderFreshCompassHeadingOrWaiting() {
@@ -2519,6 +2604,7 @@ function renderCompassHeading(heading) {
   readout.dataset.live = "true";
   const degrees = Math.round(normalized) % 360;
   readout.textContent = `${degrees}° · ${compassCardinal(normalized)}`;
+  updateMinimizedCompassHeading(normalized);
 }
 
 function compassCardinal(heading) {
@@ -3102,10 +3188,12 @@ async function startGuidance(targetId) {
   if (requestGeneration !== guidanceStartGeneration || guidanceTracker.target !== target) return;
   guidanceStartPending = false;
   if (!accessAllowed) {
+    updateMinimizedCompassHeading();
     declineCompassGuidance();
     return;
   }
 
+  activateMobileHeadingSession();
   guidanceTracker.isActive = true;
   guidanceTracker.isWaitingForLocation = !latestPosition;
   guidanceTracker.headingError = null;
@@ -3198,7 +3286,11 @@ function requestHeadingAccess() {
 }
 
 function hasActiveHeadingConsumer() {
-  return compassPanelOpen || guidanceTracker.isActive;
+  return (
+    compassPanelOpen ||
+    guidanceTracker.isActive ||
+    (mobileHeadingSessionActive && mobileMapPanels.matches && headingPipeline.permission === "granted")
+  );
 }
 
 function syncHeadingLifecycle({ restartTimeout = false } = {}) {
@@ -3287,15 +3379,20 @@ function handleOrientationEvent(event) {
   if (Number.isFinite(event.webkitCompassHeading)) {
     heading = event.webkitCompassHeading;
   } else if (event.type === "deviceorientationabsolute" && Number.isFinite(event.alpha)) {
-    headingPipeline.androidAbsoluteSeen = true;
+    headingPipeline.lastNativeAbsoluteAt = performance.now();
     heading = 360 - event.alpha;
     isAndroidHeading = true;
   } else if (
     event.type === "deviceorientation" &&
     event.absolute === true &&
-    !headingPipeline.androidAbsoluteSeen &&
     Number.isFinite(event.alpha)
   ) {
+    // Keep native absolute readings preferred for 1.2 s, then accept only an
+    // absolute-flagged fallback while that preferred stream is quiet.
+    const nativeAbsoluteIsRecent =
+      headingPipeline.lastNativeAbsoluteAt > 0 &&
+      performance.now() - headingPipeline.lastNativeAbsoluteAt <= PREFERRED_ABSOLUTE_HEADING_WINDOW_MS;
+    if (nativeAbsoluteIsRecent) return;
     heading = 360 - event.alpha;
     isAndroidHeading = true;
   }
@@ -3325,6 +3422,7 @@ function handleHeadingScreenChange() {
 }
 
 function getFreshHeading() {
+  if (headingPipeline.awaitingFreshEventAfterResume) return null;
   if (!Number.isFinite(headingPipeline.latestHeadingAt) || headingPipeline.latestHeadingAt <= 0) return null;
   if (performance.now() - headingPipeline.latestHeadingAt > GUIDANCE_HEADING_TIMEOUT_MS) return null;
   return Number.isFinite(headingPipeline.latestHeading) ? headingPipeline.latestHeading : null;
@@ -3348,14 +3446,20 @@ function handleHeadingFreshnessTimeout() {
       ? "North fixed · heading stale"
       : "North fixed · no live heading");
   }
+  updateMinimizedCompassHeading(null);
   if (guidanceTracker.isActive) handleGuidanceHeadingTimeout();
 }
 
 function handleHeadingVisibilityChange() {
   if (document.visibilityState === "hidden") {
+    headingPipeline.awaitingFreshEventAfterResume = true;
     window.clearTimeout(headingPipeline.freshnessTimeout);
     headingPipeline.freshnessTimeout = null;
     detachOrientationListeners();
+    if (compassPanelOpen) {
+      setCompassUnavailableMessage("North fixed · waiting for a fresh heading");
+    }
+    updateMinimizedCompassHeading(null);
     return;
   }
   if (headingPipeline.pageSuspended) return;
@@ -3372,6 +3476,7 @@ function handleHeadingVisibilityChange() {
   if (compassPanelOpen && headingPipeline.permission !== "pending") {
     renderFreshCompassHeadingOrWaiting();
   }
+  updateMinimizedCompassHeading();
 }
 
 function smoothGuidanceHeading(heading) {
@@ -3394,6 +3499,7 @@ function smoothGuidanceHeading(heading) {
   headingPipeline.lastHeadingAt = now;
   headingPipeline.latestHeadingAt = now;
   headingPipeline.staleNotified = false;
+  headingPipeline.awaitingFreshEventAfterResume = false;
   const filteredHeading = normalizeAngle(
     (Math.atan2(headingPipeline.smoothedSin, headingPipeline.smoothedCos) * 180) / Math.PI,
   );
@@ -3403,6 +3509,7 @@ function smoothGuidanceHeading(heading) {
   syncHeadingLifecycle();
 
   if (compassPanelOpen) renderCompassHeading(filteredHeading);
+  updateMinimizedCompassHeading(filteredHeading);
   const recoveringGuidance = Boolean(
     guidanceTracker.unavailableEndTimer || guidanceTracker.unavailableHintTimer,
   );
@@ -3952,9 +4059,11 @@ function handleMapViewChangeStart() {
 function handlePageHide() {
   saveMapPreferences();
   headingPipeline.pageSuspended = true;
+  headingPipeline.awaitingFreshEventAfterResume = true;
   window.clearTimeout(headingPipeline.freshnessTimeout);
   headingPipeline.freshnessTimeout = null;
   detachOrientationListeners();
+  updateMinimizedCompassHeading(null);
   guidanceStartGeneration += 1;
   guidanceStartPending = false;
   if (watchId !== null && navigator.geolocation) {
@@ -4000,6 +4109,7 @@ function handlePageShow(event) {
   }
   syncHeadingLifecycle();
   if (compassPanelOpen) renderFreshCompassHeadingOrWaiting();
+  updateMinimizedCompassHeading();
 }
 
 function installMobileDoubleTapZoom() {

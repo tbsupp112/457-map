@@ -326,10 +326,62 @@ assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>251 m
         mobile_end = styles.index("@media", mobile_start + 1)
         mobile_styles = styles[mobile_start:mobile_end]
         self.assertIn(".map-compass-rose { pointer-events: none;", mobile_styles)
-        self.assertIn(".map-compass-rose circle,", mobile_styles)
-        self.assertIn(".map-compass-rose text { pointer-events: visiblePainted; }", mobile_styles)
+        self.assertIn('.map-compass-rose * { pointer-events: none; }', mobile_styles)
+        self.assertIn('.compass-dismiss-disk { fill: transparent; pointer-events: all; }', mobile_styles)
         self.assertIn(".map-compass-readout { pointer-events: auto;", mobile_styles)
         self.assertIn(".map-compass-close { display: none; }", mobile_styles)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for gesture runtime checks")
+    def test_compass_release_and_delayed_click_reject_invalid_gestures(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index("    let compassPointerGesture =")
+        gesture = app[start:app.index('    toggle.addEventListener("click",', start)]
+        setup = r"""
+const assert = require('node:assert/strict');
+const handlers = new Map();
+class Element {
+  constructor(surface, box) { this.surface = surface; this.box = box; this.handlers = {}; }
+  closest() { return this.surface ? this : null; }
+  getBoundingClientRect() { return this.box; }
+  addEventListener(type, handler) { this.handlers[type] = handler; }
+}
+const rose = new Element(true, {left:0,top:0,width:200,height:200});
+const readout = new Element(true, {left:0,top:210,right:200,bottom:240});
+const outside = new Element(false, {});
+const mobileMapPanels = {matches:true};
+let compassPanelOpen = true, closes = 0;
+function setMapCompassOpen(open) { compassPanelOpen = open; if (!open) closes++; }
+const window = {addEventListener(type, handler) { handlers.set(type, handler); }};
+function event(pointerId=1, x=100, y=100, target=rose) {
+  return {pointerId,clientX:x,clientY:y,target,detail:1,type:'click',
+    preventDefault(){this.prevented=true;},stopPropagation(){},stopImmediatePropagation(){this.stopped=true;}};
+}
+function emit(type, e) { handlers.get(type)(e); }
+"""
+        checks = r"""
+emit('pointerdown', event()); emit('pointerup', event());
+assert.equal(closes, 1); assert.equal(compassPanelOpen, false);
+setTimeout(() => {
+  const click = event(1,100,100,outside);
+  emit('click', click);
+  assert.ok(click.prevented && click.stopped, 'later compatibility click must not reach map');
+  assert.equal(closes,1);
+  for (const kind of ['drag','multi','cancel','outside']) {
+    compassPanelOpen=true; const before=closes;
+    emit('pointerdown',event());
+    if(kind==='drag') emit('pointermove',event(1,125,100));
+    if(kind==='multi') { emit('pointerdown',event(2)); emit('pointerup',event(2)); }
+    emit(kind==='cancel'?'pointercancel':'pointerup',event(1,kind==='outside'?198:100,100));
+    assert.equal(closes,before,kind);
+    assert.ok(compassPanelOpen,kind);
+  }
+  emit('pointerdown',event(3,100,220,readout)); emit('pointerup',event(3,100,220,readout));
+  assert.equal(closes,2,'readout release');
+},20);
+"""
+        result = subprocess.run([shutil.which("node"), "-e", setup + gesture + checks],
+                                capture_output=True, text=True, timeout=20)
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     def test_topographic_map_owns_contours_without_retired_provider_or_overlay(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

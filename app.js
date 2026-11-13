@@ -37,7 +37,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261109-6";
+const DATA_CACHE_VERSION = "20261113-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -2659,7 +2659,8 @@ function installMapCompassControl() {
     rose.setAttribute("viewBox", "0 0 200 200");
     rose.setAttribute("role", "img");
     rose.setAttribute("aria-label", "North-up compass rose with device heading needle");
-    rose.innerHTML = mapCompassRoseArtwork();
+    // A real SVG disk accepts empty interior taps without shielding the corners.
+    rose.innerHTML = '<circle class="compass-dismiss-disk" cx="100" cy="100" r="90"/>' + mapCompassRoseArtwork();
     panel.append(rose);
     const readout = L.DomUtil.create("p", "map-compass-readout", panel);
     readout.setAttribute("role", "status");
@@ -2667,25 +2668,52 @@ function installMapCompassControl() {
     readout.textContent = "North fixed · waiting for device heading";
 
     let compassPointerGesture = null;
+    let suppressedCompassClick = null;
+    const compassPointers = new Set();
     const compassDismissTarget = (target) => target instanceof Element
       ? target.closest(".map-compass-rose, .map-compass-readout")
       : null;
+    const pointOnCompassSurface = (x, y) => {
+      const box = rose.getBoundingClientRect();
+      const inDisk = box.width > 0 && box.height > 0 && Math.hypot(
+        (x - box.left) / box.width * 200 - 100,
+        (y - box.top) / box.height * 200 - 100,
+      ) <= 90;
+      const textBox = readout.getBoundingClientRect();
+      return inDisk || (x >= textBox.left && x <= textBox.right && y >= textBox.top && y <= textBox.bottom);
+    };
+    const suppressFollowupClick = (event) => {
+      suppressedCompassClick = { x: event.clientX, y: event.clientY, until: performance.now() + 800 };
+    };
+    // The compatibility click can arrive in a later timer task, after the panel
+    // has disappeared. Consume it before it reaches the toggle or map beneath.
+    window.addEventListener("click", (event) => {
+      const pending = suppressedCompassClick;
+      if (!pending || event.detail === 0) return;
+      if (performance.now() > pending.until) {
+        suppressedCompassClick = null;
+        return;
+      }
+      if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) > 24) return;
+      suppressedCompassClick = null;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
     const pointerDown = (event) => {
+      compassPointers.add(event.pointerId);
       if (!mobileMapPanels.matches) return;
       const surface = compassDismissTarget(event.target);
       if (compassPointerGesture) {
         if (event.pointerId !== compassPointerGesture.pointerId) compassPointerGesture.multiPointer = true;
         return;
       }
-      if (surface) {
+      if (compassPanelOpen && surface && pointOnCompassSurface(event.clientX, event.clientY)) {
         compassPointerGesture = {
           pointerId: event.pointerId,
           startX: event.clientX,
           startY: event.clientY,
           moved: false,
-          multiPointer: false,
-          complete: false,
-          endedOnSurface: false,
+          multiPointer: compassPointers.size > 1,
         };
       }
     };
@@ -2695,16 +2723,23 @@ function installMapCompassControl() {
       if (distance > 8) compassPointerGesture.moved = true;
     };
     const pointerUp = (event) => {
+      compassPointers.delete(event.pointerId);
       const gesture = compassPointerGesture;
       if (!gesture || gesture.pointerId !== event.pointerId) return;
-      gesture.complete = true;
-      gesture.endedOnSurface = Boolean(compassDismissTarget(event.target));
-      window.setTimeout(() => {
-        if (compassPointerGesture === gesture) compassPointerGesture = null;
-      }, 0);
+      compassPointerGesture = null;
+      suppressFollowupClick(event);
+      event.preventDefault();
+      event.stopPropagation();
+      const distance = Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY);
+      if (compassPanelOpen && mobileMapPanels.matches && !gesture.moved && distance <= 8 &&
+          !gesture.multiPointer && pointOnCompassSurface(event.clientX, event.clientY)) {
+        setMapCompassOpen(false, { restoreFocus: true });
+      }
     };
     const pointerCancel = (event) => {
+      compassPointers.delete(event.pointerId);
       if (!compassPointerGesture || compassPointerGesture.pointerId !== event.pointerId) return;
+      suppressFollowupClick(event);
       compassPointerGesture = null;
     };
     window.addEventListener("pointerdown", pointerDown, true);
@@ -2715,13 +2750,9 @@ function installMapCompassControl() {
     const minimizeFromCompassSurface = (event) => {
       if (!mobileMapPanels.matches) return;
       if (event.type === "click" && event.detail !== 0) {
-        const gesture = compassPointerGesture;
-        if (!gesture?.complete || gesture.moved || gesture.multiPointer || !gesture.endedOnSurface) {
-          event.preventDefault();
-          event.stopPropagation();
-          return;
-        }
-        compassPointerGesture = null;
+        event.preventDefault();
+        event.stopPropagation();
+        return;
       }
       setMapCompassOpen(false, { restoreFocus: true });
     };
@@ -3833,7 +3864,7 @@ function smoothGuidanceHeading(heading) {
   syncHeadingLifecycle();
 
   if (compassPanelOpen) renderCompassHeading(filteredHeading);
-  updateMinimizedCompassHeading(filteredHeading);
+  else updateMinimizedCompassHeading(filteredHeading);
   const recoveringGuidance = Boolean(
     guidanceTracker.unavailableEndTimer || guidanceTracker.unavailableHintTimer,
   );

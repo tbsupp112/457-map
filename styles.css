@@ -1011,7 +1011,7 @@ button { font: inherit; }
 .map-compass-toggle-heading {
   transform-box: view-box;
   transform-origin: 50% 50%;
-  transition: transform 140ms ease-out;
+  transition: none;
 }
 .map-compass-toggle-arrow { fill: #a75c3c; stroke: #f2e4c5; stroke-width: 1.5; stroke-linejoin: round; }
 .map-compass-toggle-highlight { fill: none; stroke: #f2e4c5; stroke-width: 0.75; stroke-linecap: round; opacity: 0.88; }
@@ -1053,6 +1053,7 @@ button { font: inherit; }
   pointer-events: none;
 }
 .map-compass-rose:focus { outline: none; }
+.compass-dismiss-disk { fill: transparent; pointer-events: none; }
 .map-compass-rose:focus .compass-rose-focus-ring { opacity: 0.96; }
 .compass-rose-halo { fill: none; stroke: rgba(18, 25, 21, 0.78); stroke-width: 3.5; }
 .compass-rose-ring { fill: none; stroke: #eee2c5; stroke-width: 1.5; }
@@ -1081,7 +1082,7 @@ button { font: inherit; }
 .compass-heading-needle {
   transform-box: view-box;
   transform-origin: 50% 50%;
-  transition: transform 140ms ease-out;
+  transition: none;
 }
 .compass-heading-needle-forward {
   fill: #a34f35;
@@ -1143,13 +1144,11 @@ button { font: inherit; }
 .map-compass-control button { touch-action: manipulation; }
 
 @media (max-width: 720px) {
-  .map-compass-rose { pointer-events: none; cursor: pointer; }
-  .map-compass-rose circle,
-  .map-compass-rose line,
-  .map-compass-rose path,
-  .map-compass-rose text { pointer-events: visiblePainted; }
+  .map-compass-rose { pointer-events: none; cursor: pointer; touch-action: none; }
+  .map-compass-rose * { pointer-events: none; }
+  .map-compass-rose .compass-dismiss-disk { fill: transparent; pointer-events: all; }
   .map-compass-rose .compass-rose-focus-ring { pointer-events: none; }
-  .map-compass-readout { pointer-events: auto; cursor: pointer; }
+  .map-compass-readout { pointer-events: auto; cursor: pointer; touch-action: manipulation; }
   .map-compass-close { display: none; }
 }
 

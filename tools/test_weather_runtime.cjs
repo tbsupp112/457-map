@@ -7,7 +7,9 @@ const path = require("node:path");
 const vm = require("node:vm");
 const source = fs.readFileSync(path.join(__dirname, "..", "weather.js"), "utf8");
 const HOUR = 3600000;
+const TEN_MINUTES = 600000;
 const START = Date.parse("2026-10-27T18:00:00Z");
+const CUTOFF = Date.parse("2026-12-14T05:00:00Z");
 
 class Element {
   constructor(tag = "div") {
@@ -26,8 +28,8 @@ class Element {
 
 const classIs = (name) => (element) => (element.className || element.attributes.class || "").split(" ").includes(name);
 
-function harness(saved = {}) {
-  let now = START;
+function harness(saved = {}, options = {}) {
+  let now = options.start ?? START;
   let serial = 0;
   let mode = "ok";
   const timers = new Map();
@@ -61,13 +63,22 @@ function harness(saved = {}) {
     probabilityOfPrecipitation: { value: 0, unitCode: "wmoUnit:percent" },
   }];
   const window = {
-    localStorage: { getItem: (key) => storage.get(key), setItem: (key, value) => storage.set(key, value) },
+    localStorage: {
+      getItem: (key) => { if (options.storageDenied) throw new Error("storage denied"); return storage.get(key); },
+      setItem: (key, value) => { if (options.storageDenied) throw new Error("storage denied"); storage.set(key, value); },
+    },
     setTimeout: (fn, delay) => { const id = ++serial; timers.set(id, { fn, at: now + delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
   };
   async function fetch(url) {
     calls.push(url);
     if (mode === "fail") throw new Error("offline");
+    if (mode === "retry-after-seconds" && url.includes("observations/latest")) {
+      return { ok: false, status: 503, headers: { get: (name) => name.toLowerCase() === "retry-after" ? "1200" : "" } };
+    }
+    if (mode === "retry-after-date" && url.includes("observations/latest")) {
+      return { ok: false, status: 429, headers: { get: (name) => name.toLowerCase() === "retry-after" ? new Date(now + 1200000).toUTCString() : "" } };
+    }
     let data;
     if (mode === "malformed") data = null;
     else if (url.includes("/points/")) data = { properties: { forecastHourly: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", timeZone: "America/New_York" } };
@@ -187,6 +198,142 @@ async function main() {
   a.destroy();
   b.destroy();
 
+  const resumed = harness({
+    attemptedAt: START,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: START + HOUR },
+    observation: { ...h.observation },
+  });
+  const resumedRoot = new Element();
+  const resumedView = resumed.api.createView(resumedRoot);
+  resumedView.setVisible(true);
+  await resumed.tick();
+  assert.equal(resumed.calls.length, 0, "opening before the due time uses the retained reading");
+  assert.match(resumedRoot.text(), /50°F/);
+  resumed.document.hidden = true;
+  resumed.visibility();
+  resumed.time(START + TEN_MINUTES + 1);
+  await resumed.tick();
+  assert.equal(resumed.calls.length, 0, "a hidden document makes no due weather request");
+  resumed.document.hidden = false;
+  resumed.visibility();
+  await resumed.tick();
+  assert.equal(resumed.calls.length, 2, "returning to a visible tab refreshes once when due");
+  assert.match(resumedRoot.text(), /50°F/, "the retained reading remains visible after refresh");
+  resumed.visibility();
+  await resumed.tick();
+  assert.equal(resumed.calls.length, 2, "repeated visibility signals do not duplicate a completed refresh");
+  resumedView.destroy();
+
+  const unchanged = harness({
+    attemptedAt: START - TEN_MINUTES,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: START + HOUR },
+    observation: { ...h.observation },
+  });
+  const unchangedRoot = new Element();
+  const unchangedView = unchanged.api.createView(unchangedRoot);
+  unchangedView.setVisible(true);
+  await unchanged.tick();
+  const refreshedObservation = JSON.parse(unchanged.storage.get("457-property-weather-v1")).observation;
+  assert.equal(refreshedObservation.timestamp, h.observation.timestamp, "an unchanged latest observation keeps the provider timestamp");
+  assert.match(unchangedRoot.text(), new RegExp(unchanged.api.localTime(h.observation.timestamp, "America/New_York")));
+  unchangedView.destroy();
+
+  // The newer cadence applies to old hourly timestamps as soon as ten minutes is due.
+  const beforeCutoff = harness({
+    attemptedAt: CUTOFF - TEN_MINUTES - 1,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: CUTOFF + HOUR },
+  }, { start: CUTOFF - 1 });
+  const beforeRoot = new Element();
+  const beforeView = beforeCutoff.api.createView(beforeRoot);
+  beforeView.setVisible(true);
+  await beforeCutoff.tick();
+  assert.equal(beforeCutoff.calls.length, 2, "old saved hourly attempt becomes due under the temporary ten-minute interval");
+  assert.ok(beforeCutoff.calls.every((url) => !/[?&](t|time|cache|v)=/.test(url)), "weather requests do not add cache-busting parameters");
+  beforeView.destroy();
+
+  const atCutoff = harness({
+    attemptedAt: CUTOFF - TEN_MINUTES - 1,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: CUTOFF + HOUR },
+  }, { start: CUTOFF });
+  const cutoffRoot = new Element();
+  const cutoffView = atCutoff.api.createView(cutoffRoot);
+  cutoffView.setVisible(true);
+  await atCutoff.tick();
+  assert.equal(atCutoff.calls.length, 0, "at the cutoff the hourly cadence applies");
+  cutoffView.destroy();
+
+  const cutoffClock = harness({
+    attemptedAt: CUTOFF - 5 * 60000,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: CUTOFF + HOUR },
+  }, { start: CUTOFF - 5 * 60000 });
+  const cutoffClockRoot = new Element();
+  const cutoffClockView = cutoffClock.api.createView(cutoffClockRoot);
+  cutoffClockView.setVisible(true);
+  await cutoffClock.tick();
+  assert.equal(cutoffClock.calls.length, 0);
+  cutoffClock.time(CUTOFF);
+  await cutoffClock.tick();
+  assert.equal(cutoffClock.calls.length, 0, "cutoff timer switches cadence without an extra early request");
+  const nextHourly = CUTOFF + HOUR - 5 * 60000;
+  assert.ok([...cutoffClock.timers.values()].some((timer) => timer.at === nextHourly), "open view schedules the next hourly attempt after cutoff");
+  cutoffClock.time(nextHourly);
+  await cutoffClock.tick();
+  assert.equal(cutoffClock.calls.length, 2, "hourly refresh resumes automatically without reload");
+  cutoffClockView.destroy();
+
+  const failureBackoff = harness({
+    attemptedAt: START - TEN_MINUTES,
+    metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: START + HOUR },
+    observation: { ...h.observation },
+  });
+  const failureRoot = new Element();
+  const failureView = failureBackoff.api.createView(failureRoot);
+  failureBackoff.mode("fail");
+  failureView.setVisible(true);
+  await failureBackoff.tick();
+  assert.equal(failureBackoff.calls.length, 2);
+  assert.match(failureRoot.text(), /50°F/);
+  assert.match(failureRoot.text(), /Refresh unavailable/);
+  failureBackoff.time(START + TEN_MINUTES - 1);
+  await failureBackoff.tick();
+  assert.equal(failureBackoff.calls.length, 2, "ordinary network failure waits for the full ten-minute interval");
+  failureBackoff.time(START + TEN_MINUTES);
+  await failureBackoff.tick();
+  assert.equal(failureBackoff.calls.length, 4, "ordinary network failure retries when its normal deadline arrives");
+  failureView.destroy();
+
+  for (const modeName of ["retry-after-seconds", "retry-after-date"]) {
+    const retry = harness({
+      attemptedAt: START - TEN_MINUTES,
+      metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: START + HOUR },
+      observation: { ...h.observation },
+    });
+    const retryRoot = new Element();
+    const retryView = retry.api.createView(retryRoot);
+    retry.mode(modeName);
+    retryView.setVisible(true);
+    await retry.tick();
+    const retainedTime = JSON.parse(retry.storage.get("457-property-weather-v1")).observation.timestamp;
+    assert.equal(retainedTime, h.observation.timestamp, "HTTP failure retains the original observation");
+    retry.time(START + TEN_MINUTES);
+    await retry.tick();
+    assert.equal(retry.calls.length, 2, `${modeName} is not retried at the normal ten-minute deadline`);
+    retry.mode("ok");
+    retry.time(START + 20 * 60000);
+    await retry.tick();
+    assert.equal(retry.calls.length, 4, `${modeName} retries when Retry-After is due`);
+    retryView.destroy();
+  }
+
+  const deniedStorage = harness({}, { storageDenied: true });
+  const deniedRoot = new Element();
+  const deniedView = deniedStorage.api.createView(deniedRoot);
+  deniedView.setVisible(true);
+  await deniedStorage.tick();
+  assert.match(deniedRoot.text(), /50°F/, "weather remains visible when storage access is denied");
+  assert.equal(deniedStorage.calls.length, 3);
+  deniedView.destroy();
+
   const aging = harness({
     attemptedAt: START,
     metadata: { timeZone: "America/New_York" },
@@ -203,19 +350,18 @@ async function main() {
   agingView.destroy();
 
   const forecastClock = harness({
-    attemptedAt: START + HOUR / 3,
+    attemptedAt: CUTOFF + HOUR / 3 - TEN_MINUTES,
     periods: [
-      { startTime: new Date(START + 2 * HOUR).toISOString(), endTime: new Date(START + 3 * HOUR).toISOString(), temperature: 50, temperatureUnit: "F" },
-      { startTime: new Date(START + 3 * HOUR).toISOString(), endTime: new Date(START + 4 * HOUR).toISOString(), temperature: 60, temperatureUnit: "F" },
+      { startTime: new Date(CUTOFF + HOUR / 3 + HOUR).toISOString(), endTime: new Date(CUTOFF + HOUR / 3 + 2.5 * HOUR).toISOString(), temperature: 50, temperatureUnit: "F" },
+      { startTime: new Date(CUTOFF + HOUR / 3 + 2.5 * HOUR).toISOString(), endTime: new Date(CUTOFF + HOUR / 3 + 3.5 * HOUR).toISOString(), temperature: 60, temperatureUnit: "F" },
     ],
-  });
-  forecastClock.time(START + HOUR / 3);
+  }, { start: CUTOFF + HOUR / 3 });
   const forecastRoot = new Element();
   const forecastView = forecastClock.api.createView(forecastRoot);
   forecastView.setVisible(true);
   await forecastClock.tick();
   assert.match(forecastRoot.text(), /50°F/);
-  forecastClock.time(START + HOUR);
+  forecastClock.time(CUTOFF + HOUR / 3 + 31 * 60000);
   await forecastClock.tick();
   assert.match(forecastRoot.text(), /60°F/);
   assert.doesNotMatch(forecastRoot.text(), /50°F/);

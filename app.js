@@ -37,7 +37,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261113-1";
+const DATA_CACHE_VERSION = "20261113-3";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
@@ -496,6 +496,10 @@ paneDefinitions.forEach((pane, index) => {
   map.createPane(pane.name);
   map.getPane(pane.name).style.zIndex = 401 + index;
 });
+const TOPOGRAPHIC_PROPERTY_GROUND_PANE = "topographic-property-ground-pane";
+map.createPane(TOPOGRAPHIC_PROPERTY_GROUND_PANE);
+map.getPane(TOPOGRAPHIC_PROPERTY_GROUND_PANE).style.zIndex = 400;
+map.getPane(TOPOGRAPHIC_PROPERTY_GROUND_PANE).style.pointerEvents = "none";
 map.getPane(MAP_PANES.contourLabels).style.pointerEvents = "none";
 const contourLabelGroup = L.layerGroup().addTo(map);
 let contourLabelFeatures = [];
@@ -567,17 +571,54 @@ const nysAerial = L.tileLayer(
   },
 );
 
-const topographicGround = L.gridLayer({
+const topographicFallbackGround = L.gridLayer({
   maxZoom: DEFAULT_MAX_ZOOM,
   updateWhenIdle: true,
   interactive: false,
+  zIndex: 0,
 });
-topographicGround.createTile = function createTopographicGroundTile() {
+topographicFallbackGround.createTile = function createTopographicFallbackTile() {
   const tile = document.createElement("div");
   tile.className = "topographic-ground-tile";
   tile.setAttribute("aria-hidden", "true");
   return tile;
 };
+
+// The property-area tiles were tested through z16. Keep finer zooms at the
+// nearest native tile instead of requesting empty higher-level service tiles.
+const topographicTiles = L.tileLayer(
+  "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+  {
+    tileSize: 256,
+    maxNativeZoom: 16,
+    maxZoom: DEFAULT_MAX_ZOOM,
+    keepBuffer: 0,
+    updateWhenIdle: true,
+    updateWhenZooming: false,
+    opacity: 0,
+    zIndex: 1,
+    errorTileUrl: "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=",
+    attribution: 'Map data © <a href="https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer">USGS The National Map</a>. External labels use source units; property contours are metres.',
+  },
+);
+const topographicPropertyGroundRenderer = L.svg({
+  pane: TOPOGRAPHIC_PROPERTY_GROUND_PANE,
+});
+const topographicPropertyGround = L.polygon([], {
+  pane: TOPOGRAPHIC_PROPERTY_GROUND_PANE,
+  renderer: topographicPropertyGroundRenderer,
+  stroke: false,
+  fill: true,
+  fillColor: "#f2f0e9",
+  fillOpacity: 1,
+  fillRule: "nonzero",
+  interactive: false,
+});
+const topographicGround = L.layerGroup([
+  topographicFallbackGround,
+  topographicTiles,
+  topographicPropertyGround,
+]);
 
 (savedMapPreferences.baseMap === "topo" ? topographicGround : nysAerial).addTo(map);
 syncTopographicContours();
@@ -1536,12 +1577,81 @@ function applyCorridorData({ corridor }) {
   corridorInteractionLayer.addData(corridor);
 }
 
+function topographicParcelMaskLatLngs(boundaries) {
+  const features = Array.isArray(boundaries?.features) ? boundaries.features : [];
+  const requiredRoles = new Set(["main-parcel", "sliver"]);
+  const foundRoles = new Set();
+  const polygons = [];
+
+  for (const feature of features) {
+    const role = feature?.properties?.role;
+    if (!requiredRoles.has(role)) continue;
+    foundRoles.add(role);
+    const geometry = feature.geometry;
+    const sourcePolygons = geometry?.type === "Polygon"
+      ? [geometry.coordinates]
+      : geometry?.type === "MultiPolygon"
+        ? geometry.coordinates
+        : null;
+    if (!Array.isArray(sourcePolygons) || !sourcePolygons.length) return [];
+
+    for (const sourceRings of sourcePolygons) {
+      if (!Array.isArray(sourceRings) || !sourceRings.length) return [];
+      const rings = [];
+      for (const [ringIndex, sourceRing] of sourceRings.entries()) {
+        if (!Array.isArray(sourceRing) || sourceRing.length < 4 || sourceRing.some((point) =>
+          !Array.isArray(point) || point.length < 2
+          || !Number.isFinite(point[0]) || !Number.isFinite(point[1])
+          || Math.abs(point[1]) > 90 || Math.abs(point[0]) > 180,
+        )) return [];
+
+        const coordinates = sourceRing.map(([longitude, latitude]) => [longitude, latitude]);
+        const first = coordinates[0];
+        const last = coordinates[coordinates.length - 1];
+        if (first[0] !== last[0] || first[1] !== last[1]) coordinates.push([...first]);
+        if (coordinates.length < 4) return [];
+
+        let signedArea = 0;
+        for (let index = 0; index < coordinates.length - 1; index += 1) {
+          const current = coordinates[index];
+          const next = coordinates[index + 1];
+          signedArea += current[0] * next[1] - next[0] * current[1];
+        }
+        signedArea /= 2;
+        if (!Number.isFinite(signedArea) || Math.abs(signedArea) < 1e-14) return [];
+        const isExterior = ringIndex === 0;
+        if ((signedArea > 0) !== isExterior) coordinates.reverse();
+        rings.push(coordinates.map(([longitude, latitude]) => L.latLng(latitude, longitude)));
+      }
+      polygons.push(rings);
+    }
+  }
+
+  return [...requiredRoles].every((role) => foundRoles.has(role)) ? polygons : [];
+}
+
+function updateTopographicParcelGround(boundaries) {
+  const polygons = topographicParcelMaskLatLngs(boundaries);
+  if (!polygons.length) {
+    topographicPropertyGround.setLatLngs([]);
+    topographicTiles.setOpacity(0);
+    return false;
+  }
+
+  // One multi-polygon SVG path with normalized winding fills the union without
+  // seams where Main Parcel and Sliver touch or overlap.
+  topographicPropertyGround.setLatLngs(polygons);
+  topographicTiles.setOpacity(1);
+  return true;
+}
+
 function applyBoundaryData({ boundaries, corridor }) {
   if (!boundaries) {
     finishInitialViewWithoutBoundary();
     return;
   }
   warnForMissingParcelRoles(boundaries);
+  updateTopographicParcelGround(boundaries);
   if (corridor) {
     offPropertyTracker.geometry = buildOffPropertyGeometry(boundaries, corridor);
   }

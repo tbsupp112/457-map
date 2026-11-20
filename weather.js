@@ -2,6 +2,8 @@
 
 (function exposePropertyWeather() {
   const HOUR_MS = 60 * 60 * 1000;
+  const TEN_MINUTES_MS = 10 * 60 * 1000;
+  const TEMPORARY_REFRESH_CUTOFF = Date.parse("2026-12-14T05:00:00Z");
   const STORAGE_KEY = "457-property-weather-v1";
   const POINT_URL = "https://api.weather.gov/points/43.3596,-73.8348";
   // Compared with other reporting stations during the October 2026 intake.
@@ -44,11 +46,24 @@
     }
   }
 
+  function refreshInterval(now = Date.now()) {
+    return now < TEMPORARY_REFRESH_CUTOFF ? TEN_MINUTES_MS : HOUR_MS;
+  }
+
   function nextAttemptAt(now = Date.now()) {
     const attemptedAt = cache.attemptedAt;
-    return Number.isFinite(attemptedAt) && attemptedAt <= now + 60000
-      ? attemptedAt + HOUR_MS
+    const normalAttempt = Number.isFinite(attemptedAt) && attemptedAt <= now + 60000
+      ? attemptedAt + refreshInterval(now)
       : 0;
+    return Math.max(normalAttempt, Number.isFinite(cache.retryAfterUntil) ? cache.retryAfterUntil : 0);
+  }
+
+  function retryAfterDeadline(value, now = Date.now()) {
+    if (typeof value !== "string" || !value.trim()) return null;
+    const seconds = Number(value.trim());
+    if (Number.isFinite(seconds) && seconds >= 0) return now + seconds * 1000;
+    const date = Date.parse(value);
+    return Number.isFinite(date) ? Math.max(now, date) : null;
   }
 
   async function readJson(url) {
@@ -59,7 +74,11 @@
         headers: { Accept: "application/geo+json" },
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(`Weather request failed (${response.status}).`);
+      if (!response.ok) {
+        const retryAt = retryAfterDeadline(response.headers.get("Retry-After"));
+        if (retryAt !== null) cache.retryAfterUntil = Math.max(cache.retryAfterUntil || 0, retryAt);
+        throw new Error(`Weather request failed (${response.status}).`);
+      }
       const data = await response.json();
       const maxAge = Number(/(?:^|,)\s*max-age=(\d+)/i.exec(response.headers.get("Cache-Control") || "")?.[1]);
       return { data, maxAge: Number.isFinite(maxAge) ? maxAge : 86400 };
@@ -440,7 +459,8 @@
           const observedAt = Date.parse(cache.observation?.timestamp);
           const forecastBoundary = Date.parse(selectForecast(cache.periods, now)?.endTime) - 2 * HOUR_MS;
           // Status ages on time even when the next permitted network refresh is later.
-          const deadlines = [nextAttemptAt(now), observedAt + 2 * HOUR_MS + 1, observedAt + 6 * HOUR_MS + 1, forecastBoundary]
+          const temporaryCutoff = now < TEMPORARY_REFRESH_CUTOFF ? TEMPORARY_REFRESH_CUTOFF : 0;
+          const deadlines = [nextAttemptAt(now), temporaryCutoff, observedAt + 2 * HOUR_MS + 1, observedAt + 6 * HOUR_MS + 1, forecastBoundary]
             .filter((deadline) => Number.isFinite(deadline) && deadline > now);
           const deadline = deadlines.length ? Math.min(...deadlines) : now;
           timer = window.setTimeout(refresh, Math.max(1, deadline - now));

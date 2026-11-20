@@ -389,8 +389,20 @@ setTimeout(() => {
 
         self.assertIn('"Satellite map": nysAerial', app)
         self.assertIn('"Topographic map": topographicGround', app)
-        self.assertIn("const topographicGround = L.gridLayer({", app)
-        self.assertIn("topographicGround.createTile = function createTopographicGroundTile()", app)
+        self.assertIn("const topographicFallbackGround = L.gridLayer({", app)
+        self.assertIn("const topographicTiles = L.tileLayer(", app)
+        self.assertIn("USGSTopo/MapServer/tile/{z}/{y}/{x}", app)
+        self.assertIn("maxNativeZoom: 16", app)
+        self.assertIn("maxZoom: DEFAULT_MAX_ZOOM", app)
+        self.assertIn("const topographicGround = L.layerGroup([", app)
+        self.assertIn("topographicPropertyGround.setLatLngs(polygons)", app)
+        self.assertIn('new Set(["main-parcel", "sliver"])', app)
+        self.assertIn('fillRule: "nonzero"', app)
+        self.assertIn("topographicTiles.setOpacity(0)", app)
+        self.assertIn("topographicTiles.setOpacity(1)", app)
+        self.assertIn("USGS The National Map", app)
+        self.assertIn("External labels use source units; property contours are metres.", app)
+        self.assertNotIn("USGSImageryTopo", app)
         self.assertNotIn("opentopomap.org", app.lower())
         self.assertNotIn("OpenTopoMap", app)
         self.assertNotIn('label: "Elevation contours"', app)
@@ -404,6 +416,53 @@ setTimeout(() => {
         self.assertIn("invalidOptionalSources.has(key) || !source", app)
         self.assertIn('const control = L.control({ position: "topleft" });', app)
         self.assertRegex(styles, r"\.topographic-source-status\s*\{[^}]*pointer-events:\s*none;")
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js is required for parcel-mask geometry checks")
+    def test_topographic_mask_uses_only_both_parcels_and_normalizes_union_rings(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        start = app.index("function topographicParcelMaskLatLngs(")
+        end = app.index("\nfunction updateTopographicParcelGround", start)
+        source = app[start:end]
+        checks = r"""
+const assert = require('node:assert/strict');
+const L = { latLng: (lat, lng) => ({lat, lng}) };
+""" + source + r"""
+const main = {
+  type: 'Feature', properties: {role:'main-parcel'}, geometry: {type:'Polygon', coordinates:[
+    [[-1,0],[1,0],[1,2],[-1,2],[-1,0]],
+    [[-.5,.5],[-.5,1.5],[.5,1.5],[.5,.5],[-.5,.5]],
+  ]},
+};
+const sliver = {
+  type: 'Feature', properties: {role:'sliver'}, geometry: {type:'MultiPolygon', coordinates:[
+    [[[2,0],[2,1],[3,1],[2,0]]],
+    [[[4,0],[5,0],[5,1],[4,1],[4,0]]],
+  ]},
+};
+const corridor = {
+  type: 'Feature', properties: {role:'access-corridor'}, geometry: {type:'Polygon', coordinates:[
+    [[-4,0],[-3,0],[-3,1],[-4,1],[-4,0]],
+  ]},
+};
+const polygons = topographicParcelMaskLatLngs({features:[main,corridor,sliver]});
+assert.equal(polygons.length, 3, 'both parcel geometries are combined; the corridor is excluded');
+const area = (ring) => ring.slice(0,-1).reduce((sum, point, i) => {
+  const next = ring[i + 1]; return sum + point.lng * next.lat - next.lng * point.lat;
+}, 0) / 2;
+assert.ok(area(polygons[0][0]) > 0, 'exterior ring has consistent positive winding');
+assert.ok(area(polygons[0][1]) < 0, 'hole ring has inverse winding');
+assert.ok(polygons.slice(1).every((polygon) => area(polygon[0]) > 0));
+assert.deepEqual(topographicParcelMaskLatLngs({features:[main]}), [], 'tiles stay hidden unless both owned roles are represented');
+const malformed = {...sliver, geometry:{type:'Point',coordinates:[0,0]}};
+assert.deepEqual(topographicParcelMaskLatLngs({features:[main,malformed]}), [], 'malformed parcel data fails closed');
+"""
+        result = subprocess.run(
+            [shutil.which("node"), "-e", checks],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for aspect compass geometry checks")
     def test_aspect_compass_uses_metadata_palette_and_eight_north_up_sectors(self) -> None:

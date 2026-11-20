@@ -39,7 +39,7 @@ body {
   padding: clamp(30px, 6vw, 72px) clamp(22px, 7vw, 92px);
 }
 .home-layout {
-  width: min(980px, 100%);
+  width: min(1120px, 100%);
   display: grid;
   grid-template-areas:
     "map"
@@ -47,7 +47,7 @@ body {
     "routes"
     "qr";
   justify-items: center;
-  align-items: center;
+  align-items: start;
   gap: clamp(24px, 4vh, 36px);
 }
 .map-card {
@@ -175,25 +175,41 @@ body {
 
 @media (min-width: 620px) {
   .home-layout {
-    grid-template-areas: "qr map routes" ". weather .";
-    grid-template-columns: minmax(105px, 0.72fr) minmax(170px, 1fr) minmax(185px, 1.16fr);
-    gap: clamp(10px, 2.2vw, 26px);
+    grid-template-areas: "map map" "weather routes" "qr qr";
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    justify-items: stretch;
+    align-items: start;
+    gap: clamp(20px, 2.8vw, 32px);
   }
 
-  .map-card { width: 100%; }
-  .parcel-icon { width: clamp(155px, 24vw, 225px); }
-  .map-card span { font-size: clamp(0.75rem, 1.6vw, 0.9rem); }
-  .home-qr img { width: clamp(92px, 16vw, 150px); }
-  .home-routes { width: 100%; justify-self: stretch; }
-  .home-routes h2 { font-size: clamp(0.93rem, 1.8vw, 1.05rem); }
-  .route-card { padding: 10px 11px; }
-  .route-card-title { font-size: clamp(0.88rem, 1.8vw, 1rem); }
-  .route-card span { font-size: clamp(0.69rem, 1.45vw, 0.78rem); }
+  .map-card { width: min(360px, 100%); justify-self: center; }
+  .parcel-icon { width: clamp(155px, 26vw, 225px); }
+  .map-card span { font-size: clamp(0.82rem, 1.5vw, 0.92rem); }
+  .home-weather, .home-routes { width: 100%; }
+  .home-qr { justify-self: center; }
+  .home-qr img { width: clamp(110px, 15vw, 150px); }
+  .home-routes h2 { font-size: clamp(0.98rem, 1.5vw, 1.05rem); }
+  .route-card { padding: 11px 13px; }
+  .route-card-title { font-size: clamp(0.93rem, 1.5vw, 1rem); }
+  .route-card span { font-size: clamp(0.75rem, 1.2vw, 0.8rem); }
   .route-details-popout {
-    top: 50%;
-    right: calc(100% + 12px);
-    transform: translateY(-50%);
+    top: calc(100% + 10px);
+    right: 0;
+    transform: none;
   }
+}
+
+@media (min-width: 980px) {
+  .home-layout {
+    grid-template-areas: "map weather routes qr";
+    grid-template-columns: minmax(260px, 1.2fr) minmax(220px, 1fr) minmax(220px, 1fr) minmax(120px, 0.6fr);
+    justify-items: stretch;
+    align-items: start;
+    gap: clamp(14px, 1.8vw, 24px);
+  }
+  .map-card { width: 100%; }
+  .home-qr { align-self: center; }
+  .route-details-popout { top: 50%; right: calc(100% + 12px); transform: translateY(-50%); }
 }
 
 @media (min-width: 601px) {

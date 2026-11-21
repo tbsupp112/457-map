@@ -435,6 +435,10 @@ button { font: inherit; }
   width: min(210px, calc(100vw - 108px));
 }
 
+.nearby-parcel-popup .map-popup-content {
+  overflow-wrap: anywhere;
+}
+
 .map-popup-content > strong {
   display: block;
   margin: 0 0 5px;
@@ -469,6 +473,20 @@ button { font: inherit; }
 }
 
 .leaflet-pane > svg path.leaflet-interactive:focus:not(:focus-visible) { outline: none; }
+
+/* Keep near-transparent authored hit paths active by geometry so pane order
+   still decides overlaps. Line paths use their stroke; area paths use fill. */
+.leaflet-interactions-pane-pane path.leaflet-interactive[fill="none"],
+.leaflet-trail-interactions-pane-pane path.leaflet-interactive[fill="none"] {
+  pointer-events: stroke;
+}
+
+.leaflet-interactions-pane-pane path.leaflet-interactive:not([fill="none"]),
+.leaflet-trail-interactions-pane-pane path.leaflet-interactive:not([fill="none"]),
+.leaflet-soil-interactions-pane-pane path.leaflet-interactive:not([fill="none"]),
+.leaflet-nearby-parcel-interactions-pane-pane path.leaflet-interactive:not([fill="none"]) {
+  pointer-events: fill;
+}
 
 .map-popup-secondary,
 .map-popup-detail,
@@ -1169,6 +1187,78 @@ button { font: inherit; }
   line-height: 1.2;
   text-transform: uppercase;
   pointer-events: none;
+}
+
+.historical-imagery-section {
+  margin-top: 6px;
+  border-top: 1px solid #d7d7d7;
+}
+
+.historical-imagery-toggle {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 2px;
+  border: 0;
+  color: #4c6259;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.historical-imagery-toggle::after {
+  content: "+";
+  flex: 0 0 auto;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.historical-imagery-toggle[aria-expanded="true"]::after {
+  content: "−";
+}
+
+.historical-imagery-toggle:hover,
+.historical-imagery-toggle:focus-visible {
+  color: var(--shared-accent-deep);
+  outline: 2px solid var(--owned);
+  outline-offset: 1px;
+}
+
+.historical-imagery-options[hidden] {
+  display: none;
+}
+
+.historical-imagery-year {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  color: #333333;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.historical-imagery-selector {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  flex: 0 0 auto;
+  accent-color: var(--shared-accent-deep);
+}
+
+.historical-imagery-note {
+  margin: 2px 0 5px 28px;
+  color: #59645e;
+  font-size: 0.68rem;
+  line-height: 1.35;
 }
 
 .guidance-target-highlight {

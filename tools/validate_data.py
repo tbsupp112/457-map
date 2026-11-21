@@ -478,6 +478,49 @@ def validate_repository(root: Path = ROOT) -> ValidationReport:
             if source.get("feature_type") in {"road", "trail"} and isinstance(properties.get("id"), str):
                 segments_by_id[properties["id"]] = record
 
+    nearby_parcels = data_by_key.get("nearbyParcels")
+    if nearby_parcels is not None:
+        parcel_features = nearby_parcels.get("features", [])
+        if len(parcel_features) != 153:
+            report.error(
+                f"nearby-parcels.geojson must retain the approved 153 features; found {len(parcel_features)}"
+            )
+        seen_parcel_pins: set[str] = set()
+        approved_parcel_properties = {"id", "pin", "owner_names", "size_acres", "size_basis"}
+        for index, feature in enumerate(parcel_features):
+            location = f"data/property/nearby-parcels.geojson feature {index + 1}"
+            properties = feature.get("properties") if isinstance(feature, dict) else None
+            if not isinstance(properties, dict):
+                continue
+            if set(properties) != approved_parcel_properties:
+                report.error(f"{location} has properties outside the approved county-record fields")
+            pin = properties.get("pin")
+            if not isinstance(pin, str) or not re.fullmatch(r"\d{20}", pin):
+                report.error(f"{location} needs a 20-digit county PIN")
+            elif pin in seen_parcel_pins:
+                report.error(f"{location} repeats county PIN {pin}")
+            else:
+                seen_parcel_pins.add(pin)
+                expected_id = "warren-parcel-" + pin
+                if properties.get("id") != expected_id or feature.get("id") != expected_id:
+                    report.error(f"{location} id must match its county PIN")
+            owner_names = properties.get("owner_names")
+            if (
+                not isinstance(owner_names, list)
+                or any(not isinstance(name, str) or not name.strip() for name in owner_names)
+            ):
+                report.error(f"{location} owner_names must be an array of non-empty strings")
+            size_acres = properties.get("size_acres")
+            size_basis = properties.get("size_basis")
+            if size_basis in {"county", "GIS estimate"}:
+                if not isinstance(size_acres, (int, float)) or not math.isfinite(size_acres) or size_acres <= 0:
+                    report.error(f"{location} {size_basis} acreage must be positive")
+            elif size_basis == "unavailable":
+                if size_acres is not None:
+                    report.error(f"{location} unavailable acreage must be null")
+            else:
+                report.error(f"{location} has an unsupported acreage basis")
+
     validate_manifest_source_references(root, source_keys, report)
 
     cam_sites = data_by_key.get("camSites")

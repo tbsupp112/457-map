@@ -52,6 +52,19 @@
       "generated_properties": ["acres_computed"]
     },
     {
+      "key": "nearbyParcels",
+      "path": "data/property/nearby-parcels.geojson",
+      "format": "geojson",
+      "feature_type": "parcel",
+      "geometry_types": ["Polygon", "MultiPolygon"],
+      "required": false,
+      "ids": true,
+      "required_properties": ["id", "pin", "owner_names", "size_acres", "size_basis"],
+      "optional_properties": [],
+      "authored_properties": [],
+      "generated_properties": ["id", "pin", "owner_names", "size_acres", "size_basis"]
+    },
+    {
       "key": "corners",
       "path": "data/property/corners.geojson",
       "format": "geojson",

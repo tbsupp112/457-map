@@ -37,8 +37,17 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261113-3";
+const DATA_CACHE_VERSION = "20261120-2";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
+const HISTORICAL_IMAGERY_YEARS = Object.freeze(["2022", "2018", "2013", "2009"]);
+const DEFAULT_IMAGERY_YEAR = "2022";
+
+function normalizeHistoricalImageryYear(value) {
+  return typeof value === "string" && HISTORICAL_IMAGERY_YEARS.includes(value)
+    ? value
+    : DEFAULT_IMAGERY_YEAR;
+}
+
 let mapPreferenceStore = migrateMapPreferences(readMapPreferences());
 const requestedAudience = new URLSearchParams(window.location.search).get("view");
 let activeAudience = MAP_AUDIENCES.includes(requestedAudience)
@@ -47,6 +56,18 @@ let activeAudience = MAP_AUDIENCES.includes(requestedAudience)
     ? mapPreferenceStore.activeAudience
     : "visitor";
 let savedMapPreferences = getAudiencePreferences(mapPreferenceStore, activeAudience);
+let selectedImageryYear = normalizeHistoricalImageryYear(savedMapPreferences.imageryYear);
+let activeImageryLayer = null;
+let imageryGeneration = 0;
+let imageryFallbackFromYear = null;
+let historicalImagerySection = null;
+let historicalImageryToggle = null;
+let historicalImageryOptions = null;
+let historicalImageryStatus = null;
+let historicalImagerySectionOpen = false;
+const imageryLayerRuns = new WeakMap();
+const imageryTileTokens = new WeakMap();
+const boundImageryLayers = new WeakSet();
 const requestedFeatureId = new URLSearchParams(window.location.search)
   .get("feature")
   ?.trim();
@@ -88,6 +109,7 @@ let mobileHeadingSessionActive = false;
 let compassToggleDisplayedAngle = null;
 let topographicStatusNode = null;
 let contourSourceState = "pending";
+let nearbyParcelSourceState = "pending";
 const mapPanelOpenOrder = ["legend"];
 const mobileMapPanels = window.matchMedia("(max-width: 720px)");
 let layerControlDecorationFrame = null;
@@ -97,11 +119,14 @@ const zoneVisualLayersById = new Map();
 const boundaryVisualLayersById = new Map();
 const corridorVisualLayersByName = new Map();
 const camSiteVisualLayersById = new Map();
+const nearbyParcelVisualLayersById = new Map();
+const nearbyCountyParcelsByPin = new Map();
 let camSitesVisualLayer = null;
 let camSitesInteractionLayer = null;
 let camDeploymentArrowsLayer = null;
 let camDraftArrowLayer = null;
 let camSitesGroup = null;
+let nearbyParcelsGroup = null;
 
 const offPropertyTracker = {
   geometry: null,
@@ -208,6 +233,25 @@ const LAYER_DEFINITIONS = [
     getLayer: () => terrainLayers[key],
     applyData: (data) => applyTerrainData(key, data[key]),
   })),
+  {
+    key: "nearbyParcels",
+    label: "Nearby parcels",
+    group: "80-terrain",
+    order: 14,
+    sources: ["nearbyParcels"],
+    optionalSources: ["nearbyParcels"],
+    audiences: ["owner"],
+    defaultVisible: { owner: false },
+    render: {
+      kind: "geojson",
+      panes: [
+        { key: "nearbyParcels", name: "nearby-parcels-pane", order: 15 },
+        { key: "nearbyParcelInteractions", name: "nearby-parcel-interactions-pane", order: 66.5 },
+      ],
+    },
+    getLayer: () => nearbyParcelsGroup,
+    applyData: applyNearbyParcelsData,
+  },
   {
     key: "outsideShading",
     label: null,
@@ -562,14 +606,28 @@ const camSitesRenderer = activeAudience === "owner"
   ? L.canvas({ pane: MAP_PANES.camSites })
   : null;
 
-const nysAerial = L.tileLayer(
-  "https://orthos.its.ny.gov/arcgis/rest/services/wms/2022/MapServer/tile/{z}/{y}/{x}",
-  {
+function createNysImageryLayer(year) {
+  const service = `https://orthos.its.ny.gov/arcgis/rest/services/wms/${year}/MapServer`;
+  const providers = year === "2018"
+    ? "NYS ITS Geospatial Services; Westchester County GIS"
+    : "NYS ITS Geospatial Services";
+  const layer = L.tileLayer(`${service}/tile/{z}/{y}/{x}`, {
+    tileSize: 256,
     maxZoom: DEFAULT_MAX_ZOOM,
     maxNativeZoom: 19,
-    attribution: "Imagery © NYS ITS Geospatial Services (2022)",
-  },
+    attribution: `Imagery © ${providers} · Spring ${year}`,
+    updateWhenIdle: true,
+  });
+  bindHistoricalImageryTileHealth(layer, year);
+  return layer;
+}
+
+const nysImageryLayers = new Map(
+  HISTORICAL_IMAGERY_YEARS.map((year) => [year, createNysImageryLayer(year)]),
 );
+const nysAerial = L.layerGroup();
+activeImageryLayer = nysImageryLayers.get(selectedImageryYear);
+nysAerial.addLayer(activeImageryLayer);
 
 const topographicFallbackGround = L.gridLayer({
   maxZoom: DEFAULT_MAX_ZOOM,
@@ -620,7 +678,12 @@ const topographicGround = L.layerGroup([
   topographicPropertyGround,
 ]);
 
-(savedMapPreferences.baseMap === "topo" ? topographicGround : nysAerial).addTo(map);
+if (savedMapPreferences.baseMap === "topo") {
+  topographicGround.addTo(map);
+} else {
+  beginImageryLoadRun(activeImageryLayer);
+  nysAerial.addTo(map);
+}
 syncTopographicContours();
 
 const outsideMaskLayer = L.geoJSON(null, {
@@ -737,6 +800,44 @@ const zonesInteractionLayer = L.geoJSON(null, {
   },
 });
 const zonesGroup = L.layerGroup([zonesLayer, zonesInteractionLayer]);
+
+if (activeAudience === "owner") {
+  const nearbyParcelsVisualLayer = L.geoJSON(null, {
+    pane: MAP_PANES.nearbyParcels,
+    renderer: L.canvas({ pane: MAP_PANES.nearbyParcels }),
+    interactive: false,
+    style: {
+      color: "#647c80",
+      weight: 1,
+      opacity: 0.78,
+      fillColor: "#d6a948",
+      fillOpacity: 0,
+    },
+    onEachFeature(feature, layer) {
+      if (feature.properties?.id) {
+        nearbyParcelVisualLayersById.set(feature.properties.id, layer);
+      }
+    },
+  });
+  const nearbyParcelsInteractionLayer = L.geoJSON(null, {
+    pane: MAP_PANES.nearbyParcelInteractions,
+    renderer: L.svg({ pane: MAP_PANES.nearbyParcelInteractions, padding: 0.5 }),
+    style: { stroke: false, fill: true, fillColor: "#000000", fillOpacity: 0.001 },
+    onEachFeature(feature, layer) {
+      bindMapFeature(layer, feature, (parcel) => buildNearbyParcelPopupDetail(parcel), {
+        title: (parcel) => buildNearbyParcelPopupTitle(parcel),
+        caveat: "Approximate parcel geometry; not a survey or title determination.",
+        standardPopupWidth: true,
+        disableHoverTooltip: true,
+        registerForFocus: false,
+        popupClassName: "nearby-parcel-popup",
+        focusOverlay: nearbyParcelsGroup,
+        visualLayer: nearbyParcelVisualLayersById.get(feature.properties?.id),
+      });
+    },
+  });
+  nearbyParcelsGroup = L.layerGroup([nearbyParcelsVisualLayer, nearbyParcelsInteractionLayer]);
+}
 
 const buildingIcon = L.icon({
   ...LANDMARK_RENDER_CONFIG.markerStyle,
@@ -890,7 +991,7 @@ const boundaryInteractionLayer = L.geoJSON(null, {
   style: BOUNDARY_RENDER_CONFIG.interactionStyle,
   onEachFeature(feature, layer) {
     const description = feature.properties.note || feature.properties.popup_description;
-    bindMapFeature(layer, feature, description, {
+    bindMapFeature(layer, feature, () => buildBoundaryPopupDetail(feature, description), {
       focusOverlay: boundaryGroup,
       visualLayer: boundaryVisualLayersById.get(feature.properties?.id),
     });
@@ -940,6 +1041,7 @@ const layerControl = L.control
   .addTo(map);
 
 decorateLayerControl(layerControl);
+installSatelliteBaseChoiceHandler(layerControl);
 installTopographicStatusControl();
 installMapLegend();
 installMapWeatherControl();
@@ -967,6 +1069,23 @@ map.on("overlayadd overlayremove", installMapLegend);
 map.on("moveend zoomend", refreshContourLabels);
 map.on("overlayadd overlayremove", (event) => {
   if (event.layer === terrainLayers.contours) refreshContourLabels();
+});
+map.on("overlayadd", (event) => {
+  if (event.layer !== nearbyParcelsGroup || nearbyParcelSourceState !== "unavailable") return;
+  showLocationStatus("Nearby parcel records could not be loaded.", 6000);
+  map.removeLayer(nearbyParcelsGroup);
+});
+map.on("overlayremove", (event) => {
+  if (event.layer !== nearbyParcelsGroup) return;
+  const popup = map._popup;
+  if (popup?.options?.className === "nearby-parcel-popup") {
+    window.requestAnimationFrame(() => {
+      if (map._popup === popup) map.closePopup();
+    });
+  }
+  if (selectedFeatureLayers.some((layer) => [...nearbyParcelVisualLayersById.values()].includes(layer))) {
+    clearSelectedFeatureHighlight();
+  }
 });
 layerControl.getContainer().addEventListener("click", (event) => {
   const input = event.target;
@@ -1563,6 +1682,108 @@ function applyOutsideMaskData({ boundaries, corridor }) {
   if (!boundaries || !corridor) return;
   outsideMaskLayer.addData(buildOutsideMask(boundaries, corridor));
   installOutsideHatchPattern();
+}
+
+function applyNearbyParcelsData({ nearbyParcels }) {
+  if (activeAudience !== "owner" || !nearbyParcelsGroup) return;
+  try {
+    if (nearbyParcels?.type !== "FeatureCollection" || !Array.isArray(nearbyParcels.features)) {
+      throw new Error("expected a GeoJSON FeatureCollection");
+    }
+    const seenPins = new Set();
+    nearbyParcels.features.forEach((feature) => {
+      const properties = feature?.properties || {};
+      if (
+        typeof properties.id !== "string" ||
+        typeof properties.pin !== "string" ||
+        !/^\d{20}$/.test(properties.pin) ||
+        properties.id !== "warren-parcel-" + properties.pin ||
+        feature.id !== properties.id ||
+        seenPins.has(properties.pin) ||
+        !Array.isArray(properties.owner_names) ||
+        properties.owner_names.some((name) => typeof name !== "string" || !name.trim()) ||
+        new Set(properties.owner_names).size !== properties.owner_names.length ||
+        ![
+          properties.size_basis === "unavailable" && properties.size_acres === null,
+          ["county", "GIS estimate"].includes(properties.size_basis) &&
+            Number.isFinite(properties.size_acres) && properties.size_acres > 0,
+        ].some(Boolean)
+      ) {
+        throw new Error("parcel record has an invalid or duplicate county property");
+      }
+      const expectedProperties = ["id", "pin", "owner_names", "size_acres", "size_basis"];
+      if (Object.keys(properties).sort().join("|") !== expectedProperties.sort().join("|")) {
+        throw new Error("parcel record contains an unapproved property");
+      }
+      seenPins.add(properties.pin);
+    });
+    if (nearbyParcels.features.length !== 153) {
+      throw new Error("approved nearby parcel set must contain 153 records");
+    }
+    nearbyCountyParcelsByPin.clear();
+    nearbyParcels.features.forEach((feature) => nearbyCountyParcelsByPin.set(feature.properties.pin, feature));
+    nearbyParcelVisualLayersById.clear();
+    nearbyParcelsGroup.eachLayer((layer) => layer.clearLayers());
+    const [visualLayer, interactionLayer] = nearbyParcelsGroup.getLayers();
+    visualLayer.addData(nearbyParcels);
+    interactionLayer.addData(nearbyParcels);
+    nearbyParcelSourceState = "available";
+  } catch (error) {
+    nearbyParcelSourceState = "unavailable";
+    nearbyCountyParcelsByPin.clear();
+    nearbyParcelVisualLayersById.clear();
+    nearbyParcelsGroup.eachLayer((layer) => layer.clearLayers());
+    console.warn("Nearby parcel records could not be prepared.", error);
+    if (map.hasLayer(nearbyParcelsGroup)) {
+      showLocationStatus("Nearby parcel records could not be loaded.", 6000);
+      map.removeLayer(nearbyParcelsGroup);
+    }
+  }
+}
+
+function formatNearbyParcelAcres(value) {
+  if (!Number.isFinite(value) || value <= 0) return "Size unavailable";
+  if (value < 0.01) {
+    const decimalPlaces = Math.min(8, Math.max(4, Math.ceil(-Math.log10(value)) + 2));
+    return value.toFixed(decimalPlaces).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function buildNearbyParcelPopupTitle(feature) {
+  const names = feature?.properties?.owner_names?.filter((name) => name.trim());
+  return names?.length ? "County record owner: " + names.join(", ") : "Owner unavailable";
+}
+
+function buildNearbyParcelPopupDetail(feature) {
+  const properties = feature?.properties || {};
+  const acres = formatNearbyParcelAcres(properties.size_acres);
+  const sizeDetail = properties.size_basis === "county"
+    ? acres + " acres (county record)"
+    : properties.size_basis === "GIS estimate" && properties.size_acres > 0
+      ? acres + " acres (GIS estimate)"
+      : "Size unavailable";
+  return [
+    sizeDetail,
+    "PIN: " + (properties.pin || "unavailable"),
+    "Warren County parcel records · snapshot July 7, 2026",
+  ].join("\n");
+}
+
+function buildBoundaryPopupDetail(feature, baseDetail = "") {
+  const details = [baseDetail].filter((value) => typeof value === "string" && value.trim());
+  if (!nearbyParcelsGroup || !map.hasLayer(nearbyParcelsGroup)) return details.join("\n");
+  const parcelPinsByRole = {
+    "main-parcel": "28500000020220000000",
+    sliver: "28500000020210000000",
+  };
+  const pin = parcelPinsByRole[feature?.properties?.role];
+  const countyFeature = pin ? nearbyCountyParcelsByPin.get(pin) : null;
+  if (!countyFeature) return details.join("\n");
+  details.push("Nearby county record:");
+  details.push(buildNearbyParcelPopupTitle(countyFeature));
+  details.push(buildNearbyParcelPopupDetail(countyFeature));
+  return details.join("\n");
 }
 
 function applyZonesData({ zones }) {
@@ -3123,7 +3344,9 @@ function registerGuidanceTarget(feature, layer) {
 }
 
 function buildMapFeaturePopup(feature, detail, options = {}) {
-  const title = options.title || feature.properties.name;
+  const title = typeof options.title === "function"
+    ? options.title(feature)
+    : options.title || feature.properties.name;
   const name = escapeHtml(title);
   const safeDetail = detail ? escapeHtml(detail) : "";
   const popupClass = shouldUseStandardPopupWidth(title, detail, options)
@@ -3295,12 +3518,14 @@ function routeDifficultyPresentation(value) {
 }
 
 function bindMapFeature(layer, feature, detail, options = {}) {
-  registerFocusableFeature(feature, options.visualLayer || layer, options.focusOverlay);
+  if (options.registerForFocus !== false) {
+    registerFocusableFeature(feature, options.visualLayer || layer, options.focusOverlay);
+  }
   rememberBaseFeatureStyle(options.visualLayer || layer);
   const hasFinePointer = window.matchMedia(
     "(any-hover: hover) and (any-pointer: fine)",
   ).matches;
-  if (hasFinePointer) {
+  if (hasFinePointer && !options.disableHoverTooltip) {
     layer.bindTooltip(
       escapeHtml(options.tooltip || options.title || feature.properties.name),
       {
@@ -3322,6 +3547,7 @@ function bindMapFeature(layer, feature, detail, options = {}) {
       pendingFeaturePopupTimer = null;
       pendingFeaturePopupPriority = Number.NEGATIVE_INFINITY;
       if (featurePopupsAreSuppressed()) return;
+      if (options.focusOverlay && !map.hasLayer(options.focusOverlay)) return;
       if (typeof options.onActivate === "function" && options.onActivate(event)) {
         setSelectedFeatureLayers(featureSelectionLayers(layer, options));
         return;
@@ -3331,7 +3557,10 @@ function bindMapFeature(layer, feature, detail, options = {}) {
       map.closePopup();
       setSelectedFeatureLayers(featureSelectionLayers(layer, options));
       const resolvedDetail = typeof detail === "function" ? detail(feature) : detail;
-      L.popup()
+      const popup = options.popupClassName
+        ? L.popup({ className: options.popupClassName })
+        : L.popup();
+      popup
         .setLatLng(event.latlng)
         .setContent(buildMapFeaturePopup(feature, resolvedDetail, options))
         .openOn(map);
@@ -4420,8 +4649,117 @@ function installLayerControlHeadings(control) {
   mapTypeHeading.className = "layer-group-heading";
   mapTypeHeading.textContent = "Map Type";
   baseLayers.prepend(mapTypeHeading);
+  installHistoricalImageryPicker(baseLayers);
   appendGroup("Points", definitions.filter((entry) => entry.group !== "80-terrain"), overlays);
   appendGroup("Layers", definitions.filter((entry) => entry.group === "80-terrain"), overlays);
+}
+
+function installHistoricalImageryPicker(baseLayers) {
+  if (!historicalImagerySection) {
+    historicalImagerySection = document.createElement("section");
+    historicalImagerySection.className = "historical-imagery-section";
+    historicalImageryToggle = document.createElement("button");
+    historicalImageryToggle.className = "historical-imagery-toggle";
+    historicalImageryToggle.type = "button";
+    historicalImageryToggle.setAttribute("aria-controls", "historical-imagery-options");
+    historicalImageryToggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setHistoricalImagerySectionOpen(!historicalImagerySectionOpen);
+    });
+
+    historicalImageryOptions = document.createElement("div");
+    historicalImageryOptions.id = "historical-imagery-options";
+    historicalImageryOptions.className = "historical-imagery-options";
+    historicalImageryOptions.setAttribute("role", "radiogroup");
+    historicalImageryOptions.setAttribute("aria-label", "Historical imagery year");
+    HISTORICAL_IMAGERY_YEARS.forEach((year) => {
+      const label = document.createElement("label");
+      label.className = "historical-imagery-year";
+      const input = document.createElement("input");
+      input.type = "radio";
+      input.name = "historical-imagery-year";
+      input.value = year;
+      input.className = "historical-imagery-selector";
+      input.addEventListener("change", () => {
+        if (!input.checked) return;
+        setHistoricalImagerySectionOpen(true);
+        selectHistoricalImageryYear(year, { keepSectionOpen: true });
+        layerControl.expand();
+      });
+      const text = document.createElement("span");
+      text.textContent = `Spring ${year}`;
+      label.append(input, text);
+      historicalImageryOptions.append(label);
+    });
+
+    const note = document.createElement("p");
+    note.className = "historical-imagery-note";
+    note.textContent = "Exact capture month unavailable.";
+    historicalImagerySection.append(historicalImageryToggle, historicalImageryOptions, note);
+  }
+  baseLayers.append(historicalImagerySection);
+  updateHistoricalImageryPicker();
+}
+
+function updateHistoricalImageryPicker() {
+  if (!historicalImagerySection) return;
+  historicalImageryToggle.textContent = `Historical imagery · Spring ${selectedImageryYear}`;
+  historicalImageryToggle.setAttribute("aria-expanded", String(historicalImagerySectionOpen));
+  historicalImageryOptions.hidden = !historicalImagerySectionOpen;
+  historicalImageryOptions.querySelectorAll("input[type='radio']").forEach((input) => {
+    input.checked = input.value === selectedImageryYear;
+  });
+}
+
+function setHistoricalImagerySectionOpen(open) {
+  historicalImagerySectionOpen = Boolean(open);
+  updateHistoricalImageryPicker();
+}
+
+function selectHistoricalImageryYear(year, {
+  keepSectionOpen = false,
+  persist = true,
+  fallback = false,
+} = {}) {
+  const nextYear = normalizeHistoricalImageryYear(year);
+  if (!fallback) imageryFallbackFromYear = null;
+  const wasSatelliteActive = map.hasLayer(nysAerial);
+  const wasTopographicActive = map.hasLayer(topographicGround);
+  const nextLayer = nysImageryLayers.get(nextYear);
+
+  if (nextLayer !== activeImageryLayer) {
+    if (activeImageryLayer && nysAerial.hasLayer(activeImageryLayer)) {
+      nysAerial.removeLayer(activeImageryLayer);
+    }
+    selectedImageryYear = nextYear;
+    activeImageryLayer = nextLayer;
+    if (wasSatelliteActive) beginImageryLoadRun(activeImageryLayer);
+    nysAerial.addLayer(activeImageryLayer);
+  } else {
+    selectedImageryYear = nextYear;
+  }
+
+  if (wasTopographicActive) map.removeLayer(topographicGround);
+  if (!map.hasLayer(nysAerial)) {
+    beginImageryLoadRun(activeImageryLayer);
+    map.addLayer(nysAerial);
+  }
+  if (wasTopographicActive || !wasSatelliteActive) {
+    map.fire("baselayerchange", { layer: nysAerial, name: "Satellite map" });
+  }
+  if (keepSectionOpen) setHistoricalImagerySectionOpen(true);
+  updateHistoricalImageryPicker();
+  if (persist) saveMapPreferences();
+}
+
+function installSatelliteBaseChoiceHandler(control) {
+  control.getContainer().addEventListener("click", (event) => {
+    const input = event.target.closest?.("input.leaflet-control-layers-selector");
+    if (!input?.checked || map.hasLayer(nysAerial)) return;
+    const label = input.closest("label")?.textContent || "";
+    if (label.includes("Satellite map")) beginImageryLoadRun(activeImageryLayer);
+  }, true);
 }
 
 function installLayerControlHoverDelay(control) {
@@ -4450,13 +4788,124 @@ function installLayerControlHoverDelay(control) {
   };
 }
 
+function beginImageryLoadRun(layer) {
+  if (!layer) return null;
+  const run = {
+    year: [...nysImageryLayers].find(([, candidate]) => candidate === layer)?.[0],
+    generation: ++imageryGeneration,
+    pass: 0,
+    started: 0,
+    loaded: 0,
+    failed: 0,
+    retryScheduled: false,
+  };
+  imageryLayerRuns.set(layer, run);
+  return run;
+}
+
+function imageryLoadRunIsCurrent(layer, run) {
+  return Boolean(
+    run &&
+    imageryLayerRuns.get(layer) === run &&
+    run.generation === imageryGeneration &&
+    layer === activeImageryLayer &&
+    run.year === selectedImageryYear &&
+    nysAerial.hasLayer(layer) &&
+    map.hasLayer(nysAerial),
+  );
+}
+
+function bindHistoricalImageryTileHealth(layer, year) {
+  if (boundImageryLayers.has(layer)) return;
+  boundImageryLayers.add(layer);
+  layer.on("tileloadstart", (event) => {
+    const run = imageryLayerRuns.get(layer);
+    if (!imageryLoadRunIsCurrent(layer, run) || run.year !== year) return;
+    imageryTileTokens.set(event.tile, { generation: run.generation, pass: run.pass, settled: false });
+    run.started += 1;
+  });
+  layer.on("tileload", (event) => {
+    const run = imageryLayerRuns.get(layer);
+    const token = imageryTileTokens.get(event.tile);
+    if (
+      !imageryLoadRunIsCurrent(layer, run) ||
+      !token || token.settled || token.generation !== run.generation || token.pass !== run.pass
+    ) return;
+    token.settled = true;
+    run.loaded += 1;
+    if (run.year === DEFAULT_IMAGERY_YEAR && imageryFallbackFromYear) {
+      showLocationStatus(
+        `Spring ${imageryFallbackFromYear} imagery is unavailable; showing Spring 2022.`,
+        6500,
+      );
+      imageryFallbackFromYear = null;
+    }
+  });
+  layer.on("tileerror", (event) => {
+    const run = imageryLayerRuns.get(layer);
+    const token = imageryTileTokens.get(event.tile);
+    if (
+      !imageryLoadRunIsCurrent(layer, run) ||
+      !token || token.settled || token.generation !== run.generation || token.pass !== run.pass
+    ) return;
+    token.settled = true;
+    run.failed += 1;
+    assessHistoricalImageryRun(layer, run);
+  });
+}
+
+function assessHistoricalImageryRun(layer, run) {
+  if (!imageryLoadRunIsCurrent(layer, run) || run.started === 0) return;
+  if (run.loaded > 0 || run.loaded + run.failed !== run.started) return;
+  if (!run.retryScheduled) {
+    run.retryScheduled = true;
+    window.setTimeout(() => {
+      if (!imageryLoadRunIsCurrent(layer, run) || run.loaded > 0) return;
+      run.pass += 1;
+      run.started = 0;
+      run.loaded = 0;
+      run.failed = 0;
+      layer.redraw();
+    }, 700);
+    return;
+  }
+  handleUnavailableHistoricalImagery(layer, run);
+}
+
+function handleUnavailableHistoricalImagery(layer, run) {
+  if (!imageryLoadRunIsCurrent(layer, run)) return;
+  const unavailableYear = selectedImageryYear;
+  if (unavailableYear !== DEFAULT_IMAGERY_YEAR) {
+    imageryFallbackFromYear = unavailableYear;
+    selectHistoricalImageryYear(DEFAULT_IMAGERY_YEAR, {
+      keepSectionOpen: true,
+      fallback: true,
+    });
+    showLocationStatus(`Spring ${unavailableYear} imagery could not load. Trying Spring 2022.`, 6500);
+    return;
+  }
+
+  const earlierFailure = imageryFallbackFromYear;
+  imageryFallbackFromYear = null;
+  if (map.hasLayer(nysAerial)) map.removeLayer(nysAerial);
+  if (!map.hasLayer(topographicGround)) map.addLayer(topographicGround);
+  map.fire("baselayerchange", { layer: topographicGround, name: "Topographic map" });
+  const message = earlierFailure
+    ? `Spring ${earlierFailure} and Spring 2022 imagery could not load. Switched to Topographic map.`
+    : "Spring 2022 imagery could not load. Switched to Topographic map.";
+  showLocationStatus(message, 7500);
+  saveMapPreferences();
+}
+
 function resetMapToDefaults() {
+  const restorePreferenceSuppression = suppressPreferencePersistence;
+  suppressPreferencePersistence = true;
   programmaticFocusViewActive = false;
   stopGuidance();
   showMapLegend();
   map.closePopup();
-  if (map.hasLayer(topographicGround)) map.removeLayer(topographicGround);
-  if (!map.hasLayer(nysAerial)) map.addLayer(nysAerial);
+  selectHistoricalImageryYear(DEFAULT_IMAGERY_YEAR, { persist: false });
+  setHistoricalImagerySectionOpen(false);
 
   getAudienceLayerDefinitions({ panelOnly: true }).forEach((definition) => {
     const layer = definition.getLayer();
@@ -4472,6 +4921,7 @@ function resetMapToDefaults() {
       maxZoom: 18,
     });
   }
+  suppressPreferencePersistence = restorePreferenceSuppression;
   saveMapPreferences();
 }
 
@@ -4480,6 +4930,7 @@ function saveMapPreferences() {
 
   const preferences = {
     baseMap: map.hasLayer(topographicGround) ? "topo" : "aerial",
+    imageryYear: selectedImageryYear,
     overlays: Object.fromEntries(
       getAudienceLayerDefinitions({ panelOnly: true }).map((definition) => [
         definition.key,

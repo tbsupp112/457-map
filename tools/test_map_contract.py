@@ -331,6 +331,41 @@ assert.equal(context.contourLabelGroup.markers[0].options.icon.html,'<span>251 m
         self.assertIn(".map-compass-readout { pointer-events: auto;", mobile_styles)
         self.assertIn(".map-compass-close { display: none; }", mobile_styles)
 
+    def test_compass_wind_uses_shared_observation_and_stays_north_up(self) -> None:
+        app = (ROOT / "app.js").read_text(encoding="utf-8")
+        weather = (ROOT / "weather.js").read_text(encoding="utf-8")
+        styles = (ROOT / "styles.css").read_text(encoding="utf-8")
+        artwork = app[app.index("function mapCompassRoseArtwork()"):app.index("function syncCompassDismissSurface(")]
+        self.assertLess(artwork.index('class="compass-wind-needle"'), artwork.index('class="compass-heading-needle"'))
+        self.assertIn('d="M100 81V43M92 52l8-9 8 9"', artwork, "wind arrow has an open arrowhead")
+
+        install = app[app.index("function installMapCompassControl()"):app.index("function setMapCompassOpen(")]
+        minimized_start = install.index("toggle.innerHTML =")
+        minimized_end = install.index(";", minimized_start)
+        self.assertNotIn("compass-wind", install[minimized_start:minimized_end], "minimized Option A remains only the facing arrow")
+        self.assertIn('windToggle.type = "checkbox";', install)
+        self.assertIn('windToggle.setAttribute("aria-describedby", "map-compass-wind-help");', install)
+        self.assertIn('windHelp.textContent = "Dashed arrow points where the wind travels.";', install)
+        self.assertIn("windToggle.addEventListener(\"change\"", install)
+
+        render = app[app.index("function renderCompassWindSnapshot("):app.index("function syncCompassWindDemand(")]
+        self.assertIn("if (!compassPanelOpen || !compassWindRequested", render)
+        self.assertIn("snapshot.travelBearing", render)
+        self.assertIn("Wind observation is old", render)
+        self.assertIn("Direction unavailable", render)
+        self.assertIn("snapshot.observationTime", render)
+        demand = app[app.index("function syncCompassWindDemand("):app.index("function activateMobileHeadingSession(")]
+        self.assertIn("createWindSubscription", demand)
+        self.assertIn("compassWindSubscription?.destroy()", demand)
+        self.assertIn("setVisible(compassPanelOpen && !document.hidden)", demand)
+
+        self.assertIn("function windSnapshot(now = Date.now())", weather)
+        self.assertIn("function createWindSubscription(onSnapshot)", weather)
+        self.assertIn("observationTime: timestamp ? localTime(timestamp, timeZone)", weather)
+        self.assertIn("function scheduleRefresh()", weather)
+        self.assertIn("stroke-dasharray: 5 3.25", styles)
+        self.assertIn("stroke: #59d9d4", styles)
+
     @unittest.skipUnless(shutil.which("node"), "Node.js is required for gesture runtime checks")
     def test_compass_release_and_delayed_click_reject_invalid_gestures(self) -> None:
         app = (ROOT / "app.js").read_text(encoding="utf-8")

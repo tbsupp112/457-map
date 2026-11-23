@@ -37,7 +37,7 @@ const ROUTE_MILES_THRESHOLD_FEET = 0.10 * 5280;
 const LIVE_DISTANCE_MILES_THRESHOLD_FEET = 0.15 * 5280;
 const MAP_PREFERENCES_KEY = "457-property-map-preferences-v1";
 const MAP_PREFERENCES_VERSION = 2;
-const DATA_CACHE_VERSION = "20261120-2";
+const DATA_CACHE_VERSION = "20261123-1";
 const MAP_AUDIENCES = Object.freeze(["visitor", "owner"]);
 const HISTORICAL_IMAGERY_YEARS = Object.freeze(["2022", "2018", "2013", "2009"]);
 const DEFAULT_IMAGERY_YEAR = "2022";
@@ -105,6 +105,8 @@ let mapWeatherView = null;
 let weatherPanelOpen = false;
 let mapCompassControl = null;
 let compassPanelOpen = false;
+let compassWindRequested = false;
+let compassWindSubscription = null;
 let mobileHeadingSessionActive = false;
 let compassToggleDisplayedAngle = null;
 let topographicStatusNode = null;
@@ -2931,6 +2933,7 @@ function mapCompassRoseArtwork() {
 
   return '<circle class="compass-rose-focus-ring" cx="100" cy="100" r="88"/><circle class="compass-rose-halo" cx="100" cy="100" r="83"/><circle class="compass-rose-ring" cx="100" cy="100" r="83"/>' +
     `<g class="compass-rose-ticks">${ticks}</g><g class="compass-rose-arms">${arms}</g>` +
+    '<g class="compass-wind-needle" visibility="hidden" aria-hidden="true"><path class="compass-wind-arrow" d="M100 81V43M92 52l8-9 8 9"/></g>' +
     '<g class="compass-heading-needle" visibility="hidden"><path class="compass-heading-needle-tail" d="M100 120 103 99 100 104 97 99Z"/><path class="compass-heading-needle-forward" d="M100 43 108 100 100 92 92 100Z"/><path class="compass-heading-needle-highlight" d="M99.2 51c.45 9.5.65 18.1.75 27.8"/></g>' +
     '<circle class="compass-rose-center" cx="100" cy="100" r="4"/><text class="compass-cardinal" x="100" y="12">N</text><text class="compass-cardinal" x="190" y="105">E</text><text class="compass-cardinal" x="100" y="198">S</text><text class="compass-cardinal" x="10" y="105">W</text>';
 }
@@ -2997,6 +3000,27 @@ function installMapCompassControl() {
     readout.setAttribute("role", "status");
     readout.setAttribute("aria-live", "off");
     readout.textContent = "North fixed · waiting for device heading";
+
+    const windControl = L.DomUtil.create("div", "map-compass-wind-control", panel);
+    const windLabel = L.DomUtil.create("label", "map-compass-wind-toggle-label", windControl);
+    const windToggle = document.createElement("input");
+    windToggle.type = "checkbox";
+    windToggle.id = "map-compass-show-wind";
+    windToggle.setAttribute("aria-controls", "map-compass-wind-readout");
+    windToggle.setAttribute("aria-describedby", "map-compass-wind-help");
+    windLabel.append(windToggle, document.createTextNode("Show wind"));
+    const windHelp = L.DomUtil.create("span", "map-compass-wind-help", windControl);
+    windHelp.id = "map-compass-wind-help";
+    windHelp.textContent = "Dashed arrow points where the wind travels.";
+    const windReadout = L.DomUtil.create("p", "map-compass-wind-readout", windControl);
+    windReadout.id = "map-compass-wind-readout";
+    windReadout.setAttribute("role", "status");
+    windReadout.setAttribute("aria-live", "polite");
+    windReadout.hidden = true;
+    const windSource = L.DomUtil.create("small", "map-compass-wind-source", windControl);
+    windSource.hidden = true;
+    const windRefreshStatus = L.DomUtil.create("small", "map-compass-wind-refresh-status", windControl);
+    windRefreshStatus.hidden = true;
 
     let compassPointerGesture = null;
     let suppressedCompassClick = null;
@@ -3101,6 +3125,10 @@ function installMapCompassControl() {
         focusClose: !compassPanelOpen,
       });
     });
+    windToggle.addEventListener("change", () => {
+      compassWindRequested = windToggle.checked;
+      syncCompassWindDemand();
+    });
     close.addEventListener("click", () => setMapCompassOpen(false, { restoreFocus: true }));
     container.addEventListener("keydown", (event) => {
       if (event.key === "Escape" && compassPanelOpen) {
@@ -3135,6 +3163,7 @@ function setMapCompassOpen(open, {
   panel.hidden = !compassPanelOpen;
   toggle.hidden = compassPanelOpen;
   toggle.setAttribute("aria-expanded", String(compassPanelOpen));
+  syncCompassWindDemand();
 
   if (compassPanelOpen) {
     recordMapPanelOpen("compass");
@@ -3170,6 +3199,98 @@ function setMapCompassOpen(open, {
   syncHeadingLifecycle();
   updateMinimizedCompassHeading();
   if (restoreFocus && toggle.isConnected) toggle.focus();
+}
+
+function clearCompassWindDisplay(container = mapCompassControl?.getContainer()) {
+  if (!container) return;
+  const arrow = container.querySelector(".compass-wind-needle");
+  const readout = container.querySelector(".map-compass-wind-readout");
+  const source = container.querySelector(".map-compass-wind-source");
+  const refreshStatus = container.querySelector(".map-compass-wind-refresh-status");
+  arrow?.setAttribute("visibility", "hidden");
+  arrow?.removeAttribute("transform");
+  arrow?.removeAttribute("data-travel-bearing");
+  if (readout) {
+    readout.textContent = "";
+    readout.hidden = true;
+  }
+  if (source) {
+    source.textContent = "";
+    source.hidden = true;
+  }
+  if (refreshStatus) {
+    refreshStatus.textContent = "";
+    refreshStatus.hidden = true;
+  }
+}
+
+function renderCompassWindSnapshot(snapshot) {
+  if (!compassPanelOpen || !compassWindRequested || !mapCompassControl) return;
+  const container = mapCompassControl.getContainer();
+  const arrow = container.querySelector(".compass-wind-needle");
+  const readout = container.querySelector(".map-compass-wind-readout");
+  const source = container.querySelector(".map-compass-wind-source");
+  const refreshStatus = container.querySelector(".map-compass-wind-refresh-status");
+  if (!arrow || !readout || !source || !refreshStatus) return;
+
+  arrow.setAttribute("visibility", "hidden");
+  arrow.removeAttribute("data-travel-bearing");
+  readout.hidden = false;
+  source.hidden = !snapshot.observedAt;
+  source.textContent = snapshot.observedAt
+    ? `${snapshot.station} · ${snapshot.observationTime}`
+    : "";
+  refreshStatus.hidden = !snapshot.refreshFailed;
+  refreshStatus.textContent = snapshot.refreshFailed
+    ? (snapshot.observedAt ? "Refresh unavailable · retained observation time" : "Refresh unavailable")
+    : "";
+
+  if (snapshot.loading && snapshot.state === "unavailable") {
+    readout.textContent = "Loading wind…";
+    source.hidden = true;
+    return;
+  }
+  if (snapshot.state === "stale") {
+    readout.textContent = "Wind observation is old";
+    return;
+  }
+  if (snapshot.state !== "current" || !Number.isFinite(snapshot.speedMph)) {
+    readout.textContent = "Wind unavailable";
+    return;
+  }
+  if (snapshot.speedMph === 0) {
+    readout.textContent = "Calm";
+    return;
+  }
+  if (!snapshot.directionFrom || !Number.isFinite(snapshot.travelBearing)) {
+    readout.textContent = "Direction unavailable";
+    return;
+  }
+
+  const speed = Math.max(1, Math.round(snapshot.speedMph));
+  readout.textContent = `Wind from ${snapshot.directionFrom} · ${speed} mph`;
+  arrow.setAttribute("transform", `rotate(${snapshot.travelBearing} 100 100)`);
+  arrow.setAttribute("data-travel-bearing", String(snapshot.travelBearing));
+  arrow.setAttribute("visibility", "visible");
+}
+
+function syncCompassWindDemand() {
+  if (!compassWindRequested) {
+    compassWindSubscription?.destroy();
+    compassWindSubscription = null;
+    clearCompassWindDisplay();
+    return;
+  }
+  if (!mapCompassControl) return;
+  if (!compassWindSubscription) {
+    const subscribe = window.PropertyWeather?.createWindSubscription;
+    if (typeof subscribe !== "function") {
+      renderCompassWindSnapshot({ state: "unavailable", loading: false, station: "", observedAt: null, refreshFailed: false });
+      return;
+    }
+    compassWindSubscription = subscribe.call(window.PropertyWeather, renderCompassWindSnapshot);
+  }
+  compassWindSubscription.setVisible(compassPanelOpen && !document.hidden);
 }
 
 function activateMobileHeadingSession() {

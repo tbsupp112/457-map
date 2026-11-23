@@ -1080,6 +1080,16 @@ button { font: inherit; }
 .compass-rose-tick--cardinal { stroke-width: 2; }
 .compass-rose-tick--intercardinal { stroke-width: 1.65; }
 .compass-rose-tick--minor { stroke-width: 1.35; }
+.compass-wind-needle { pointer-events: none; }
+.compass-wind-arrow {
+  fill: none;
+  stroke: #59d9d4;
+  stroke-width: 2.4;
+  stroke-dasharray: 5 3.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 1px rgba(14, 27, 23, 0.98)) drop-shadow(0 0 1.5px rgba(245, 232, 207, 0.9));
+}
 .compass-rose-static-arm {
   fill: #87734f;
   stroke: #f2e4c8;
@@ -1134,6 +1144,74 @@ button { font: inherit; }
   text-align: center;
   -webkit-text-stroke: 0.3px rgba(18, 25, 21, 0.55);
   text-shadow: 0 1px 3px rgba(15, 20, 17, 0.95), 0 0 6px rgba(15, 20, 17, 0.82);
+}
+.map-compass-wind-control {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  width: 100%;
+  margin-top: 2px;
+  pointer-events: auto;
+}
+.map-compass-wind-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 3px 8px;
+  border: 1px solid rgba(244, 234, 211, 0.58);
+  border-radius: 6px;
+  color: #fff3d6;
+  background: rgba(20, 31, 25, 0.48);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.42);
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.15;
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(15, 20, 17, 0.95);
+}
+.map-compass-wind-toggle-label input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #59d9d4;
+}
+.map-compass-wind-toggle-label input:focus-visible {
+  outline: 2px solid var(--owned);
+  outline-offset: 2px;
+}
+.map-compass-wind-help,
+.map-compass-wind-source,
+.map-compass-wind-refresh-status {
+  max-width: 100%;
+  text-align: center;
+  text-wrap: balance;
+  line-height: 1.25;
+}
+.map-compass-wind-help {
+  color: rgba(255, 243, 214, 0.88);
+  font-size: 0.61rem;
+}
+.map-compass-wind-readout {
+  min-height: 1.2em;
+  margin: 1px 0 0;
+  color: #b4f3ed;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  -webkit-text-stroke: 0.25px rgba(18, 25, 21, 0.7);
+  text-shadow: 0 1px 3px rgba(15, 20, 17, 0.98), 0 0 5px rgba(15, 20, 17, 0.86);
+}
+.map-compass-wind-source {
+  color: rgba(255, 243, 214, 0.9);
+  font-size: 0.62rem;
+  text-shadow: 0 1px 3px rgba(15, 20, 17, 0.98);
+}
+.map-compass-wind-refresh-status {
+  color: #f1c583;
+  font-size: 0.62rem;
+  text-shadow: 0 1px 3px rgba(15, 20, 17, 0.98);
 }
 .map-compass-close {
   position: absolute;

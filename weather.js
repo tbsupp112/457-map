@@ -14,6 +14,7 @@
   const COMPASS_POINTS = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
   const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   const views = new Set();
+  let refreshTimer = null;
   let cache = readCache();
   let inFlight = null;
 
@@ -113,9 +114,62 @@
     }
   }
 
-  function notifyViews() {
-    views.forEach((view) => view.update());
+  function hasActiveView() {
+    return [...views].some((view) => view.isActive());
   }
+
+  function clearRefreshTimer() {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
+
+  function scheduleRefresh() {
+    clearRefreshTimer();
+    if (inFlight || document.hidden || !hasActiveView()) return;
+
+    const now = Date.now();
+    const observedAt = Date.parse(cache.observation?.timestamp);
+    const forecastBoundary = Date.parse(selectForecast(cache.periods, now)?.endTime) - 2 * HOUR_MS;
+    // Refresh, age and cutoff deadlines are shared by every visible weather consumer.
+    const temporaryCutoff = now < TEMPORARY_REFRESH_CUTOFF ? TEMPORARY_REFRESH_CUTOFF : 0;
+    const deadlines = [nextAttemptAt(now), temporaryCutoff, observedAt + 2 * HOUR_MS + 1, observedAt + 6 * HOUR_MS + 1, forecastBoundary]
+      .filter((deadline) => Number.isFinite(deadline) && deadline > now);
+    if (!deadlines.length) return;
+
+    const deadline = Math.min(...deadlines);
+    refreshTimer = window.setTimeout(() => {
+      refreshTimer = null;
+      refreshActiveViews();
+    }, Math.max(1, deadline - now));
+  }
+
+  function notifyViews() {
+    [...views].forEach((view) => view.update());
+    scheduleRefresh();
+  }
+
+  function refreshActiveViews() {
+    if (document.hidden || !hasActiveView()) {
+      scheduleRefresh();
+      return;
+    }
+    if (!inFlight && Date.now() >= nextAttemptAt()) {
+      load();
+      return;
+    }
+    notifyViews();
+  }
+
+  function handleWeatherVisibilityChange() {
+    if (document.hidden) {
+      clearRefreshTimer();
+      notifyViews();
+      return;
+    }
+    refreshActiveViews();
+  }
+
+  document.addEventListener("visibilitychange", handleWeatherVisibilityChange);
 
   async function load() {
     if (inFlight) return inFlight;
@@ -200,6 +254,30 @@
 
   function observationDirection(quantity) {
     return compassDirection(observationBearing(quantity));
+  }
+
+  function windSnapshot(now = Date.now()) {
+    const observation = cache.observation;
+    const state = observationState(observation, now);
+    const current = state === "current";
+    const speed = current ? speedMph(observation?.windSpeed) : null;
+    const bearing = current ? observationBearing(observation?.windDirection) : null;
+    const directionFrom = Number.isFinite(speed) && speed > 0 && Number.isFinite(bearing)
+      ? compassDirection(bearing) : "";
+    const timestamp = typeof observation?.timestamp === "string" ? observation.timestamp : null;
+    const timeZone = cache.metadata?.timeZone || "America/New_York";
+    return Object.freeze({
+      state,
+      loading: Boolean(inFlight),
+      speedMph: speed,
+      directionFrom,
+      travelBearing: Number.isFinite(speed) && speed > 0 && Number.isFinite(bearing)
+        ? windTravelBearing(bearing) : null,
+      station: STATION_NAME,
+      observedAt: timestamp,
+      observationTime: timestamp ? localTime(timestamp, timeZone) : "Observation time unavailable",
+      refreshFailed: Boolean(cache.refreshFailed),
+    });
   }
 
   function windTravelBearing(fromBearing) {
@@ -441,62 +519,54 @@
     appendText(station, "span", "", ` · ${observation?.timestamp ? localTime(observation.timestamp, timeZone) : "Observation time unavailable"}`);
   }
 
-  function createView(container, { compact = false } = {}) {
-    container.classList.add("property-weather");
-    container.classList.toggle("property-weather--compact", Boolean(compact));
+  function createConsumer(update) {
     let visible = false;
-    let timer = null;
     let destroyed = false;
     const active = () => visible && !document.hidden && !destroyed;
     const view = {
       update() {
-        window.clearTimeout(timer);
-        timer = null;
         if (!active()) return;
-        render(container);
-        if (!inFlight) {
-          const now = Date.now();
-          const observedAt = Date.parse(cache.observation?.timestamp);
-          const forecastBoundary = Date.parse(selectForecast(cache.periods, now)?.endTime) - 2 * HOUR_MS;
-          // Status ages on time even when the next permitted network refresh is later.
-          const temporaryCutoff = now < TEMPORARY_REFRESH_CUTOFF ? TEMPORARY_REFRESH_CUTOFF : 0;
-          const deadlines = [nextAttemptAt(now), temporaryCutoff, observedAt + 2 * HOUR_MS + 1, observedAt + 6 * HOUR_MS + 1, forecastBoundary]
-            .filter((deadline) => Number.isFinite(deadline) && deadline > now);
-          const deadline = deadlines.length ? Math.min(...deadlines) : now;
-          timer = window.setTimeout(refresh, Math.max(1, deadline - now));
-        }
+        update();
+      },
+      isActive() {
+        return active();
       },
       setVisible(value) {
         visible = Boolean(value);
-        if (active()) refresh();
-        else {
-          window.clearTimeout(timer);
-          timer = null;
-        }
+        if (active()) refreshActiveViews();
+        else notifyViews();
       },
       destroy() {
+        if (destroyed) return;
         destroyed = true;
-        window.clearTimeout(timer);
         views.delete(view);
-        document.removeEventListener("visibilitychange", visibilityChanged);
+        notifyViews();
       },
     };
-    async function refresh() {
-      if (!active()) return;
-      await load();
-      view.update();
-    }
-    function visibilityChanged() {
-      if (active()) refresh();
-      else view.update();
-    }
-    document.addEventListener("visibilitychange", visibilityChanged);
     views.add(view);
     return view;
   }
 
+  function createView(container, { compact = false } = {}) {
+    container.classList.add("property-weather");
+    container.classList.toggle("property-weather--compact", Boolean(compact));
+    return createConsumer(() => render(container));
+  }
+
+  /**
+   * Subscribe to the shared current-wind snapshot. Call setVisible only while
+   * the wind UI is visible; subscriptions use the same cache, fetch gate, and
+   * single active-view scheduler as weather panels. Snapshots retain the source
+   * observation time and omit direction for stale/unavailable observations.
+   */
+  function createWindSubscription(onSnapshot) {
+    if (typeof onSnapshot !== "function") throw new TypeError("A wind snapshot callback is required.");
+    return createConsumer(() => onSnapshot(windSnapshot()));
+  }
+
   window.PropertyWeather = Object.freeze({
     createView,
+    createWindSubscription,
     temperatureF,
     speedMph,
     precipitationInches,

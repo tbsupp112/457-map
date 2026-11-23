@@ -32,6 +32,7 @@ function harness(saved = {}, options = {}) {
   let now = options.start ?? START;
   let serial = 0;
   let mode = "ok";
+  let heldObservationRelease = null;
   const timers = new Map();
   const listeners = new Map();
   const storage = new Map([["457-property-weather-v1", JSON.stringify(saved)]]);
@@ -70,8 +71,7 @@ function harness(saved = {}, options = {}) {
     setTimeout: (fn, delay) => { const id = ++serial; timers.set(id, { fn, at: now + delay }); return id; },
     clearTimeout: (id) => timers.delete(id),
   };
-  async function fetch(url) {
-    calls.push(url);
+  function fetchResponse(url) {
     if (mode === "fail") throw new Error("offline");
     if (mode === "retry-after-seconds" && url.includes("observations/latest")) {
       return { ok: false, status: 503, headers: { get: (name) => name.toLowerCase() === "retry-after" ? "1200" : "" } };
@@ -86,11 +86,24 @@ function harness(saved = {}, options = {}) {
     else data = { properties: { periods } };
     return { ok: true, headers: { get: () => "public, max-age=86400" }, json: async () => data };
   }
+  async function fetch(url) {
+    calls.push(url);
+    if (mode === "hold-observation" && url.includes("observations/latest")) {
+      return new Promise((resolve) => { heldObservationRelease = () => resolve(fetchResponse(url)); });
+    }
+    return fetchResponse(url);
+  }
   vm.runInNewContext(source, { window, document, fetch, AbortController, Intl, URL, Date: Clock, console });
   return {
     api: window.PropertyWeather, document, calls, storage, timers, observation, periods,
     time: (value) => { now = value; },
     mode: (value) => { mode = value; },
+    releaseHeldObservation: () => {
+      const release = heldObservationRelease;
+      heldObservationRelease = null;
+      mode = "ok";
+      release?.();
+    },
     tick: async () => {
       const due = [...timers].filter(([, timer]) => timer.at <= now);
       due.forEach(([id, timer]) => { timers.delete(id); timer.fn(); });
@@ -416,7 +429,173 @@ async function main() {
   assert.match(expired.text(), /Current conditions unavailable/);
   assert.equal(expired.all(classIs("weather-condition-icon")).length, 0);
   assert.equal(expired.all(classIs("weather-wind-arrow")).length, 0);
-  console.log("Weather runtime checks passed: units/nulls, timestamp selection, stale boundaries, shared cache, failures, visibility, aging.");
+
+  function windSubscriptionFixture(observation, now = START, attemptedAt = now) {
+    const fixture = harness({
+      attemptedAt,
+      metadata: { timeZone: "America/New_York", hourlyUrl: "https://api.weather.gov/gridpoints/ALY/64,95/forecast/hourly", expiresAt: now + HOUR },
+      observation,
+    }, { start: now });
+    const snapshots = [];
+    const subscription = fixture.api.createWindSubscription((snapshot) => snapshots.push(snapshot));
+    return { fixture, snapshots, subscription };
+  }
+
+  const windObservation = {
+    ...observed,
+    windSpeed: { value: 8.04672, unitCode: "wmoUnit:km_h-1" },
+    windDirection: { value: 202.5, unitCode: "wmoUnit:degree_(angle)" },
+  };
+  const windOnly = windSubscriptionFixture(windObservation);
+  assert.equal(windOnly.fixture.calls.length, 0, "Creating a hidden wind subscription does not fetch");
+  assert.equal(windOnly.fixture.timers.size, 0, "A hidden wind subscription does not schedule refreshes");
+  windOnly.subscription.setVisible(true);
+  assert.equal(windOnly.fixture.calls.length, 0, "Current cached weather is shared without an extra request");
+  let windSnapshot = windOnly.snapshots.at(-1);
+  assert.equal(windSnapshot.state, "current");
+  assert.equal(windSnapshot.speedMph, 5, "Snapshot reuses shared speed unit conversion");
+  assert.equal(windSnapshot.directionFrom, "SSW");
+  assert.equal(windSnapshot.travelBearing, 22.5);
+  assert.equal(windSnapshot.station, "Glens Falls airport (KGFL)");
+  assert.equal(windSnapshot.observedAt, windObservation.timestamp, "Snapshot preserves the observation timestamp");
+  assert.equal(windSnapshot.observationTime, windOnly.fixture.api.localTime(windObservation.timestamp, "America/New_York"));
+  assert.equal(windOnly.fixture.timers.size, 1, "Visible weather consumers share one refresh/aging timer");
+  const visibleCount = windOnly.snapshots.length;
+  windOnly.subscription.setVisible(false);
+  assert.equal(windOnly.fixture.timers.size, 0, "Minimized wind releases weather demand");
+  assert.equal(windOnly.snapshots.length, visibleCount, "Hidden wind receives no further snapshot updates");
+  windOnly.subscription.setVisible(true);
+  assert.equal(windOnly.snapshots.length, visibleCount + 1, "Reopening resumes the requested wind subscription");
+  windOnly.subscription.destroy();
+  assert.equal(windOnly.fixture.timers.size, 0);
+
+  for (const [from, direction, travel] of [
+    [0, "N", 180], [90, "E", 270], [180, "S", 0], [270, "W", 90], [360, "N", 180],
+  ]) {
+    const cardinal = windSubscriptionFixture({
+      ...windObservation,
+      windDirection: { value: from, unitCode: "wmoUnit:degree_(angle)" },
+    });
+    cardinal.subscription.setVisible(true);
+    windSnapshot = cardinal.snapshots.at(-1);
+    assert.equal(windSnapshot.directionFrom, direction);
+    assert.equal(windSnapshot.travelBearing, travel, `Snapshot reverses wind-from bearing ${from} to travel bearing`);
+    cardinal.subscription.destroy();
+  }
+
+  const calmSnapshot = windSubscriptionFixture({
+    ...windObservation, windSpeed: { value: 0, unitCode: "wmoUnit:mi_h-1" },
+  });
+  calmSnapshot.subscription.setVisible(true);
+  assert.equal(calmSnapshot.snapshots.at(-1).speedMph, 0);
+  assert.equal(calmSnapshot.snapshots.at(-1).travelBearing, null, "Calm conditions have no directional arrow");
+  calmSnapshot.subscription.destroy();
+
+  const variableSnapshot = windSubscriptionFixture({ ...windObservation, windDirection: null });
+  variableSnapshot.subscription.setVisible(true);
+  assert.equal(variableSnapshot.snapshots.at(-1).directionFrom, "", "Missing or variable direction never defaults north");
+  assert.equal(variableSnapshot.snapshots.at(-1).travelBearing, null);
+  variableSnapshot.subscription.destroy();
+
+  const staleSnapshot = windSubscriptionFixture({
+    ...windObservation, timestamp: new Date(START - 2 * HOUR - 1).toISOString(),
+  });
+  staleSnapshot.subscription.setVisible(true);
+  assert.equal(staleSnapshot.snapshots.at(-1).state, "stale");
+  assert.equal(staleSnapshot.snapshots.at(-1).speedMph, null, "Stale readings cannot supply an active arrow");
+  assert.equal(staleSnapshot.snapshots.at(-1).travelBearing, null);
+  staleSnapshot.subscription.destroy();
+
+  const unavailableSnapshot = windSubscriptionFixture({
+    ...windObservation, timestamp: new Date(START - 6 * HOUR - 1).toISOString(),
+  });
+  unavailableSnapshot.subscription.setVisible(true);
+  assert.equal(unavailableSnapshot.snapshots.at(-1).state, "unavailable");
+  assert.equal(unavailableSnapshot.snapshots.at(-1).travelBearing, null);
+  unavailableSnapshot.subscription.destroy();
+
+  const agingWind = windSubscriptionFixture({
+    ...windObservation, timestamp: new Date(START - 2 * HOUR + 1000).toISOString(),
+  });
+  agingWind.subscription.setVisible(true);
+  assert.equal(agingWind.snapshots.at(-1).state, "current");
+  agingWind.fixture.time(START + 1001);
+  await agingWind.fixture.tick();
+  assert.equal(agingWind.snapshots.at(-1).state, "stale", "Wind-only consumer updates freshness without a fetch");
+  assert.equal(agingWind.fixture.calls.length, 0);
+  agingWind.subscription.destroy();
+
+  const hiddenWind = windSubscriptionFixture({
+    ...windObservation, timestamp: new Date(START - 2 * HOUR + 1000).toISOString(),
+  });
+  hiddenWind.subscription.setVisible(true);
+  const visibleSnapshots = hiddenWind.snapshots.length;
+  hiddenWind.fixture.document.hidden = true;
+  hiddenWind.fixture.visibility();
+  assert.equal(hiddenWind.fixture.timers.size, 0, "Hiding the document suspends the shared wind scheduler");
+  hiddenWind.fixture.time(START + 1002);
+  await hiddenWind.fixture.tick();
+  assert.equal(hiddenWind.snapshots.length, visibleSnapshots, "A hidden wind consumer does not receive clock updates");
+  assert.equal(hiddenWind.fixture.calls.length, 0, "A hidden wind consumer does not poll");
+  hiddenWind.fixture.document.hidden = false;
+  hiddenWind.fixture.visibility();
+  assert.equal(hiddenWind.snapshots.at(-1).state, "stale", "Returning to the document refreshes the wind freshness snapshot");
+  assert.equal(hiddenWind.fixture.calls.length, 0, "Resume uses the existing still-current fetch window");
+  hiddenWind.subscription.destroy();
+
+  const unavailableAging = windSubscriptionFixture({
+    ...windObservation, timestamp: new Date(START - 6 * HOUR + 1000).toISOString(),
+  });
+  unavailableAging.subscription.setVisible(true);
+  assert.equal(unavailableAging.snapshots.at(-1).state, "stale");
+  unavailableAging.fixture.time(START + 1001);
+  await unavailableAging.fixture.tick();
+  assert.equal(unavailableAging.snapshots.at(-1).state, "unavailable", "Wind-only consumer also ages stale observations out");
+  assert.equal(unavailableAging.fixture.calls.length, 0);
+  unavailableAging.subscription.destroy();
+
+  const retainedWind = windSubscriptionFixture(windObservation, START, START - TEN_MINUTES);
+  const retainedSnapshots = retainedWind.snapshots;
+  retainedWind.fixture.mode("fail");
+  retainedWind.subscription.setVisible(true);
+  await retainedWind.fixture.tick();
+  windSnapshot = retainedSnapshots.at(-1);
+  assert.equal(windSnapshot.state, "current");
+  assert.equal(windSnapshot.travelBearing, 22.5, "A failed refresh may retain a still-current arrow");
+  assert.equal(windSnapshot.observedAt, windObservation.timestamp, "Failed refresh keeps the original observation time");
+  assert.equal(windSnapshot.refreshFailed, true, "The retained arrow carries refresh-failure status");
+  retainedWind.subscription.destroy();
+
+  const coexist = harness();
+  const weatherRoot = new Element();
+  const weatherView = coexist.api.createView(weatherRoot);
+  const sharedSnapshots = [];
+  const compassWind = coexist.api.createWindSubscription((snapshot) => sharedSnapshots.push(snapshot));
+  weatherView.setVisible(true);
+  compassWind.setVisible(true);
+  await coexist.tick();
+  assert.equal(coexist.calls.length, 3, "Weather panel and wind-only compass share the same three requests");
+  assert.equal(coexist.timers.size, 1, "Coexisting weather views share one lifecycle timer");
+  assert.equal(sharedSnapshots.at(-1).travelBearing, 135);
+  compassWind.destroy();
+  weatherView.destroy();
+  assert.equal(coexist.timers.size, 0);
+
+  const pendingWind = harness();
+  const pendingSnapshots = [];
+  const pendingSubscription = pendingWind.api.createWindSubscription((snapshot) => pendingSnapshots.push(snapshot));
+  pendingWind.mode("hold-observation");
+  pendingSubscription.setVisible(true);
+  await pendingWind.tick();
+  assert.ok(pendingWind.calls.some((url) => url.includes("observations/latest")));
+  const pendingCount = pendingSnapshots.length;
+  pendingSubscription.destroy();
+  pendingWind.releaseHeldObservation();
+  await pendingWind.tick();
+  assert.equal(pendingSnapshots.length, pendingCount, "A late response after wind is turned off cannot update or reopen it");
+  assert.equal(pendingWind.timers.size, 0);
+
+  console.log("Weather runtime checks passed: shared fetch/scheduler, wind subscription lifecycle, unit/direction/freshness states, failure retention, visibility, and aging.");
 }
 
 main().catch((error) => { console.error(error); process.exitCode = 1; });
